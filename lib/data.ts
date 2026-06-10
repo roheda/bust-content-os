@@ -46,7 +46,18 @@ export type ContentRequest = {
   suggestedDate?: string;
   status: string;
   source?: string;
+  batchId?: string;
+  batchName?: string;
   productionId?: string;
+};
+
+export type RequestBatch = {
+  id?: string;
+  name: string;
+  clientId: string;
+  clientName: string;
+  totalRequests: number;
+  status: string;
 };
 
 export type Production = {
@@ -121,6 +132,32 @@ export async function saveRequest(item: ContentRequest) {
 }
 export async function saveRequests(items: ContentRequest[]) {
   await Promise.all(items.map((x) => saveRequest(x)));
+}
+
+export async function saveRequestBatch(batch: RequestBatch, items: ContentRequest[]) {
+  const batchRef = await addDoc(collection(db, "requestBatches"), {
+    ...batch,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  const batchId = batchRef.id;
+  const batchName = batch.name;
+
+  await Promise.all(items.map((x) => saveRequest({
+    ...x,
+    batchId,
+    batchName,
+    status: x.status || "draft"
+  })));
+
+  return batchId;
+}
+
+export async function listRequestBatches() {
+  const q = query(collection(db, "requestBatches"), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as RequestBatch));
 }
 export async function listRequests() {
   const q = query(collection(db, "contentRequests"), orderBy("createdAt", "desc"));

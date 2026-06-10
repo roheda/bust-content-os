@@ -1,13 +1,19 @@
-# BUST Content OS MVP6
+# BUST Content OS MVP7
 
 ## Nuevo
 
-- Fecha de publicación real en solicitudes
-- Calendario lateral por mes y días ocupados
-- Generador automático con primera fecha y frecuencia cada N días
-- Visualizador de imágenes de referencia subidas
-- Compatibilidad con documentos anteriores usando suggestedDate como fallback
+- Las propuestas automáticas quedan como borrador local.
+- No aparecen en Solicitudes hasta guardar el lote completo.
+- Se crea un documento `requestBatches`.
+- Cada solicitud enviada incluye:
+  - batchId
+  - batchName
+- Solicitudes muestra de qué lote viene cada pieza.
 
-## Importante
+## Flujo recomendado
 
-Si se usan uploads, activar Firebase Storage y reglas temporales para demo.
+1. Generar propuestas.
+2. Revisar y editar fichas.
+3. Subir referencias si aplica.
+4. Guardar lote completo.
+5. Operar piezas desde Solicitudes.
