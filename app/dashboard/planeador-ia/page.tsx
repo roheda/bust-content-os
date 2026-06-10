@@ -1,17 +1,20 @@
-export default function PlaneadorIAPage() {
-  return (
-    <main>
-      <h1>Planeador IA</h1>
-      <p>Cliente: Restaurante X</p>
-      <p>Paquete: 15 publicaciones</p>
-      <p>Solicitudes creadas: 6</p>
-      <p>Faltan por crear: 9</p>
-      <h2>Propuestas</h2>
-      <ul>
-        <li>Reel - Brunch dominical - Reservas - Requiere produccion</li>
-        <li>Carrusel - 5 razones para visitarnos - Confianza</li>
-        <li>Post - Promo entre semana - Ventas</li>
-      </ul>
-    </main>
-  );
-}
+const stats = [
+  ["Cliente", "Restaurante X"],
+  ["Paquete", "15 publicaciones"],
+  ["Creadas", "6"],
+  ["Faltan", "9"],
+  ["Producciones", "1 incluida"],
+  ["Mes", "Junio 2026"],
+];
+
+const shortcuts = [
+  "Completar plan mensual",
+  "Contenido de ventas",
+  "Sin produccion",
+  "Reels con produccion",
+  "Ideas para pauta",
+  "Testimoniales",
+];
+
+const proposals = [
+  ["7", "
