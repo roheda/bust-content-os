@@ -1,10 +1,17 @@
 import { addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
-import { db } from "./firebase";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { db, storage } from "./firebase";
 
-export const requestStates = ["draft","validacion_content_sr","requiere_cambios","aprobada_content_sr","en_produccion","material_listo","edicion","revision_kam","programado","publicado"];
+export const requestStates = ["draft","validacion_content_sr","requiere_cambios","aprobada_content_sr","edicion","revision_kam","programado","publicado"];
 export const contentTypes = ["Reel","Carrusel","Post","Story","TikTok","Foto","Diseño","Blog"];
 export const objectives = ["Ventas","Reservas","Awareness","Confianza","Educativo","Engagement","Tráfico","Comunidad"];
 export const productionStates = ["por_programar","programada","realizada","material_subido","cancelada"];
+
+export type ReferenceFile = {
+  name: string;
+  url: string;
+  type: string;
+};
 
 export type Brand = {
   id?: string;
@@ -28,13 +35,13 @@ export type ContentRequest = {
   total: number;
   contentType: string;
   objective: string;
-  creativeIdea: string;
-  references: string;
-  copyIn: string;
   topic: string;
+  creativeIdea: string;
+  referenceLinks: string;
+  referenceFiles: ReferenceFile[];
+  copyIn: string;
   keyMessage?: string;
   cta?: string;
-  requiresProduction: boolean;
   suggestedDate: string;
   status: string;
   source?: string;
@@ -65,17 +72,30 @@ export const emptyRequest: ContentRequest = {
   total: 1,
   contentType: "Reel",
   objective: "Ventas",
-  creativeIdea: "",
-  references: "",
-  copyIn: "",
   topic: "",
+  creativeIdea: "",
+  referenceLinks: "",
+  referenceFiles: [],
+  copyIn: "",
   keyMessage: "",
   cta: "",
-  requiresProduction: false,
   suggestedDate: "",
   status: "draft",
   source: "manual",
 };
+
+export async function uploadReferenceFiles(files: FileList | File[], folder = "references") {
+  const list = Array.from(files);
+  const uploaded: ReferenceFile[] = [];
+  for (const file of list) {
+    const path = `${folder}/${Date.now()}-${file.name}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    uploaded.push({ name: file.name, url, type: file.type });
+  }
+  return uploaded;
+}
 
 export async function saveBrand(data: Brand) {
   return addDoc(collection(db, "clients"), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });

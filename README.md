@@ -1,21 +1,14 @@
-# BUST Content OS MVP4
+# BUST Content OS MVP5
 
-## Cambios principales
+## Cambios
 
-- Solicitud de contenido ahora es un brief creativo:
-  - Cliente
-  - Objetivo
-  - Idea creativa
-  - Referencias / links
-  - Copy In
-  - Requiere producción
-- Planeador IA con cantidad de propuestas, tipos, objetivos, temas y factores.
-- Propuestas editables antes de guardar.
-- Producciones se crean en pantalla separada y se les agregan solicitudes.
+- Referencias separadas:
+  - Links de referencia
+  - Imágenes / archivos subidos a Firebase Storage
+- Se elimina producción del Planeador IA
+- Automático y manual tienen la misma ficha al guardarse
+- Producciones puede agregar cualquier solicitud del cliente
 
-## Flujo
+## Importante
 
-1. Crear cliente
-2. Crear solicitudes en Planeador IA
-3. Editar briefs en Solicitudes
-4. Crear producción y agregar solicitudes que requieren producción
+Configurar reglas de Storage para pruebas si se van a subir archivos.
