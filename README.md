@@ -1,19 +1,17 @@
-# BUST Content OS MVP7
+# BUST Content OS MVP8
 
 ## Nuevo
 
-- Las propuestas automáticas quedan como borrador local.
-- No aparecen en Solicitudes hasta guardar el lote completo.
-- Se crea un documento `requestBatches`.
-- Cada solicitud enviada incluye:
-  - batchId
-  - batchName
-- Solicitudes muestra de qué lote viene cada pieza.
+- Unificación del generador IA y manual en un solo borrador de lote.
+- Las solicitudes manuales se agregan al borrador, no se guardan directo.
+- El borrador se guarda en localStorage y no se pierde al cambiar de módulo.
+- Preview visual de imágenes de referencia con modal.
+- Duplicar y quitar propuestas del borrador.
+- El lote completo se manda a Solicitudes solo al guardar.
 
-## Flujo recomendado
+## Flujo
 
-1. Generar propuestas.
-2. Revisar y editar fichas.
-3. Subir referencias si aplica.
+1. Generar propuestas IA.
+2. Agregar solicitudes manuales al mismo borrador.
+3. Revisar, editar, subir referencias y fechas.
 4. Guardar lote completo.
-5. Operar piezas desde Solicitudes.
