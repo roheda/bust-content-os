@@ -234,6 +234,15 @@ export default function PlannerPage(){
     }
   }
 
+  function removeItemFile(itemIndex:number, fileIndex:number){
+    const next = [...items];
+    next[itemIndex] = {
+      ...next[itemIndex],
+      referenceFiles: (next[itemIndex].referenceFiles||[]).filter((_,i)=>i!==fileIndex)
+    };
+    setItems(next);
+  }
+
   function validateBatch(){
     if(!items.length){alert("No hay solicitudes en el borrador");return false}
     const incomplete = items.find(x=>!x.clientName||!x.contentType||!x.objective||!x.creativeIdea||!x.copyIn);
@@ -344,7 +353,7 @@ export default function PlannerPage(){
                 <td><textarea value={item.copyIn} onChange={e=>updateItem(index,"copyIn",e.target.value)}/></td>
                 <td>
                   <input type="file" multiple onChange={e=>uploadToItem(index,e.target.files)}/>
-                  <FileList files={item.referenceFiles} onPreview={setPreview}/>
+                  <FileList files={item.referenceFiles} onPreview={setPreview} onRemove={(fileIndex)=>removeItemFile(index,fileIndex)}/>
                 </td>
                 <td>
                   <button className="btn" onClick={()=>duplicateItem(index)}>Duplicar</button><br/><br/>
@@ -396,33 +405,37 @@ function RequestForm({
     <div className="field"><label>Objetivo</label><select value={request.objective} onChange={e=>onChange("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field full"><label>Idea creativa</label><textarea value={request.creativeIdea} onChange={e=>onChange("creativeIdea",e.target.value)}/></div>
     <div className="field full"><label>Links de referencia</label><textarea value={request.referenceLinks} onChange={e=>onChange("referenceLinks",e.target.value)}/></div>
-    <div className="field full"><label>Archivos de referencia</label><input type="file" multiple onChange={e=>onUpload(e.target.files)}/><FileList files={request.referenceFiles} onPreview={onPreview}/></div>
+    <div className="field full"><label>Archivos de referencia</label><input type="file" multiple onChange={e=>onUpload(e.target.files)}/><FileList files={request.referenceFiles} onPreview={onPreview} onRemove={(index)=>onChange("referenceFiles", request.referenceFiles.filter((_,i)=>i!==index))}/></div>
     <div className="field full"><label>Copy In</label><textarea value={request.copyIn} onChange={e=>onChange("copyIn",e.target.value)}/></div>
     <div className="field"><label>Fecha publicación</label><input type="date" value={request.publishDate} onChange={e=>onChange("publishDate",e.target.value)}/></div>
     <div className="field"><label>CTA</label><input value={request.cta} onChange={e=>onChange("cta",e.target.value)}/></div>
   </div>;
 }
 
-function FileList({files,onPreview}:{files:ReferenceFile[];onPreview:(file:ReferenceFile)=>void}){
-  return <div>
-    <div className="image-grid">
-      {(files||[]).map((file,index)=>isImageFile(file)?
-        <button type="button" className="image-thumb" onClick={()=>onPreview(file)} key={index}>
-          <img src={file.url} alt={file.name}/>
-        </button>
-        :
-        <div className="image-thumb" key={index}><span>{file.name}</span></div>
-      )}
-    </div>
-    <div className="file-list">
-      {(files||[]).map((file,index)=><div className="file-card" key={index}>
-        <div className="file-card-name">{file.name}</div>
-        <div className="file-card-actions">
-          <button type="button" className="btn" onClick={()=>onPreview(file)}>Ver preview</button>
-          <a className="btn" href={file.url} target="_blank">Abrir archivo</a>
-        </div>
-      </div>)}
-    </div>
+function FileList({
+  files,
+  onPreview,
+  onRemove
+}:{
+  files:ReferenceFile[];
+  onPreview:(file:ReferenceFile)=>void;
+  onRemove:(index:number)=>void;
+}){
+  return <div className="ref-grid">
+    {(files||[]).map((file,index)=>
+      <button type="button" className="ref-thumb" onClick={()=>onPreview(file)} key={index}>
+        {isImageFile(file)
+          ? <img src={file.url} alt="Referencia"/>
+          : <div className="ref-thumb-file">Archivo</div>
+        }
+        <span
+          className="ref-delete"
+          onClick={(event)=>{event.stopPropagation();onRemove(index);}}
+        >
+          Eliminar
+        </span>
+      </button>
+    )}
   </div>;
 }
 

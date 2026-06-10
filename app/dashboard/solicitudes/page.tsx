@@ -53,6 +53,14 @@ export default function RequestsPage(){
     }
   }
 
+  function removeEditingFile(index:number){
+    if(!editing)return;
+    setEditing({
+      ...editing,
+      referenceFiles: (editing.referenceFiles||[]).filter((_,i)=>i!==index)
+    });
+  }
+
   async function saveEdit(){
     if(!editing?.id)return;
     await updateRequest(editing.id,editing);
@@ -132,7 +140,7 @@ export default function RequestsPage(){
             <div className="field"><label>Estado</label><select value={editing.status} onChange={e=>set("status",e.target.value)}>{requestStates.map(x=><option key={x}>{x}</option>)}</select></div>
             <div className="field full"><label>Idea creativa</label><textarea value={editing.creativeIdea} onChange={e=>set("creativeIdea",e.target.value)} /></div>
             <div className="field full"><label>Links referencia</label><textarea value={editing.referenceLinks} onChange={e=>set("referenceLinks",e.target.value)} /></div>
-            <div className="field full"><label>Archivos</label><input type="file" multiple onChange={e=>upload(e.target.files)} /><span className="mini">{uploading?"Subiendo...":""}</span><FileList files={editing.referenceFiles||[]} onPreview={setPreview}/></div>
+            <div className="field full"><label>Archivos</label><input type="file" multiple onChange={e=>upload(e.target.files)} /><span className="mini">{uploading?"Subiendo...":""}</span><FileList files={editing.referenceFiles||[]} onPreview={setPreview} onRemove={removeEditingFile}/></div>
             <div className="field full"><label>Copy In</label><textarea value={editing.copyIn} onChange={e=>set("copyIn",e.target.value)} /></div>
             <div className="field full"><label>Mensaje clave</label><textarea value={editing.keyMessage} onChange={e=>set("keyMessage",e.target.value)} /></div>
             <div className="field"><label>CTA</label><input value={editing.cta} onChange={e=>set("cta",e.target.value)} /></div>
@@ -150,26 +158,30 @@ export default function RequestsPage(){
   </AppShell>;
 }
 
-function FileList({files,onPreview}:{files:ReferenceFile[];onPreview:(file:ReferenceFile)=>void}){
-  return <div>
-    <div className="image-grid">
-      {(files||[]).map((file,index)=>isImageFile(file)?
-        <button type="button" className="image-thumb" onClick={()=>onPreview(file)} key={index}>
-          <img src={file.url} alt={file.name}/>
-        </button>
-        :
-        <div className="image-thumb" key={index}><span>{file.name}</span></div>
-      )}
-    </div>
-    <div className="file-list">
-      {(files||[]).map((file,index)=><div className="file-card" key={index}>
-        <div className="file-card-name">{file.name}</div>
-        <div className="file-card-actions">
-          <button type="button" className="btn" onClick={()=>onPreview(file)}>Ver preview</button>
-          <a className="btn" href={file.url} target="_blank">Abrir archivo</a>
-        </div>
-      </div>)}
-    </div>
+function FileList({
+  files,
+  onPreview,
+  onRemove
+}:{
+  files:ReferenceFile[];
+  onPreview:(file:ReferenceFile)=>void;
+  onRemove:(index:number)=>void;
+}){
+  return <div className="ref-grid">
+    {(files||[]).map((file,index)=>
+      <button type="button" className="ref-thumb" onClick={()=>onPreview(file)} key={index}>
+        {isImageFile(file)
+          ? <img src={file.url} alt="Referencia"/>
+          : <div className="ref-thumb-file">Archivo</div>
+        }
+        <span
+          className="ref-delete"
+          onClick={(event)=>{event.stopPropagation();onRemove(index);}}
+        >
+          Eliminar
+        </span>
+      </button>
+    )}
   </div>;
 }
 

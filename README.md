@@ -1,23 +1,9 @@
-# BUST Content OS — Planeador Firestore
+# BUST Content OS — Planeador Firestore v1.1
 
-## Qué cambia
+## Ajuste de referencias
 
-Esta versión reinicia el Planeador IA en forma más estable:
-
-- Borradores guardados en Firestore (`plannerDrafts`)
-- Publicación de lotes completos a:
-  - `requestBatches`
-  - `contentRequests`
-- Referencias con Firebase Storage
-- Preview de imágenes
-- Manual + IA en el mismo borrador
-- Sin dependencia de localStorage
-
-## Flujo
-
-1. Crear cliente.
-2. Crear borrador en Planeador IA.
-3. Agregar propuestas IA y/o manuales.
-4. Guardar borrador.
-5. Abrir borrador después si hace falta.
-6. Enviar a Solicitudes.
+- La referencia ya no muestra nombre de archivo.
+- Ya no muestra botones “Ver preview” ni “Abrir archivo”.
+- Clic en imagen abre preview.
+- Dentro de cada miniatura solo aparece “Eliminar”.
+- Eliminar quita la referencia del borrador o solicitud editada.
