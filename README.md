@@ -1,10 +1,3 @@
-# BUST Content OS
+# BUST Content OS MVP2
 
-MVP funcional con Firestore.
-
-## Flujo
-
-1. Crear cliente en Clientes.
-2. Generar piezas en Planeador IA.
-3. Guardar solicitudes.
-4. Revisar Solicitudes.
+Incluye: clientes editables, planeador con faltantes, solicitudes con filtros, estados, responsables y borrado.
