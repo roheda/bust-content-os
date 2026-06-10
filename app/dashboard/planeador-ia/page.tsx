@@ -1,3 +1,26 @@
+"use client";
+import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
-const proposals=[["7","Reel","Brunch dominical","Reservas","Sí","15 jun"],["8","Carrusel","5 razones para visitarnos","Confianza","No","16 jun"],["9","Post","Promo entre semana","Ventas","No","17 jun"],["10","Reel","Behind the scenes cocina","Awareness","Sí","18 jun"]];
-export default function PlannerPage(){return <AppShell active="Planeador IA"><div className="page-title"><p className="eyebrow">Planeador IA</p><h1>Nueva planeación de contenido</h1><p>Crea solicitudes en lote usando la información cargada del cliente y su paquete contratado.</p></div><section className="grid kpis">{[["Cliente","Restaurante X"],["Paquete","15 posts"],["Creadas","6"],["Faltan","9"],["Producciones","1"],["Mes","Junio 2026"]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}</section><div className="card" style={{marginBottom:24}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><strong>Avance del plan mensual</strong><strong>40%</strong></div><div className="progress"><div /></div></div><section className="grid two-col"><div className="card"><h3>Generar solicitudes con IA</h3><p>Escribe una instrucción sencilla. La IA debe respetar cliente, paquete, objetivos y formatos.</p><textarea className="prompt" defaultValue={"Completa las 9 piezas restantes enfocadas en reservas, brunch y experiencia. Usa máximo 3 reels y marca cuáles requieren producción."}/><div className="shortcuts">{["Completar mes","Ventas","Sin producción","Reels con producción","Pauta","Testimoniales"].map(x=><span className="chip" key={x}>{x}</span>)}</div><div style={{marginTop:18}}><button className="btn blue">Generar propuestas</button></div></div><aside className="card"><h3>Datos que usa la IA</h3><p>✓ Brief del cliente<br/>✓ Paquete contratado<br/>✓ Tono de marca<br/>✓ Plataformas<br/>✓ Producciones incluidas</p><br/><span className="badge orange">Falta conectar Firestore</span></aside></section><section className="card" style={{marginTop:24}}><h3>Propuestas generadas</h3><table className="table"><thead><tr><th>#</th><th>Tipo</th><th>Tema</th><th>Objetivo</th><th>Producción</th><th>Fecha</th></tr></thead><tbody>{proposals.map(row=><tr key={row[0]}>{row.map((cell,i)=><td key={i}>{i===4?<span className={cell==="Sí"?"badge orange":"badge green"}>{cell}</span>:cell}</td>)}</tr>)}</tbody></table><div style={{marginTop:18}}><button className="btn blue">Crear solicitudes seleccionadas</button></div></section></AppShell>}
+import { Brand, Piece, listBrands, savePieces } from "@/lib/data";
+
+export default function PlannerPage(){
+  const [brands,setBrands]=useState<Brand[]>([]);
+  const [brandId,setBrandId]=useState("");
+  const [pieces,setPieces]=useState<Piece[]>([]);
+  useEffect(()=>{listBrands().then(setBrands)},[]);
+  const brand=brands.find(x=>x.id===brandId)||brands[0];
+  function generate(){
+    if(!brand?.id)return;
+    const total=brand.posts||15;
+    const base=[
+      ["Reel","Brunch dominical","Reservas",true,"15 jun"],
+      ["Carrusel","5 razones para visitarnos","Confianza",false,"16 jun"],
+      ["Post","Promo entre semana","Ventas",false,"17 jun"],
+      ["Reel","Behind the scenes cocina","Awareness",true,"18 jun"],
+      ["Post","Producto estrella","Ventas",false,"19 jun"]
+    ];
+    setPieces(base.map((x,i)=>({brandId:brand.id!,brandName:brand.name,number:i+1,total,format:String(x[0]),topic:String(x[1]),goal:String(x[2]),production:Boolean(x[3]),date:String(x[4]),state:"draft"})));
+  }
+  async function save(){await savePieces(pieces); alert("Solicitudes guardadas en Firestore");}
+  return <AppShell active="Planeador IA"><div className="page-title"><p className="eyebrow">Planeador IA</p><h1>Nueva planeación de contenido</h1><p>Genera solicitudes y guárdalas como documentos reales.</p></div><section className="grid kpis">{[["Cliente",brand?.name||"Sin cliente"],["Paquete",String(brand?.posts||0)+" posts"],["Reels",String(brand?.reels||0)],["Producciones",String(brand?.productions||0)],["Creadas",String(pieces.length)],["Mes","Junio 2026"]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}</section><section className="grid two-col"><div className="card"><h3>Generar solicitudes</h3><div className="field"><label>Cliente</label><select value={brand?.id||""} onChange={e=>setBrandId(e.target.value)}>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div><textarea className="prompt" defaultValue="Completa las piezas restantes enfocadas en reservas, experiencia y ventas."/><div className="shortcuts"><span className="chip">Completar mes</span><span className="chip">Ventas</span><span className="chip">Reels con producción</span></div><div style={{display:"flex",gap:12,marginTop:18}}><button className="btn blue" onClick={generate}>Generar propuestas</button><button className="btn" onClick={save}>Guardar solicitudes</button></div></div><aside className="card"><h3>Firestore</h3><p>Al guardar, se crea la colección contentRequests automáticamente.</p><br/><span className="badge green">Funcional</span></aside></section><section className="card" style={{marginTop:24}}><h3>Propuestas</h3><table className="table"><thead><tr><th>#</th><th>Tipo</th><th>Tema</th><th>Objetivo</th><th>Prod.</th><th>Fecha</th></tr></thead><tbody>{pieces.map(x=><tr key={x.number}><td>{x.number}</td><td>{x.format}</td><td>{x.topic}</td><td>{x.goal}</td><td><span className={x.production?"badge orange":"badge green"}>{x.production?"Sí":"No"}</span></td><td>{x.date}</td></tr>)}</tbody></table></section></AppShell>
+}

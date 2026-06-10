@@ -1,8 +1,10 @@
 # BUST Content OS
 
-MVP visual para el sistema operativo de contenido de BUST.
+MVP funcional con Firestore.
 
-## Instalar
+## Flujo
 
-npm install
-npm run dev
+1. Crear cliente en Clientes.
+2. Generar piezas en Planeador IA.
+3. Guardar solicitudes.
+4. Revisar Solicitudes.
