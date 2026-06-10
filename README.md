@@ -1,16 +1,21 @@
-# BUST Content OS MVP3
+# BUST Content OS MVP4
 
-## Nuevo
+## Cambios principales
 
-- Solicitudes editables desde panel lateral
-- Planeador IA con modo automático y modo manual
-- Campos nuevos: mensaje clave, CTA, notas y fuente
-- Edición rápida de estado y responsable en tabla
+- Solicitud de contenido ahora es un brief creativo:
+  - Cliente
+  - Objetivo
+  - Idea creativa
+  - Referencias / links
+  - Copy In
+  - Requiere producción
+- Planeador IA con cantidad de propuestas, tipos, objetivos, temas y factores.
+- Propuestas editables antes de guardar.
+- Producciones se crean en pantalla separada y se les agregan solicitudes.
 
 ## Flujo
 
 1. Crear cliente
-2. Ir a Planeador IA
-3. Usar modo automático o manual
-4. Guardar solicitudes
-5. Editar solicitudes desde el tablero
+2. Crear solicitudes en Planeador IA
+3. Editar briefs en Solicitudes
+4. Crear producción y agregar solicitudes que requieren producción
