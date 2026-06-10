@@ -42,7 +42,8 @@ export type ContentRequest = {
   copyIn: string;
   keyMessage?: string;
   cta?: string;
-  suggestedDate: string;
+  publishDate: string;
+  suggestedDate?: string;
   status: string;
   source?: string;
   productionId?: string;
@@ -79,16 +80,21 @@ export const emptyRequest: ContentRequest = {
   copyIn: "",
   keyMessage: "",
   cta: "",
-  suggestedDate: "",
+  publishDate: "",
   status: "draft",
   source: "manual",
 };
+
+export function getRequestDate(item: Partial<ContentRequest>) {
+  return item.publishDate || item.suggestedDate || "";
+}
 
 export async function uploadReferenceFiles(files: FileList | File[], folder = "references") {
   const list = Array.from(files);
   const uploaded: ReferenceFile[] = [];
   for (const file of list) {
-    const path = `${folder}/${Date.now()}-${file.name}`;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const path = `${folder}/${Date.now()}-${safeName}`;
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, file);
     const url = await getDownloadURL(storageRef);

@@ -1,14 +1,13 @@
-# BUST Content OS MVP5
+# BUST Content OS MVP6
 
-## Cambios
+## Nuevo
 
-- Referencias separadas:
-  - Links de referencia
-  - Imágenes / archivos subidos a Firebase Storage
-- Se elimina producción del Planeador IA
-- Automático y manual tienen la misma ficha al guardarse
-- Producciones puede agregar cualquier solicitud del cliente
+- Fecha de publicación real en solicitudes
+- Calendario lateral por mes y días ocupados
+- Generador automático con primera fecha y frecuencia cada N días
+- Visualizador de imágenes de referencia subidas
+- Compatibilidad con documentos anteriores usando suggestedDate como fallback
 
 ## Importante
 
-Configurar reglas de Storage para pruebas si se van a subir archivos.
+Si se usan uploads, activar Firebase Storage y reglas temporales para demo.
