@@ -8,6 +8,7 @@ import {
   contentTypes,
   deleteRequest,
   getRequestDate,
+  isImageFile,
   listBrands,
   listRequests,
   objectives,
@@ -32,10 +33,10 @@ export default function RequestsPage(){
 
   useEffect(()=>{load()},[]);
 
-  const filtered=useMemo(
-    ()=>items.filter(x=>(client==="all"||x.clientId===client)&&(status==="all"||x.status===status)),
-    [items,client,status]
-  );
+  const filtered = useMemo(()=>items.filter(item=>
+    (client==="all"||item.clientId===client) &&
+    (status==="all"||item.status===status)
+  ),[items,client,status]);
 
   function set(k:keyof ContentRequest,v:any){
     if(editing)setEditing({...editing,[k]:v});
@@ -45,9 +46,9 @@ export default function RequestsPage(){
     if(!editing||!files)return;
     setUploading(true);
     try{
-      const uploaded=await uploadReferenceFiles(files,"content-request-references");
+      const uploaded = await uploadReferenceFiles(files);
       setEditing({...editing,referenceFiles:[...(editing.referenceFiles||[]),...uploaded]});
-    }finally{
+    } finally {
       setUploading(false);
     }
   }
@@ -72,8 +73,8 @@ export default function RequestsPage(){
     <section className="hero">
       <div>
         <p className="eyebrow">Solicitudes</p>
-        <h1>Briefs de contenido</h1>
-        <p>Cliente, objetivo, idea creativa, referencias, archivos, Copy In y fecha de publicación.</p>
+        <h1>Solicitudes publicadas</h1>
+        <p>Estas piezas vienen de lotes aprobados desde el Planeador IA.</p>
       </div>
     </section>
 
@@ -84,7 +85,7 @@ export default function RequestsPage(){
         ["Clientes",String(brands.length)],
         ["Draft",String(items.filter(x=>x.status==="draft").length)],
         ["Archivos",String(items.reduce((a,x)=>a+(x.referenceFiles?.length||0),0))],
-        ["Vista","MVP8.2"]
+        ["Vista","Firestore"]
       ].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
@@ -105,106 +106,75 @@ export default function RequestsPage(){
         <h3>Solicitudes</h3>
         <div className="table-wrap">
           <table className="table">
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Lote</th>
-                <th>Fecha</th>
-                <th>Tipo</th>
-                <th>Objetivo</th>
-                <th>Idea</th>
-                <th>Refs</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(x=><tr key={x.id}>
-                <td><strong>{x.clientName}</strong></td>
-                <td><span className="mini">{x.batchName||"Individual"}</span></td>
-                <td>{getRequestDate(x)||"Sin fecha"}</td>
-                <td>{x.contentType}</td>
-                <td>{x.objective}</td>
-                <td><strong>{x.creativeIdea}</strong><br/><span className="mini">{x.copyIn}</span></td>
-                <td>{x.referenceFiles?.length||0} archivos</td>
-                <td><button className="btn" onClick={()=>setEditing(x)}>Editar</button></td>
-              </tr>)}
-            </tbody>
+            <thead><tr><th>Cliente</th><th>Lote</th><th>Fecha</th><th>Tipo</th><th>Objetivo</th><th>Idea</th><th>Refs</th><th></th></tr></thead>
+            <tbody>{filtered.map(item=><tr key={item.id}>
+              <td><strong>{item.clientName}</strong></td>
+              <td><span className="mini">{item.batchName||"Individual"}</span></td>
+              <td>{getRequestDate(item)||"Sin fecha"}</td>
+              <td>{item.contentType}</td>
+              <td>{item.objective}</td>
+              <td><strong>{item.creativeIdea}</strong><br/><span className="mini">{item.copyIn}</span></td>
+              <td>{item.referenceFiles?.length||0} archivos</td>
+              <td><button className="btn" onClick={()=>setEditing(item)}>Editar</button></td>
+            </tr>)}</tbody>
           </table>
         </div>
       </div>
 
-      <aside className="card drawer">
-        <h3>{editing?"Editar brief":"Calendario"}</h3>
-        {editing?
-          <div>
-            <div className="form-grid">
-              <div className="field"><label>Cliente</label><input value={editing.clientName} disabled /></div>
-              <div className="field"><label>Fecha de publicación</label><input type="date" value={getRequestDate(editing)} onChange={e=>set("publishDate",e.target.value)} /></div>
-              <div className="field"><label>Tipo</label><select value={editing.contentType} onChange={e=>set("contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div>
-              <div className="field"><label>Objetivo</label><select value={editing.objective} onChange={e=>set("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
-              <div className="field"><label>Estado</label><select value={editing.status} onChange={e=>set("status",e.target.value)}>{requestStates.map(x=><option key={x}>{x}</option>)}</select></div>
-              <div className="field full"><label>Idea creativa</label><textarea value={editing.creativeIdea} onChange={e=>set("creativeIdea",e.target.value)}/></div>
-              <div className="field full"><label>Links de referencia</label><textarea value={editing.referenceLinks} onChange={e=>set("referenceLinks",e.target.value)}/></div>
-              <div className="field full">
-                <label>Subir archivos</label>
-                <input type="file" multiple onChange={e=>upload(e.target.files)}/>
-                <span className="mini">{uploading?"Subiendo...":""}</span>
-                <FileList files={editing.referenceFiles||[]} onPreview={setPreview}/>
-              </div>
-              <div className="field full"><label>Copy In</label><textarea value={editing.copyIn} onChange={e=>set("copyIn",e.target.value)}/></div>
-              <div className="field full"><label>Mensaje clave</label><textarea value={editing.keyMessage||""} onChange={e=>set("keyMessage",e.target.value)}/></div>
-              <div className="field"><label>CTA</label><input value={editing.cta||""} onChange={e=>set("cta",e.target.value)}/></div>
-            </div>
-            <div style={{display:"flex",gap:12,marginTop:12}}>
-              <button className="btn blue" onClick={saveEdit}>Guardar cambios</button>
-              <button className="btn" onClick={()=>setEditing(null)}>Cerrar</button>
-              <button className="btn red" onClick={()=>remove(editing.id)}>Eliminar</button>
-            </div>
+      <aside className="card">
+        <h3>{editing?"Editar solicitud":"Calendario"}</h3>
+        {editing ? <div>
+          <div className="form-grid">
+            <div className="field"><label>Cliente</label><input value={editing.clientName} disabled /></div>
+            <div className="field"><label>Fecha publicación</label><input type="date" value={editing.publishDate} onChange={e=>set("publishDate",e.target.value)} /></div>
+            <div className="field"><label>Tipo</label><select value={editing.contentType} onChange={e=>set("contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div>
+            <div className="field"><label>Objetivo</label><select value={editing.objective} onChange={e=>set("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
+            <div className="field"><label>Estado</label><select value={editing.status} onChange={e=>set("status",e.target.value)}>{requestStates.map(x=><option key={x}>{x}</option>)}</select></div>
+            <div className="field full"><label>Idea creativa</label><textarea value={editing.creativeIdea} onChange={e=>set("creativeIdea",e.target.value)} /></div>
+            <div className="field full"><label>Links referencia</label><textarea value={editing.referenceLinks} onChange={e=>set("referenceLinks",e.target.value)} /></div>
+            <div className="field full"><label>Archivos</label><input type="file" multiple onChange={e=>upload(e.target.files)} /><span className="mini">{uploading?"Subiendo...":""}</span><FileList files={editing.referenceFiles||[]} onPreview={setPreview}/></div>
+            <div className="field full"><label>Copy In</label><textarea value={editing.copyIn} onChange={e=>set("copyIn",e.target.value)} /></div>
+            <div className="field full"><label>Mensaje clave</label><textarea value={editing.keyMessage} onChange={e=>set("keyMessage",e.target.value)} /></div>
+            <div className="field"><label>CTA</label><input value={editing.cta} onChange={e=>set("cta",e.target.value)} /></div>
           </div>
-          :
-          <CalendarPanel items={filtered}/>
-        }
+          <div style={{display:"flex",gap:12,marginTop:12}}>
+            <button className="btn blue" onClick={saveEdit}>Guardar cambios</button>
+            <button className="btn" onClick={()=>setEditing(null)}>Cerrar</button>
+            <button className="btn red" onClick={()=>remove(editing.id)}>Eliminar</button>
+          </div>
+        </div> : <CalendarPanel items={filtered}/>}
       </aside>
     </section>
 
     {preview && <PreviewModal file={preview} onClose={()=>setPreview(null)}/>}
-  </AppShell>
+  </AppShell>;
 }
 
-function isImageFile(file:ReferenceFile){
-  const type=file.type||"";
-  const name=(file.name||"").toLowerCase();
-  return type.startsWith("image/")||/\.(jpg|jpeg|png|webp|gif|avif|heic|heif)$/i.test(name);
-}
-
-function FileList({files,onPreview}:{files:ReferenceFile[];onPreview:(f:ReferenceFile)=>void}){
+function FileList({files,onPreview}:{files:ReferenceFile[];onPreview:(file:ReferenceFile)=>void}){
   return <div>
-    <div className="file-list">
-      {(files||[]).map((f,i)=>
-        <div className="file-card" key={i}>
-          <div className="file-card-name">{f.name}</div>
-          <div className="file-card-actions">
-            <button type="button" className="btn" onClick={()=>onPreview(f)}>Ver preview</button>
-            <a className="btn" href={f.url} target="_blank">Abrir archivo</a>
-          </div>
-        </div>
-      )}
-    </div>
     <div className="image-grid">
-      {(files||[]).map((f,i)=>isImageFile(f)?
-        <button type="button" className="image-thumb" onClick={()=>onPreview(f)} key={i}>
-          <img src={f.url} alt={f.name}/>
+      {(files||[]).map((file,index)=>isImageFile(file)?
+        <button type="button" className="image-thumb" onClick={()=>onPreview(file)} key={index}>
+          <img src={file.url} alt={file.name}/>
         </button>
         :
-        <div className="image-thumb" key={i}><span>{f.name}</span></div>
+        <div className="image-thumb" key={index}><span>{file.name}</span></div>
       )}
     </div>
-  </div>
+    <div className="file-list">
+      {(files||[]).map((file,index)=><div className="file-card" key={index}>
+        <div className="file-card-name">{file.name}</div>
+        <div className="file-card-actions">
+          <button type="button" className="btn" onClick={()=>onPreview(file)}>Ver preview</button>
+          <a className="btn" href={file.url} target="_blank">Abrir archivo</a>
+        </div>
+      </div>)}
+    </div>
+  </div>;
 }
 
 function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
-  const isImg=isImageFile(file);
-
+  const image = isImageFile(file);
   return <div className="preview-modal" onClick={onClose}>
     <div className="preview-box" onClick={e=>e.stopPropagation()}>
       <div className="preview-actions">
@@ -214,32 +184,24 @@ function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
           <button className="btn red" onClick={onClose}>Cerrar</button>
         </div>
       </div>
-      {isImg
-        ? <img src={file.url} alt={file.name}/>
-        : <p>Este archivo no es imagen o el navegador no puede previsualizarlo. Usa “Abrir” para verlo.</p>
-      }
+      {image ? <img src={file.url} alt={file.name}/> : <p>Este archivo no es imagen o el navegador no puede previsualizarlo. Usa “Abrir” para verlo.</p>}
     </div>
-  </div>
+  </div>;
 }
 
 function CalendarPanel({items}:{items:ContentRequest[]}){
-  const groups:Record<string,string[]>={};
+  const groups:Record<string,string[]> = {};
   for(const item of items){
-    const raw=getRequestDate(item);
+    const raw = getRequestDate(item);
     if(!raw)continue;
-    const d=new Date(raw+"T00:00:00");
-    if(Number.isNaN(d.getTime()))continue;
-    const key=d.toLocaleDateString("es-MX",{month:"long",year:"numeric"});
-    const day=String(d.getDate());
-    groups[key]=groups[key]||[];
-    groups[key].push(day);
+    const date = new Date(raw+"T00:00:00");
+    if(Number.isNaN(date.getTime()))continue;
+    const month = date.toLocaleDateString("es-MX",{month:"long",year:"numeric"});
+    const day = String(date.getDate());
+    groups[month] = groups[month] || [];
+    groups[month].push(day);
   }
-  const entries=Object.entries(groups);
+  const entries = Object.entries(groups);
   if(!entries.length)return <p className="mini">No hay publicaciones con fecha en este filtro.</p>;
-  return <div className="calendar-panel">
-    {entries.map(([month,days])=><div className="month-card" key={month}>
-      <div className="month-title">{month}</div>
-      <div className="days">{Array.from(new Set(days)).sort((a,b)=>Number(a)-Number(b)).map(day=><span className="day-dot" key={day}>{day}</span>)}</div>
-    </div>)}
-  </div>;
+  return <div className="calendar-panel">{entries.map(([month,days])=><div className="month-card" key={month}><div className="month-title">{month}</div><div className="days">{Array.from(new Set(days)).sort((a,b)=>Number(a)-Number(b)).map(day=><span className="day-dot" key={day}>{day}</span>)}</div></div>)}</div>;
 }

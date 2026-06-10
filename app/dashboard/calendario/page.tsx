@@ -1,2 +1,7 @@
 import AppShell from "@/components/AppShell";
-export default function Page(){return <AppShell active="Calendario"><section className="hero"><div><p className="eyebrow">BUST Content OS</p><h1>Calendario</h1><p>Vista mensual y semanal de publicaciones por cliente.</p></div></section><section className="card" style={{marginTop:24}}><h3>Módulo en construcción</h3><p>Esta pantalla queda lista para conectar datos reales en la siguiente fase.</p></section></AppShell>}
+export default function Page(){
+  return <AppShell active="Calendario">
+    <section className="hero"><div><p className="eyebrow">BUST Content OS</p><h1>Calendario</h1><p>Vista mensual y semanal de publicaciones por cliente.</p></div></section>
+    <section className="card" style={{marginTop:24}}><h3>Módulo en construcción</h3><p>Esta pantalla queda lista para conectar datos reales en la siguiente fase.</p></section>
+  </AppShell>;
+}
