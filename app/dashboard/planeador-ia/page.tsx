@@ -265,53 +265,12 @@ function RequestForm({req,onChange,onUpload,onPreview}:{req:ContentRequest;onCha
   return <div className="form-grid"><div className="field"><label>Tipo</label><select value={req.contentType} onChange={e=>onChange("contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div><div className="field"><label>Objetivo</label><select value={req.objective} onChange={e=>onChange("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div><div className="field full"><label>Idea creativa</label><textarea value={req.creativeIdea} onChange={e=>onChange("creativeIdea",e.target.value)} /></div><div className="field full"><label>Links de referencia</label><textarea value={req.referenceLinks} onChange={e=>onChange("referenceLinks",e.target.value)} /></div><div className="field full"><label>Subir imágenes / archivos</label><input type="file" multiple onChange={e=>onUpload(e.target.files)} /><FileList files={req.referenceFiles} onPreview={onPreview}/></div><div className="field full"><label>Copy In</label><textarea value={req.copyIn} onChange={e=>onChange("copyIn",e.target.value)} /></div><div className="field"><label>Fecha de publicación</label><input type="date" value={req.publishDate} onChange={e=>onChange("publishDate",e.target.value)} /></div><div className="field"><label>CTA</label><input value={req.cta||""} onChange={e=>onChange("cta",e.target.value)} /></div></div>
 }
 
-function isImageFile(file: ReferenceFile){
-  const type = file.type || "";
-  const name = (file.name || "").toLowerCase();
-  return type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|avif|heic|heif)$/i.test(name);
-}
-
 function FileList({files,onPreview}:{files:ReferenceFile[];onPreview:(f:ReferenceFile)=>void}){
-  return <div>
-    <div className="image-grid">
-      {(files||[]).map((f,i)=> isImageFile(f) ? (
-        <button type="button" className="image-thumb" onClick={()=>onPreview(f)} key={i}>
-          <img src={f.url} alt={f.name}/>
-        </button>
-      ) : (
-        <div className="image-thumb" key={i}><span>{f.name}</span></div>
-      ))}
-    </div>
-    <div className="file-list">
-      {(files||[]).map((f,i)=>
-        <div className="file-card" key={i}>
-          <div className="file-card-name">{f.name}</div>
-          <div className="file-card-actions">
-            <button type="button" className="btn" onClick={()=>onPreview(f)}>Ver preview</button>
-            <a className="btn" href={f.url} target="_blank">Abrir archivo</a>
-          </div>
-        </div>
-      )}
-    </div>
-  </div>
+  return <div><div className="file-list">{(files||[]).map((f,i)=><a className="file-link" href={f.url} target="_blank" key={i}>{f.name}</a>)}</div><div className="image-grid">{(files||[]).filter(f=>f.type?.startsWith("image/")).map((f,i)=><button type="button" className="image-thumb" onClick={()=>onPreview(f)} key={i}><img src={f.url} alt={f.name}/></button>)}</div></div>
 }
 
 function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
-  const type = file.type || "";
-  const name = (file.name || "").toLowerCase();
-  const isImg = type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|avif|heic|heif)$/i.test(name);
-  return <div className="preview-modal" onClick={onClose}>
-    <div className="preview-box" onClick={e=>e.stopPropagation()}>
-      <div className="preview-actions">
-        <strong>{file.name}</strong>
-        <div style={{display:"flex",gap:8}}>
-          <a className="btn" href={file.url} target="_blank">Abrir</a>
-          <button className="btn red" onClick={onClose}>Cerrar</button>
-        </div>
-      </div>
-      {isImg ? <img src={file.url} alt={file.name}/> : <p>Este archivo no es imagen o el navegador no puede previsualizarlo. Usa “Abrir” para verlo.</p>}
-    </div>
-  </div>
+  return <div className="preview-modal" onClick={onClose}><div className="preview-box" onClick={e=>e.stopPropagation()}><div className="preview-actions"><strong>{file.name}</strong><div style={{display:"flex",gap:8}}><a className="btn" href={file.url} target="_blank">Abrir</a><button className="btn red" onClick={onClose}>Cerrar</button></div></div>{file.type?.startsWith("image/")?<img src={file.url} alt={file.name}/>:<p>Este archivo no es imagen. Usa “Abrir” para verlo.</p>}</div></div>
 }
 
 function CalendarPanel({items}:{items:ContentRequest[]}){
