@@ -1,8 +1,2 @@
-export default function AprobacionesPage() {
-  return (
-    <main>
-      <h1>Aprobaciones</h1>
-      <p>Revision interna, KAM y cliente.</p>
-    </main>
-  );
-}
+import AppShell from "@/components/AppShell";
+export default function Page(){return <AppShell active="Aprobaciones"><section className="hero"><div><p className="eyebrow">BUST Content OS</p><h1>Aprobaciones</h1><p>Flujo de revisión Content Sr, KAM y cliente.</p></div></section><section className="card" style={{marginTop:24}}><h3>Módulo en construcción</h3><p>Esta pantalla queda lista para conectar datos reales en la siguiente fase.</p></section></AppShell>}

@@ -1,8 +1,2 @@
-export default function SolicitudesPage() {
-  return (
-    <main>
-      <h1>Solicitudes</h1>
-      <p>Modulo de piezas de contenido.</p>
-    </main>
-  );
-}
+import AppShell from "@/components/AppShell";
+export default function Page(){return <AppShell active="Solicitudes"><section className="hero"><div><p className="eyebrow">BUST Content OS</p><h1>Solicitudes</h1><p>Lista de piezas creadas por Content, estados, responsables y revisiones.</p></div></section><section className="card" style={{marginTop:24}}><h3>Módulo en construcción</h3><p>Esta pantalla queda lista para conectar datos reales en la siguiente fase.</p></section></AppShell>}

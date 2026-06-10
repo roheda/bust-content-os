@@ -1,3 +1,2 @@
-import Link from "next/link";
-
-export default function DashboardPage(){return <main className="page"><section className="card"><p>BUST CONTENT OS</p><h1>Dashboard</h1><p>Base del sistema de contenido.</p><div className="grid"><Link href="/dashboard/planeador-ia">Planeador IA</Link><Link href="/dashboard/clientes">Clientes</Link><Link href="/dashboard/solicitudes">Solicitudes</Link><Link href="/dashboard/producciones">Producciones</Link></div></section></main>}
+import AppShell from "@/components/AppShell";
+export default function Page(){return <AppShell active="Reportes"><section className="hero"><div><p className="eyebrow">BUST Content OS</p><h1>Reportes</h1><p>Métricas de avance, carga, calidad, bloqueos y atrasos.</p></div></section><section className="card" style={{marginTop:24}}><h3>Módulo en construcción</h3><p>Esta pantalla queda lista para conectar datos reales en la siguiente fase.</p></section></AppShell>}
