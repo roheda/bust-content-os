@@ -1,5 +1,1 @@
-import PlannerHeader from '../../../components/content/PlannerHeader';
-
-export default function PlaneadorIAPage() {
-  return <main><PlannerHeader /></main>;
-}
+export default function PlaneadorIAPage(){return <main className="page"><section className="card"><p>BUST CONTENT OS</p><h1>Planeador IA</h1><p>Genera solicitudes de contenido basadas en el paquete contratado.</p></section><section className="card" style={{marginTop:16}}><h2>Restaurante X</h2><p>Paquete: 15 publicaciones</p><p>Creadas: 6 · Faltan: 9 · Producciones: 1</p></section><section className="card" style={{marginTop:16}}><h2>Prompt IA</h2
