@@ -3,8 +3,8 @@ import Link from "next/link";
 const items = [
   ["Dashboard", "/dashboard"],
   ["Clientes", "/dashboard/clientes"],
-  ["Planeador IA", "/dashboard/planeador-ia"],
-  ["Solicitudes", "/dashboard/solicitudes"],
+  ["Creador de Solicitudes", "/dashboard/creador-solicitudes"],
+  ["Asignación", "/dashboard/asignacion"],
   ["Producciones", "/dashboard/producciones"],
   ["Calendario", "/dashboard/calendario"],
   ["Aprobaciones", "/dashboard/aprobaciones"],
@@ -27,8 +27,8 @@ export default function AppShell({
         </nav>
       </div>
       <div className="userbox">
-        <strong>Planner Firestore</strong><br/>
-        Versión limpia
+        <strong>Operación Content</strong><br/>
+        Creador · Asignación · Calendario
       </div>
     </aside>
     <main className="main">{children}</main>

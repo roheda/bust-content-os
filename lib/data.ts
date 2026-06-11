@@ -14,8 +14,24 @@ import { db, storage } from "./firebase";
 
 export const contentTypes = ["Reel", "Carrusel", "Post", "Story", "TikTok", "Foto", "Diseño", "Blog"];
 export const objectives = ["Ventas", "Reservas", "Awareness", "Confianza", "Educativo", "Engagement", "Tráfico", "Comunidad"];
-export const requestStates = ["draft", "validacion_content_sr", "requiere_cambios", "aprobada_content_sr", "edicion", "revision_kam", "programado", "publicado"];
-export const draftStates = ["draft", "ready_to_publish", "published_to_requests"];
+
+export const requestStates = [
+  "lista_asignacion",
+  "pendiente_produccion",
+  "produccion_programada",
+  "material_listo",
+  "asignada",
+  "en_ejecucion",
+  "en_revision",
+  "lista_programar",
+  "programada",
+  "publicada",
+  "bloqueada",
+  "cancelada"
+];
+
+export const areas = ["Diseño", "Audiovisual", "Copy", "Mixto"];
+export const priorities = ["Baja", "Media", "Alta", "Urgente"];
 
 export type ReferenceFile = {
   name: string;
@@ -57,6 +73,21 @@ export type ContentRequest = {
   source: string;
   batchId?: string;
   batchName?: string;
+
+  requiresProduction: boolean;
+  materialAvailable: boolean;
+  materialLinks: string;
+  materialFiles: ReferenceFile[];
+  productionNotes: string;
+  suggestedArea: string;
+
+  assignedArea?: string;
+  assignedTo?: string;
+  priority?: string;
+  dueDate?: string;
+  internalNotes?: string;
+  productionId?: string;
+  productionName?: string;
 };
 
 export type PlannerDraft = {
@@ -88,6 +119,8 @@ export type Production = {
   scheduledDate: string;
   startTime: string;
   endTime: string;
+  producer: string;
+  team: string;
   shotList: string;
   requirements: string;
   notes: string;
@@ -109,8 +142,19 @@ export const emptyRequest: ContentRequest = {
   keyMessage: "",
   cta: "",
   publishDate: "",
-  status: "draft",
-  source: "manual"
+  status: "lista_asignacion",
+  source: "manual",
+  requiresProduction: false,
+  materialAvailable: false,
+  materialLinks: "",
+  materialFiles: [],
+  productionNotes: "",
+  suggestedArea: "Diseño",
+  assignedArea: "",
+  assignedTo: "",
+  priority: "Media",
+  dueDate: "",
+  internalNotes: ""
 };
 
 export function isImageFile(file: ReferenceFile) {
@@ -121,6 +165,33 @@ export function isImageFile(file: ReferenceFile) {
 
 export function getRequestDate(item: Partial<ContentRequest>) {
   return item.publishDate || "";
+}
+
+export function hasMaterial(item: Partial<ContentRequest>) {
+  const files = item.materialFiles?.length || 0;
+  const links = (item.materialLinks || "").trim().length;
+  return Boolean(item.materialAvailable && (files > 0 || links > 0));
+}
+
+export function getOperationalStatus(item: ContentRequest) {
+  if (item.requiresProduction) return item.productionId ? "produccion_programada" : "pendiente_produccion";
+  if (!hasMaterial(item)) return "bloqueada";
+  return item.status || "lista_asignacion";
+}
+
+export function validateCreatorItem(item: ContentRequest) {
+  if (!item.clientId || !item.clientName) return "Falta cliente.";
+  if (!item.contentType) return "Falta tipo de contenido.";
+  if (!item.objective) return "Falta objetivo.";
+  if (!item.creativeIdea.trim()) return "Falta idea creativa.";
+  if (!item.copyIn.trim()) return "Falta Copy In.";
+  if (!item.publishDate) return "Falta fecha de publicación.";
+
+  if (!item.requiresProduction && !hasMaterial(item)) {
+    return "Si no requiere producción, debes marcar material disponible y subir archivo o agregar link de material.";
+  }
+
+  return "";
 }
 
 export async function uploadReferenceFiles(files: FileList | File[], folder = "content-request-references") {
@@ -206,14 +277,17 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
 
   const batchId = batchRef.id;
 
-  await Promise.all(items.map((item, index) => saveRequest({
-    ...item,
-    number: index + 1,
-    total: items.length,
-    batchId,
-    batchName: batch.name,
-    status: "draft"
-  })));
+  await Promise.all(items.map((item, index) => {
+    const status = item.requiresProduction ? "pendiente_produccion" : "lista_asignacion";
+    return saveRequest({
+      ...item,
+      number: index + 1,
+      total: items.length,
+      batchId,
+      batchName: batch.name,
+      status
+    });
+  }));
 
   return batchId;
 }
@@ -247,4 +321,11 @@ export async function listProductions() {
   const q = query(collection(db, "productions"), orderBy("createdAt", "desc"));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Production));
+}
+
+export async function updateProduction(id: string, data: Partial<Production>) {
+  return updateDoc(doc(db, "productions", id), {
+    ...data,
+    updatedAt: serverTimestamp()
+  });
 }

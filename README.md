@@ -1,9 +1,29 @@
-# BUST Content OS — Planeador Firestore v1.1
+# BUST Content OS — Operational v2
 
-## Ajuste de referencias
+## Cambios principales
 
-- La referencia ya no muestra nombre de archivo.
-- Ya no muestra botones “Ver preview” ni “Abrir archivo”.
-- Clic en imagen abre preview.
-- Dentro de cada miniatura solo aparece “Eliminar”.
-- Eliminar quita la referencia del borrador o solicitud editada.
+- Planeador IA ahora es **Creador de Solicitudes**
+- Solicitudes ahora es **Asignación**
+- Nueva lógica de bloqueo:
+  - Si NO requiere producción, debe traer material disponible + link o archivo.
+  - Si requiere producción, puede avanzar como pendiente de producción.
+- Asignación permite:
+  - asignar área
+  - asignar responsable
+  - prioridad
+  - impedir asignar si falta material o producción
+- Producciones permite:
+  - seleccionar solicitudes que requieren producción
+  - crear producción desde modal
+  - ligar solicitudes a producción
+  - calendario básico de producciones
+- Calendario permite:
+  - vista calendario
+  - vista lista
+  - vista por persona
+  - vista producciones
+
+## Firebase
+
+Requiere Firestore y Storage activos.
+Para demo, reglas abiertas temporalmente.
