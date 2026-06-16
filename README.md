@@ -1,66 +1,58 @@
-# BUST Content OS — BUST It Now exacto v1
+# BUST Content OS — BUST It Now real UI v2
 
-Esta versión integra BUST It Now como debe funcionar: no solo un generador, sino el flujo completo.
+Esta versión corrige la integración para parecerse al flujo real de BUST It Now, no una adaptación simplificada.
 
-## Clientes
-Ahora se crean como en BUST It Now e inicializan:
-- `brandBrain`
-- conexión con Assets
-- alta única para toda la plataforma
+## Cambios clave
 
-## Brand Brain
-Ruta: `/dashboard/clientes/[clientId]`
+### Assets del cliente
+- Carga múltiple real.
+- Lista de assets pendientes antes de subir.
+- Metadata individual por archivo:
+  - nombre,
+  - tipo,
+  - categoría,
+  - tags,
+  - notas.
+- Botón para aplicar tipo a todos.
+- Assets destacados.
+- Biblioteca visual por cliente.
 
-Campos:
-- descripción de marca
-- tono
-- colores
-- tipografía
-- estilo visual
-- DO
-- DON'T
-- modelos recomendados
+Ruta:
+`/dashboard/clientes/[clientId]/assets`
 
-## Assets
-Ruta: `/dashboard/clientes/[clientId]/assets`
+Colección:
+`clientAssets`
 
-Colección: `clientAssets`
+### Generador
+Se rehizo con estilo visual tipo BUST It Now:
+- header oscuro,
+- cards redondeadas,
+- historial de briefs recientes arriba,
+- pasos del brief,
+- selector de cliente,
+- Brand Brain leído,
+- bloques oficiales,
+- roles de texto,
+- prioridades,
+- emociones,
+- elementos visuales,
+- modelo,
+- variantes,
+- referencia puntual,
+- logo overlay,
+- tamaño y posición de logo,
+- assets seleccionables,
+- prompt construido,
+- generación de imagen,
+- descargas.
 
-Permite subir y administrar:
-- logo
-- referencia
-- producto
-- elemento gráfico
-- stock aprobado
+### Flujo extra de Content OS
+Desde Tareas se puede enviar una solicitud y abrirla dentro del generador real como brief prellenado.
 
-Cada asset incluye:
-- type
-- category
-- tags
-- notes
-- fileUrl
-- storagePath
-- mimeType
-- isFeatured
-
-## BUST It Now
-Módulo interno con:
-- Generador / Brief
-- Solicitudes desde Tareas
-- Historial
-- Integración
-
-El generador lee:
-- `clients.brandBrain`
-- `clientAssets`
-- assets seleccionados
-- textos oficiales
-- emociones
-- elementos visuales
-- instrucciones
-- logo overlay
-
-## Historial
-Colección: `generationRequests`
-
-Permite reusar/editar briefs.
+## Datos
+Usa las mismas colecciones de Firebase:
+- clients
+- clientAssets
+- generationRequests
+- contentRequests
+- systemFeedback

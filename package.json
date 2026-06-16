@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "1.9.0-bustitnow-exacto",
+  "version": "2.0.0-bustitnow-real-ui",
   "private": true,
   "scripts": {
     "dev": "next dev",
