@@ -1,44 +1,18 @@
-# BUST Content OS — Operational v2.6
+# BUST Content OS — Operational v2.7
 
-## Export visual de producción
+## Corrección de impresión del brief visual
 
-El botón **Exportar brief** en Producciones ahora abre una ficha visual imprimible.
+Se corrigió el comportamiento de impresión para que el brief de producción no se reduzca como una vista tipo post.
 
-Incluye:
+Ahora al imprimir:
 
-- Portada de producción
-- Datos generales:
-  - fecha
-  - horario
-  - locación
-  - responsable
-  - equipo
-  - requerimientos
-- Objetivo general
-- Shotlist general
-- Notas generales
-- Link general de material
-- Ficha por cada solicitud/post:
-  - tipo de contenido
-  - objetivo
-  - fecha de publicación
-  - área
-  - idea creativa
-  - notas de producción
-  - copy in
-  - mensaje
-  - CTA
-  - checklist de tomas
-  - imágenes de referencia
-  - links de referencia
-  - link de material por post
+- se oculta el dashboard completo,
+- se imprime únicamente el brief visual,
+- el modal pasa a tamaño hoja,
+- se usa formato carta,
+- las fichas de cada post evitan cortarse mal,
+- las imágenes y referencias mantienen mejor tamaño.
 
-## Uso
+Uso recomendado:
 
-Dentro de Producciones:
-1. Abrir una producción.
-2. Completar links generales o por post.
-3. Dar clic en **Exportar brief**.
-4. Usar **Imprimir / Guardar PDF**.
-
-Este archivo está pensado para ser funcional el día de producción.
+Producciones → Exportar brief → Imprimir / Guardar PDF tamaño hoja

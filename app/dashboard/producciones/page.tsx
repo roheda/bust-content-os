@@ -152,7 +152,7 @@ export default function ProductionsPage(){
 
     {brief && <div className="modal-backdrop"><div className="modal-card" style={{width:"min(1200px,96vw)"}}>
       <div className="brief-actions">
-        <button className="btn blue" onClick={()=>window.print()}>Imprimir / Guardar PDF</button>
+        <button className="btn blue" onClick={()=>window.print()}>Imprimir / Guardar PDF tamaño hoja</button>
         <button className="btn red" onClick={()=>setBrief(null)}>Cerrar</button>
       </div>
       <ProductionBrief production={brief} requests={requests}/>
