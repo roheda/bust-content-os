@@ -83,6 +83,55 @@ export type ReferenceFile = {
   type: string;
 };
 
+export type BrandBrain = {
+  brandDescription?: string;
+  tone?: string;
+  colors?: string[];
+  typography?: string;
+  visualStyle?: string[];
+  dos?: string[];
+  donts?: string[];
+  recommendedModels?: string[];
+};
+
+export type ClientAsset = {
+  id?: string;
+  clientId: string;
+  clientName?: string;
+  name: string;
+  type: string;
+  category: string;
+  tags: string[];
+  notes: string;
+  fileUrl: string;
+  storagePath: string;
+  mimeType: string;
+  isFeatured: boolean;
+};
+
+export type GenerationRequest = {
+  id?: string;
+  clientId: string;
+  clientName: string;
+  clientIndustry?: string;
+  mainMessage: string;
+  format: string;
+  goal: string;
+  contentType: string;
+  selectedEmotions: string[];
+  selectedVisualElements: string[];
+  specificInstructions: string;
+  textBlocks: any[];
+  selectedAssetIds: string[];
+  selectedAssetsSnapshot: ClientAsset[];
+  brandBrainSnapshot?: BrandBrain;
+  logoOverlay?: any;
+  generatedPrompt?: string;
+  executedModel?: string;
+  generationMode?: string;
+  status: string;
+};
+
 export type Brand = {
   id?: string;
   name: string;
@@ -95,6 +144,7 @@ export type Brand = {
   productions: number;
   month?: string;
   brandNotes?: string;
+  brandBrain?: BrandBrain;
   status?: string;
   accountOwner?: string;
   contactName?: string;
@@ -481,4 +531,43 @@ export async function updateBustItNowJob(id: string, data: Partial<BustItNowJob>
     ...data,
     updatedAt: serverTimestamp()
   });
+}
+
+export async function listClientAssets(clientId?: string) {
+  const snap = await getDocs(collection(db, "clientAssets"));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ClientAsset)).filter((asset) => !clientId || asset.clientId === clientId);
+}
+
+export async function uploadClientAsset(clientId: string, clientName: string, file: File, meta: { name: string; type: string; category: string; tags: string[]; notes: string }) {
+  const safe = file.name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-") || "asset";
+  const storagePath = `clients/${clientId}/${meta.type}/${Date.now()}-${safe}`;
+  const storageRef = ref(storage, storagePath);
+  await uploadBytes(storageRef, file, { contentType: file.type || undefined });
+  const fileUrl = await getDownloadURL(storageRef);
+  return addDoc(collection(db, "clientAssets"), {
+    clientId, clientName, name: meta.name, type: meta.type, category: meta.category,
+    tags: meta.tags, notes: meta.notes, fileUrl, storagePath, mimeType: file.type || "",
+    originalFileName: file.name, isFeatured: false, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+  });
+}
+
+export async function updateClientAsset(id: string, data: Partial<ClientAsset>) {
+  return updateDoc(doc(db, "clientAssets", id), { ...data, updatedAt: serverTimestamp() });
+}
+
+export async function deleteClientAsset(id: string) {
+  return deleteDoc(doc(db, "clientAssets", id));
+}
+
+export async function saveGenerationRequest(item: GenerationRequest) {
+  return addDoc(collection(db, "generationRequests"), { ...item, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+}
+
+export async function updateGenerationRequest(id: string, data: Partial<GenerationRequest>) {
+  return updateDoc(doc(db, "generationRequests", id), { ...data, updatedAt: serverTimestamp() });
+}
+
+export async function listGenerationRequests() {
+  const snap = await getDocs(collection(db, "generationRequests"));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as GenerationRequest));
 }

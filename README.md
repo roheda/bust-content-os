@@ -1,65 +1,66 @@
-# BUST Content OS — BUST It Now real integrado v1
+# BUST Content OS — BUST It Now exacto v1
 
-## Integración real
+Esta versión integra BUST It Now como debe funcionar: no solo un generador, sino el flujo completo.
 
-Se tomó la lógica clave de BUST It Now y se integró dentro de BUST Content OS como módulo interno.
+## Clientes
+Ahora se crean como en BUST It Now e inicializan:
+- `brandBrain`
+- conexión con Assets
+- alta única para toda la plataforma
 
-## Incluye
+## Brand Brain
+Ruta: `/dashboard/clientes/[clientId]`
 
-### API de generación
-Ruta nueva:
+Campos:
+- descripción de marca
+- tono
+- colores
+- tipografía
+- estilo visual
+- DO
+- DON'T
+- modelos recomendados
 
-`/api/generate-image`
+## Assets
+Ruta: `/dashboard/clientes/[clientId]/assets`
 
-Usa Gemini con variable de entorno:
+Colección: `clientAssets`
 
-`GEMINI_API_KEY`
+Permite subir y administrar:
+- logo
+- referencia
+- producto
+- elemento gráfico
+- stock aprobado
 
-### Constructor de prompt
-Archivo nuevo:
+Cada asset incluye:
+- type
+- category
+- tags
+- notes
+- fileUrl
+- storagePath
+- mimeType
+- isFeatured
 
-`lib/build-generation-prompt.ts`
+## BUST It Now
+Módulo interno con:
+- Generador / Brief
+- Solicitudes desde Tareas
+- Historial
+- Integración
 
-Incluye reglas reales de:
-- formato,
-- objetivo,
-- tipo de contenido,
-- textos oficiales dentro de imagen,
-- jerarquía por prioridad,
-- instrucciones exactas,
-- Brand Brain,
-- elementos visuales,
-- tono/emoción,
-- reglas de logo,
-- reglas de seguridad visual.
+El generador lee:
+- `clients.brandBrain`
+- `clientAssets`
+- assets seleccionados
+- textos oficiales
+- emociones
+- elementos visuales
+- instrucciones
+- logo overlay
 
-### Módulo BUST It Now
-Ahora tiene:
-- Bandeja desde Tareas
-- Trabajos
-- Nuevo trabajo
-- Estudio generador
-- Mapa
+## Historial
+Colección: `generationRequests`
 
-### Estudio generador
-Permite:
-- abrir un job,
-- configurar formato,
-- objetivo,
-- tipo,
-- modelo,
-- variantes,
-- textos oficiales,
-- emociones,
-- elementos visuales,
-- instrucciones,
-- construir prompt,
-- generar imagen,
-- descargar imagen generada.
-
-## Base compartida
-Sigue usando:
-- clients
-- contentRequests
-- bustItNowJobs
-- systemFeedback
+Permite reusar/editar briefs.
