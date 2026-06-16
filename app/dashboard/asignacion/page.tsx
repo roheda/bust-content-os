@@ -4,9 +4,11 @@ import AppShell from "@/components/AppShell";
 import {
   Brand,
   ContentRequest,
+  ReferenceFile,
   areas,
   getOperationalStatus,
   hasMaterial,
+  isImageFile,
   listBrands,
   listRequests,
   priorities,
@@ -23,6 +25,7 @@ export default function AssignmentPage(){
   const [status,setStatus]=useState("all");
   const [selected,setSelected]=useState<string[]>([]);
   const [editing,setEditing]=useState<ContentRequest|null>(null);
+  const [preview,setPreview]=useState<ReferenceFile|null>(null);
 
   async function load(){setItems(await listRequests());setBrands(await listBrands())}
   useEffect(()=>{load()},[]);
@@ -109,24 +112,167 @@ export default function AssignmentPage(){
 
       <aside className="card">
         <h3>{editing?"Detalle":"Reglas"}</h3>
-        {editing ? <div>
-          <p><strong>{editing.clientName}</strong></p>
-          <p className="mini">{editing.creativeIdea}</p>
-          <p><span className="pill">{editing.contentType}</span> <span className="pill blue">{editing.suggestedArea}</span></p>
-          <p><strong>Fecha límite lote:</strong> {editing.batchDueDate||editing.dueDate||"Sin fecha"}</p><p><strong>Fecha publicación:</strong> {editing.publishDate||"Sin fecha"}</p><p><strong>Producción:</strong> {editing.requiresProduction?"Sí":"No"}</p>
-          <p><strong>Material:</strong> {hasMaterial(editing)?"Disponible":"No disponible"}</p>
-          <p><strong>Links material:</strong></p>
-          <p className="mini">{editing.materialLinks||"Sin links"}</p>
-          <button className="btn" onClick={()=>setEditing(null)}>Cerrar</button>
-        </div> : <div className="draft-list">
+        {editing ? <RequestDetail item={editing} onClose={()=>setEditing(null)} onPreview={setPreview}/> : <div className="draft-list">
           <div className="draft-item"><strong>No requiere producción</strong><span className="mini">Debe traer material/link desde el Creador. Si no, queda bloqueada.</span></div>
           <div className="draft-item"><strong>Requiere producción</strong><span className="mini">Se agrupa en Producciones y no se asigna a ejecución hasta tener material.</span></div>
           <div className="draft-item"><strong>Asignada</strong><span className="mini">Aparece en Calendario por persona, área y fecha.</span></div>
         </div>}
       </aside>
     </section>
+    {preview && <PreviewModal file={preview} onClose={()=>setPreview(null)}/>}
   </AppShell>
 }
+
+
+function splitLinks(value:string){
+  return (value||"")
+    .split(/\s|,|\n/)
+    .map(x=>x.trim())
+    .filter(x=>x.startsWith("http://")||x.startsWith("https://"));
+}
+
+function RequestDetail({
+  item,
+  onClose,
+  onPreview
+}:{
+  item:ContentRequest;
+  onClose:()=>void;
+  onPreview:(file:ReferenceFile)=>void;
+}){
+  const referenceLinks = splitLinks(item.referenceLinks);
+  const materialLinks = splitLinks(item.materialLinks);
+  const op = getOperationalStatus(item);
+
+  return <div className="assignment-detail-scroll">
+    <div className="detail-hero">
+      <div>
+        <p className="eyebrow">Ficha de solicitud</p>
+        <h2 className="detail-title">{item.clientName}</h2>
+        <p className="mini">{item.batchName || "Sin lote"}</p>
+      </div>
+
+      <div className="detail-meta">
+        <StatusPill status={op}/>
+        <span className="pill">{item.contentType}</span>
+        <span className="pill blue">{item.suggestedArea || item.assignedArea || "Sin área"}</span>
+        <span className={item.requiresProduction ? "pill orange" : "pill green"}>
+          {item.requiresProduction ? "Requiere producción" : "No requiere producción"}
+        </span>
+        <span className={hasMaterial(item) ? "pill green" : "pill red"}>
+          {hasMaterial(item) ? "Material disponible" : "Sin material"}
+        </span>
+      </div>
+
+      <div className="form-grid">
+        <div className="field">
+          <label>Fecha límite lote</label>
+          <input value={item.batchDueDate || item.dueDate || "Sin fecha"} disabled/>
+        </div>
+        <div className="field">
+          <label>Fecha publicación</label>
+          <input value={item.publishDate || "Sin fecha"} disabled/>
+        </div>
+        <div className="field">
+          <label>Responsable</label>
+          <input value={item.assignedTo || "Sin asignar"} disabled/>
+        </div>
+        <div className="field">
+          <label>Prioridad</label>
+          <input value={item.priority || "Media"} disabled/>
+        </div>
+      </div>
+    </div>
+
+    <div className="detail-section">
+      <h4>Idea creativa</h4>
+      <div className="detail-copy">{item.creativeIdea || "Sin idea creativa"}</div>
+    </div>
+
+    <div className="detail-section">
+      <h4>Copy In</h4>
+      <div className="detail-copy">{item.copyIn || "Sin Copy In"}</div>
+    </div>
+
+    <div className="detail-section">
+      <h4>Mensaje clave / CTA</h4>
+      <div className="detail-copy">
+        <strong>Mensaje:</strong> {item.keyMessage || "Sin mensaje"}{"\n"}
+        <strong>CTA:</strong> {item.cta || "Sin CTA"}
+      </div>
+    </div>
+
+    <div className="detail-section">
+      <h4>Inspiración / referencias visuales</h4>
+      <FilePreviewGrid files={item.referenceFiles || []} onPreview={onPreview}/>
+      <LinkList links={referenceLinks}/>
+      {!referenceLinks.length && !(item.referenceFiles||[]).length && <p className="mini">Sin referencias.</p>}
+    </div>
+
+    <div className="detail-section">
+      <h4>Material disponible</h4>
+      <FilePreviewGrid files={item.materialFiles || []} onPreview={onPreview}/>
+      <LinkList links={materialLinks}/>
+      {!materialLinks.length && !(item.materialFiles||[]).length && <p className="mini">Sin material disponible.</p>}
+    </div>
+
+    {item.requiresProduction && <div className="detail-section">
+      <h4>Notas para producción</h4>
+      <div className="detail-copy">{item.productionNotes || "Sin notas de producción"}</div>
+    </div>}
+
+    {item.internalNotes && <div className="detail-section">
+      <h4>Notas internas</h4>
+      <div className="detail-copy">{item.internalNotes}</div>
+    </div>}
+
+    <div style={{display:"flex",gap:12,marginTop:18}}>
+      <button className="btn" onClick={onClose}>Cerrar detalle</button>
+    </div>
+  </div>;
+}
+
+function FilePreviewGrid({files,onPreview}:{files:ReferenceFile[];onPreview:(file:ReferenceFile)=>void}){
+  if(!files?.length)return null;
+  return <div className="preview-grid">
+    {files.map((file,index)=>
+      <button type="button" className="preview-thumb" key={index} onClick={()=>onPreview(file)}>
+        {isImageFile(file)
+          ? <img src={file.url} alt="Referencia"/>
+          : <span>Archivo</span>
+        }
+      </button>
+    )}
+  </div>;
+}
+
+function LinkList({links}:{links:string[]}){
+  if(!links.length)return null;
+  return <div className="link-list" style={{marginTop:10}}>
+    {links.map((link,index)=>
+      <a className="link-card" href={link} target="_blank" key={index}>
+        <span>{link}</span>
+        <small>Abrir →</small>
+      </a>
+    )}
+  </div>;
+}
+
+function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
+  return <div className="preview-modal" onClick={onClose}>
+    <div className="preview-box" onClick={e=>e.stopPropagation()}>
+      <div className="preview-actions">
+        <strong>{file.name}</strong>
+        <button className="btn red" onClick={onClose}>Cerrar</button>
+      </div>
+      {isImageFile(file)
+        ? <img src={file.url} alt={file.name}/>
+        : <p>Archivo no previsualizable. Ábrelo desde su link original.</p>
+      }
+    </div>
+  </div>;
+}
+
 
 function StatusPill({status}:{status:string}){
   if(status==="bloqueada")return <span className="pill red">Bloqueada</span>;

@@ -1,29 +1,17 @@
-# BUST Content OS — Operational v2.1
+# BUST Content OS — Operational v2.2
 
-## Fechas
+## Asignación visual
 
-Ahora se separan dos fechas:
+Mejora el panel de detalle en Asignación:
 
-1. **Fecha límite del lote** (`batchDueDate`)
-   - Se define en Creador de Solicitudes.
-   - Es la fecha operativa de entrega del paquete completo.
-   - Asignación y Calendario usan esta fecha como fecha principal de trabajo.
-
-2. **Fecha de publicación** (`publishDate`)
-   - Se define individualmente por cada pieza.
-   - Sirve para construir el calendario editorial.
-
-## Flujo
-
-Creador de Solicitudes:
-- Nombre del lote
-- Fecha límite del lote
-- Fecha de publicación por pieza
-
-Asignación:
-- Muestra fecha límite del lote
-- Permite ajustar fecha límite interna por persona si hace falta
-
-Calendario:
-- Ordena por fecha operativa
-- Conserva visible la fecha de publicación individual
+- Ficha visual completa de la solicitud
+- Preview de imágenes de referencia
+- Preview de material disponible
+- Links clickeables
+- Copy In visible
+- Idea creativa visible
+- Fechas visibles:
+  - fecha límite del lote
+  - fecha de publicación
+- Estado operativo
+- Producción/material
