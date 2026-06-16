@@ -96,6 +96,10 @@ export type ContentRequest = {
   priority?: string;
   dueDate?: string;
   internalNotes?: string;
+  finalPostLink?: string;
+  approvalStatus?: string;
+  approvalRejectionReason?: string;
+  approvalNotes?: string;
   rejectionNote?: string;
   rejectedAt?: string;
   comments?: TaskComment[];
@@ -174,6 +178,10 @@ export const emptyRequest: ContentRequest = {
   priority: "Media",
   dueDate: "",
   internalNotes: "",
+  finalPostLink: "",
+  approvalStatus: "",
+  approvalRejectionReason: "",
+  approvalNotes: "",
   comments: [],
 };
 

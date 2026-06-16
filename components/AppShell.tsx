@@ -6,7 +6,7 @@ const items = [
   ["Creador de Solicitudes", "/dashboard/creador-solicitudes"],
   ["Asignación", "/dashboard/asignacion"],
   ["Producciones", "/dashboard/producciones"],
-  ["Calendario", "/dashboard/calendario"],
+  ["Tareas", "/dashboard/tareas"],
   ["Aprobaciones", "/dashboard/aprobaciones"],
   ["Reportes", "/dashboard/reportes"]
 ];
@@ -28,7 +28,7 @@ export default function AppShell({
       </div>
       <div className="userbox">
         <strong>Operación Content</strong><br/>
-        Creador · Asignación · Calendario
+        Creador · Asignación · Tareas
       </div>
     </aside>
     <main className="main">{children}</main>

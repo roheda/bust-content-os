@@ -1,15 +1,47 @@
-# BUST Content OS — Calendar v3.1
+# BUST Content OS — Tareas y Aprobaciones v1
 
-## Fix de deploy
+## Cambios principales
 
-Se corrigió error de sintaxis en `lib/data.ts`:
+### Calendario → Tareas
+La sección ahora se llama **Tareas**.
 
-`comments: []""` → `comments: [],`
+Mantiene:
+- Vista calendario semanal/mensual
+- Vista lista de tareas
+- Vista por persona
 
-Mantiene todos los cambios de Calendar v3:
-- calendario semanal
-- calendario mensual
-- apertura de tareas
-- estados de trabajo
-- comentarios con @menciones
-- panel de dudas
+### Tareas vencidas
+- Las tareas con fecha operativa vencida aparecen en rojo.
+- Se agregó filtro para ver solo vencidas.
+
+### Abrir tarea
+Al abrir una tarea se puede:
+- Ver detalle del post
+- Ver referencias y material
+- Ver el lote completo al que pertenece
+- Comentar dudas con @menciones
+- Cambiar estado de trabajo
+
+### Finalizar tarea
+Para finalizar se debe poner link final de Drive.
+Al finalizar:
+- Estado pasa a `pendiente_aprobacion`
+- Se manda a Aprobaciones
+
+### Aprobaciones
+Nueva lógica:
+- Ver pendientes de aprobación
+- Abrir link final
+- Aprobar
+- No aprobar con motivo:
+  - Errores ortográficos
+  - Copy no alineado
+  - Diseño no alineado a marca
+  - Formato incorrecto
+  - Material incorrecto
+  - Falta información
+  - No cumple objetivo
+  - Baja calidad visual
+  - Otro
+
+Si no se aprueba, regresa a `en_revision`.

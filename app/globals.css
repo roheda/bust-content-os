@@ -386,3 +386,20 @@ textarea{min-height:82px}
 .status-buttons button{border:1px solid var(--line);border-radius:999px;background:#fff;padding:9px 12px;font-weight:900;cursor:pointer}
 .status-buttons button.active{background:#111827;color:#fff;border-color:#111827}
 @media(max-width:1200px){.calendar-workspace{grid-template-columns:1fr}.chat-panel{position:static}.week-calendar{grid-template-columns:1fr}.month-calendar{grid-template-columns:repeat(2,1fr)}}
+
+.task-chip.overdue{border-color:#fecaca;background:#fff1f2}
+.task-chip.overdue strong,.task-chip.overdue .mini-status{color:#b91c1c}
+.task-chip.done{border-color:#bbf7d0;background:#f0fdf4}
+.task-chip.review{border-color:#bfdbfe;background:#eff6ff}
+.view-switch{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.view-switch button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}
+.view-switch button.active{background:#111827;color:#fff;border-color:#111827}
+.list-task-card{border:1px solid var(--line);border-radius:18px;background:#fff;padding:14px;display:grid;gap:8px;margin-bottom:10px}
+.person-task-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.person-column{border:1px solid var(--line);border-radius:20px;background:#fff;padding:14px}
+.lote-context{border:1px solid var(--line);border-radius:18px;background:#f9fafb;padding:12px;display:grid;gap:8px;max-height:280px;overflow:auto}
+.lote-item{border:1px solid var(--line);border-radius:14px;background:#fff;padding:10px}
+.finalize-box{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px;margin-top:10px}
+.approval-card{border:1px solid var(--line);border-radius:20px;background:#fff;padding:16px;display:grid;gap:12px;margin-bottom:12px}
+.reason-box{border:1px solid #fecaca;background:#fff1f2;border-radius:14px;padding:10px;color:#991b1b}
+@media(max-width:1200px){.person-task-grid{grid-template-columns:1fr}}
