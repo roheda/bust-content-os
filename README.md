@@ -1,24 +1,30 @@
-# BUST Content OS — Tareas y Aprobaciones v2.2
+# BUST Content OS — Tareas y Aprobaciones v2.3
 
-## Tareas
+## Copy Out
 
-En el contexto del lote completo, ahora cada post del lote se puede abrir en modo solo lectura.
+Se agregó `copyOut` a cada tarea/post.
 
-Esto permite que una persona vea el contexto completo de la solicitud/lote aunque solo tenga asignada una pieza.
+### Nuevo flujo
+1. Tareas manda la pieza a aprobación con link final de Drive.
+2. Aprobaciones revisa.
+3. Si aprueba, la pieza pasa a **Aprobadas para Copy Out**.
+4. Ahí se captura el Copy Out final.
+5. Al guardar Copy Out, la tarea pasa a **Finalizada**.
+6. El historial de finalizadas incluye Copy Out y lo exporta a CSV.
 
-## Aprobaciones
+## Filtros en Por aprobar
 
-El historial de finalizadas ahora sirve mejor para publicación y control:
+Se agregaron filtros:
+- Cliente
+- Lote
+- Búsqueda por texto
 
-- Se agrupa por cliente y lote.
-- Tiene filtros por cliente y lote.
-- Permite ordenar por fecha de publicación ascendente o descendente.
-- Cada item finalizado tiene checkbox.
-- Puedes seleccionar por grupo.
-- Puedes exportar lo filtrado o seleccionado a CSV compatible con Excel.
+## Historial finalizadas
 
-## Nota futura
+Sigue agrupado por cliente/lote, con:
+- checkboxes
+- selección por grupo
+- orden por fecha de publicación asc/desc
+- exportación Excel/CSV
 
-Cuando se creen usuarios/permisos:
-- Si un post está asignado a otra persona, se podrá visualizar pero no modificar.
-- Si es tu tarea, podrás trabajarla según tu rol.
+El CSV ahora incluye Copy Out.

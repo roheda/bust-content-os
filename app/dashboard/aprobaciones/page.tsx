@@ -18,17 +18,47 @@ const reasons = [
 export default function ApprovalsPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [selected,setSelected]=useState<ContentRequest|null>(null);
+  const [reason,setReason]=useState(reasons[0]);
+  const [notes,setNotes]=useState("");
+
+  const [pendingClientFilter,setPendingClientFilter]=useState("all");
+  const [pendingBatchFilter,setPendingBatchFilter]=useState("all");
+  const [pendingSearch,setPendingSearch]=useState("");
+
+  const [copyOutDrafts,setCopyOutDrafts]=useState<Record<string,string>>({});
+
   const [finalClientFilter,setFinalClientFilter]=useState("all");
   const [finalBatchFilter,setFinalBatchFilter]=useState("all");
   const [finalSort,setFinalSort]=useState<"asc"|"desc">("asc");
   const [finalSelected,setFinalSelected]=useState<string[]>([]);
-  const [reason,setReason]=useState(reasons[0]);
-  const [notes,setNotes]=useState("");
 
   async function load(){setRequests(await listRequests())}
   useEffect(()=>{load()},[]);
 
-  const pending = useMemo(()=>requests.filter(x=>x.status==="pendiente_aprobacion" || x.approvalStatus==="pendiente"),[requests]);
+  const clients = useMemo(()=>{
+    const map = new Map<string,string>();
+    requests.forEach(x=>map.set(x.clientId||"sin-cliente",x.clientName||"Sin cliente"));
+    return Array.from(map.entries()).map(([id,name])=>({id,name}));
+  },[requests]);
+
+  const pendingBatches = useMemo(()=>{
+    const map = new Map<string,string>();
+    requests
+      .filter(x=>x.status==="pendiente_aprobacion" || x.approvalStatus==="pendiente")
+      .filter(x=>pendingClientFilter==="all" || x.clientId===pendingClientFilter)
+      .forEach(x=>map.set(x.batchId||"sin-lote",x.batchName||"Sin lote"));
+    return Array.from(map.entries()).map(([id,name])=>({id,name}));
+  },[requests,pendingClientFilter]);
+
+  const pending = useMemo(()=>requests.filter(x=>{
+    const text = `${x.clientName} ${x.batchName} ${x.contentType} ${x.objective} ${x.creativeIdea} ${x.assignedTo}`.toLowerCase();
+    return (x.status==="pendiente_aprobacion" || x.approvalStatus==="pendiente") &&
+      (pendingClientFilter==="all" || x.clientId===pendingClientFilter) &&
+      (pendingBatchFilter==="all" || (x.batchId||"sin-lote")===pendingBatchFilter) &&
+      (!pendingSearch.trim() || text.includes(pendingSearch.trim().toLowerCase()));
+  }),[requests,pendingClientFilter,pendingBatchFilter,pendingSearch]);
+
+  const approvedForCopyOut = useMemo(()=>requests.filter(x=>x.status==="aprobada_pendiente_copyout" || (x.approvalStatus==="aprobada" && x.status!=="finalizada")), [requests]);
   const rejected = useMemo(()=>requests.filter(x=>x.approvalStatus==="rechazada"),[requests]);
 
   const finalized = useMemo(()=>requests.filter(x=>{
@@ -55,15 +85,9 @@ export default function ApprovalsPage(){
     return Array.from(map.entries()).map(([id,name])=>({id,name}));
   },[requests,finalClientFilter]);
 
-  const groupedFinalized = useMemo(()=>{
-    const groups:Record<string,{clientName:string;batchName:string;items:ContentRequest[]}> = {};
-    finalized.forEach(item=>{
-      const key = `${item.clientName||"Sin cliente"}__${item.batchName||"Sin lote"}`;
-      groups[key] = groups[key] || {clientName:item.clientName||"Sin cliente",batchName:item.batchName||"Sin lote",items:[]};
-      groups[key].items.push(item);
-    });
-    return Object.values(groups);
-  },[finalized]);
+  const groupedPending = useMemo(()=>groupByClientBatch(pending),[pending]);
+  const groupedCopyOut = useMemo(()=>groupByClientBatch(approvedForCopyOut),[approvedForCopyOut]);
+  const groupedFinalized = useMemo(()=>groupByClientBatch(finalized),[finalized]);
 
   async function approve(item:ContentRequest){
     if(!item.id)return;
@@ -71,13 +95,13 @@ export default function ApprovalsPage(){
       id:`${Date.now()}`,
       author:"Sistema",
       target:"Interno",
-      body:"Aprobado. Tarea finalizada.",
+      body:"Aprobado. Pasa a captura de Copy Out.",
       mentions:[],
       createdAt:new Date().toISOString()
     };
     const comments = [...(item.comments||[]), log];
     await updateRequest(item.id,{
-      status:"finalizada",
+      status:"aprobada_pendiente_copyout",
       approvalStatus:"aprobada",
       approvalRejectionReason:"",
       approvalNotes:"",
@@ -85,7 +109,7 @@ export default function ApprovalsPage(){
     });
     await load();
     setSelected(null);
-    alert("Tarea aprobada y finalizada");
+    alert("Tarea aprobada. Pendiente Copy Out.");
   }
 
   async function reject(item:ContentRequest){
@@ -114,6 +138,30 @@ export default function ApprovalsPage(){
     alert("Tarea rechazada y rebotada");
   }
 
+  async function saveCopyOut(item:ContentRequest){
+    if(!item.id)return;
+    const copyOut = (copyOutDrafts[item.id] ?? item.copyOut ?? "").trim();
+    if(!copyOut)return alert("Escribe el Copy Out final.");
+    const log:TaskComment = {
+      id:`${Date.now()}`,
+      author:"Sistema",
+      target:"Interno",
+      body:"Copy Out capturado. Tarea finalizada.",
+      mentions:[],
+      createdAt:new Date().toISOString()
+    };
+    const comments = [...(item.comments||[]), log];
+    await updateRequest(item.id,{
+      copyOut,
+      status:"finalizada",
+      approvalStatus:"aprobada",
+      comments
+    });
+    setCopyOutDrafts({...copyOutDrafts,[item.id]:""});
+    await load();
+    alert("Copy Out guardado y tarea finalizada");
+  }
+
   function toggleFinalized(id:string){
     setFinalSelected(finalSelected.includes(id) ? finalSelected.filter(x=>x!==id) : [...finalSelected,id]);
   }
@@ -127,7 +175,7 @@ export default function ApprovalsPage(){
   function exportFinalized(){
     const rows = (finalSelected.length ? finalized.filter(x=>finalSelected.includes(x.id||"")) : finalized);
     if(!rows.length)return alert("No hay tareas para exportar.");
-    const headers = ["Cliente","Lote","Tipo","Objetivo","Responsable","Fecha publicación","Link final","Estado","Idea creativa"];
+    const headers = ["Cliente","Lote","Tipo","Objetivo","Responsable","Fecha publicación","Link final","Copy Out","Estado","Idea creativa"];
     const csvRows = [headers, ...rows.map(x=>[
       x.clientName||"",
       x.batchName||"Sin lote",
@@ -136,6 +184,7 @@ export default function ApprovalsPage(){
       x.assignedTo||"",
       x.publishDate||"",
       x.finalPostLink||"",
+      x.copyOut||"",
       x.status||"",
       (x.creativeIdea||"").replace(/\n/g," ")
     ])];
@@ -154,21 +203,40 @@ export default function ApprovalsPage(){
       <div>
         <p className="eyebrow">Control de calidad</p>
         <h1>Aprobaciones</h1>
-        <p>Revisa tareas finalizadas. Puedes aprobarlas o regresarlas a revisión con motivo de no aprobación.</p>
+        <p>Revisa piezas, aprueba, captura Copy Out final y conserva historial listo para publicación.</p>
       </div>
     </section>
 
     <section className="grid kpis">
-      {[["Pendientes",String(pending.length)],["Rechazadas",String(rejected.length)],["Total",String(requests.length)],["Aprobadas",String(requests.filter(x=>x.approvalStatus==="aprobada").length)],["Rebotadas",String(requests.filter(x=>x.status==="rebotada").length)],["Finalizadas",String(requests.filter(x=>x.status==="finalizada").length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Por aprobar",String(pending.length)],["Aprobadas sin Copy Out",String(approvedForCopyOut.length)],["Finalizadas",String(finalized.length)],["Rebotadas",String(rejected.length)],["Total",String(requests.length)],["Aprobadas",String(requests.filter(x=>x.approvalStatus==="aprobada").length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
-    <section className="grid two-col">
-      <div>
-        <h3>Pendientes de aprobación</h3>
-        {pending.map(item=><div className="approval-card" key={item.id}>
+    <section className="card">
+      <h3>Por aprobar</h3>
+      <div className="approval-filter-bar">
+        <select value={pendingClientFilter} onChange={e=>{setPendingClientFilter(e.target.value);setPendingBatchFilter("all");}}>
+          <option value="all">Todos los clientes</option>
+          {clients.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+        <select value={pendingBatchFilter} onChange={e=>setPendingBatchFilter(e.target.value)}>
+          <option value="all">Todos los lotes</option>
+          {pendingBatches.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+        <input value={pendingSearch} onChange={e=>setPendingSearch(e.target.value)} placeholder="Buscar por cliente, lote, tarea..."/>
+        <button className="btn" onClick={()=>{setPendingClientFilter("all");setPendingBatchFilter("all");setPendingSearch("");}}>Limpiar</button>
+      </div>
+
+      {groupedPending.map(group=><div className="finalized-group" key={`${group.clientName}-${group.batchName}`}>
+        <div className="finalized-group-title">
+          <div>
+            <h3>{group.clientName}</h3>
+            <p className="mini">{group.batchName} · {group.items.length} pendiente(s)</p>
+          </div>
+        </div>
+        {group.items.map(item=><div className="approval-card" key={item.id}>
           <div style={{display:"flex",justifyContent:"space-between",gap:12}}>
             <div>
-              <strong>{item.clientName} · {item.contentType}</strong>
+              <strong>{item.contentType} · {item.objective}</strong>
               <p className="mini">Responsable: {item.assignedTo||"Sin responsable"} · Publica: {item.publishDate||"Sin fecha"}</p>
               <p className="mini">{item.creativeIdea}</p>
               {item.finalPostLink && <a className="link-card" href={item.finalPostLink} target="_blank"><span>{item.finalPostLink}</span><small>Abrir →</small></a>}
@@ -176,43 +244,68 @@ export default function ApprovalsPage(){
             <button className="btn" onClick={()=>{setSelected(item);setReason(reasons[0]);setNotes("")}}>Revisar</button>
           </div>
         </div>)}
-        {!pending.length && <div className="card"><p>No hay tareas pendientes de aprobación.</p></div>}
+      </div>)}
+      {!pending.length && <p className="mini">No hay tareas pendientes con esos filtros.</p>}
+    </section>
+
+    {selected && <section className="card" style={{marginTop:20}}>
+      <h3>Revisión seleccionada</h3>
+      <p><strong>{selected.clientName} · {selected.contentType}</strong></p>
+      <p className="mini">{selected.creativeIdea}</p>
+      <p><strong>Link final:</strong></p>
+      {selected.finalPostLink ? <a className="link-card" href={selected.finalPostLink} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a> : <p className="mini">Sin link final.</p>}
+
+      <div className="field">
+        <label>Motivo de no aprobación</label>
+        <select value={reason} onChange={e=>setReason(e.target.value)}>{reasons.map(x=><option key={x}>{x}</option>)}</select>
+      </div>
+      <div className="field">
+        <label>Notas</label>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Explica qué debe corregirse."/>
       </div>
 
-      <aside className="card">
-        <h3>{selected ? "Revisión" : "Selecciona una tarea"}</h3>
-        {selected ? <div>
-          <p><strong>{selected.clientName} · {selected.contentType}</strong></p>
-          <p className="mini">{selected.creativeIdea}</p>
-          <p><strong>Link final:</strong></p>
-          {selected.finalPostLink ? <a className="link-card" href={selected.finalPostLink} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a> : <p className="mini">Sin link final.</p>}
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        <button className="btn blue" onClick={()=>approve(selected)}>Aprobar / pasar a Copy Out</button>
+        <button className="btn red" onClick={()=>reject(selected)}>No aprobar / rebotar</button>
+        <button className="btn" onClick={()=>setSelected(null)}>Cerrar</button>
+      </div>
 
+      <div className="detail-section">
+        <h4>Log de movimientos</h4>
+        {((selected.comments||[]).slice().reverse()).map(c=><div className="comment-box" key={c.id}>
+          <strong>{c.author} → {c.target}</strong>
+          <span className="mini">{new Date(c.createdAt).toLocaleString("es-MX")}</span>
+          <p>{c.body}</p>
+        </div>)}
+        {!(selected.comments||[]).length && <p className="mini">Sin movimientos todavía.</p>}
+      </div>
+    </section>}
+
+    <section className="card" style={{marginTop:20}}>
+      <h3>Aprobadas para Copy Out</h3>
+      <p className="mini">Una vez aprobada la pieza, captura el copy final que se usará para publicación. Al guardar Copy Out, la tarea queda finalizada.</p>
+
+      {groupedCopyOut.map(group=><div className="finalized-group" key={`${group.clientName}-${group.batchName}`}>
+        <div className="finalized-group-title">
+          <div>
+            <h3>{group.clientName}</h3>
+            <p className="mini">{group.batchName} · {group.items.length} aprobada(s)</p>
+          </div>
+        </div>
+        {group.items.map(item=><div className="copyout-card" key={item.id}>
+          <strong>{item.contentType} · {item.objective}</strong>
+          <p className="mini">Responsable: {item.assignedTo||"Sin responsable"} · Publica: {item.publishDate||"Sin fecha"}</p>
+          <p className="mini">{item.creativeIdea}</p>
+          {item.finalPostLink && <a className="link-card" href={item.finalPostLink} target="_blank"><span>{item.finalPostLink}</span><small>Abrir →</small></a>}
           <div className="field">
-            <label>Motivo de no aprobación</label>
-            <select value={reason} onChange={e=>setReason(e.target.value)}>{reasons.map(x=><option key={x}>{x}</option>)}</select>
+            <label>Copy Out final</label>
+            <textarea value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Escribe el copy final que se publicará."/>
           </div>
-          <div className="field">
-            <label>Notas</label>
-            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Explica qué debe corregirse."/>
-          </div>
+          <button className="btn blue" onClick={()=>saveCopyOut(item)}>Guardar Copy Out y finalizar</button>
+        </div>)}
+      </div>)}
 
-          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            <button className="btn blue" onClick={()=>approve(selected)}>Aprobar y finalizar</button>
-            <button className="btn red" onClick={()=>reject(selected)}>No aprobar / rebotar</button>
-            <button className="btn" onClick={()=>setSelected(null)}>Cerrar</button>
-          </div>
-
-          <div className="detail-section">
-            <h4>Log de movimientos</h4>
-            {((selected.comments||[]).slice().reverse()).map(c=><div className="comment-box" key={c.id}>
-              <strong>{c.author} → {c.target}</strong>
-              <span className="mini">{new Date(c.createdAt).toLocaleString("es-MX")}</span>
-              <p>{c.body}</p>
-            </div>)}
-            {!(selected.comments||[]).length && <p className="mini">Sin movimientos todavía.</p>}
-          </div>
-        </div> : <p className="mini">Elige una tarea de la lista para aprobarla o rechazarla.</p>}
-      </aside>
+      {!approvedForCopyOut.length && <p className="mini">No hay piezas aprobadas pendientes de Copy Out.</p>}
     </section>
 
     {requests.filter(x=>x.status==="finalizada").length>0 && <section className="card" style={{marginTop:20}}>
@@ -250,7 +343,7 @@ export default function ApprovalsPage(){
         </div>
         {group.items.map(item=><div className="finalized-row" key={item.id}>
           <input type="checkbox" checked={finalSelected.includes(item.id||"")} onChange={()=>toggleFinalized(item.id||"")}/>
-          <div><strong>{item.contentType} · {item.objective}</strong><br/><span className="mini">{item.creativeIdea}</span></div>
+          <div><strong>{item.contentType} · {item.objective}</strong><br/><span className="mini">{item.copyOut || item.creativeIdea}</span></div>
           <span>{item.assignedTo||"Sin responsable"}</span>
           <span>{item.publishDate||"Sin fecha"}</span>
           <span>{item.finalPostLink ? <a href={item.finalPostLink} target="_blank">Abrir link</a> : "Sin link"}</span>
@@ -274,4 +367,14 @@ export default function ApprovalsPage(){
       </table></div>
     </section>}
   </AppShell>
+}
+
+function groupByClientBatch(items:ContentRequest[]){
+  const groups:Record<string,{clientName:string;batchName:string;items:ContentRequest[]}> = {};
+  items.forEach(item=>{
+    const key = `${item.clientName||"Sin cliente"}__${item.batchName||"Sin lote"}`;
+    groups[key] = groups[key] || {clientName:item.clientName||"Sin cliente",batchName:item.batchName||"Sin lote",items:[]};
+    groups[key].items.push(item);
+  });
+  return Object.values(groups);
 }

@@ -75,6 +75,7 @@ export type ContentRequest = {
   referenceLinks: string;
   referenceFiles: ReferenceFile[];
   copyIn: string;
+  copyOut?: string;
   keyMessage: string;
   cta: string;
   publishDate: string;
@@ -161,6 +162,7 @@ export const emptyRequest: ContentRequest = {
   referenceLinks: "",
   referenceFiles: [],
   copyIn: "",
+  copyOut: "",
   keyMessage: "",
   cta: "",
   publishDate: "",

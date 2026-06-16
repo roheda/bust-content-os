@@ -271,7 +271,7 @@ export default function TasksPage(){
                 <strong>Copy:</strong> {selected.copyIn||"Sin copy"}{"\n"}
                 <strong>Mensaje:</strong> {selected.keyMessage||"Sin mensaje"}{"\n"}
                 <strong>CTA:</strong> {selected.cta||"Sin CTA"}{"\n"}
-                <strong>Link final:</strong> {selected.finalPostLink||"Pendiente"}
+                <strong>Link final:</strong> {selected.finalPostLink||"Pendiente"}{"\n"}<strong>Copy Out:</strong> {selected.copyOut||"Pendiente"}
               </div>
             </div>
 
@@ -347,7 +347,7 @@ export default function TasksPage(){
             <strong>Copy:</strong> {contextPost.copyIn||"Sin copy"}{"\n"}
             <strong>Mensaje:</strong> {contextPost.keyMessage||"Sin mensaje"}{"\n"}
             <strong>CTA:</strong> {contextPost.cta||"Sin CTA"}{"\n"}
-            <strong>Link final:</strong> {contextPost.finalPostLink||"Pendiente"}
+            <strong>Link final:</strong> {contextPost.finalPostLink||"Pendiente"}{"\n"}<strong>Copy Out:</strong> {contextPost.copyOut||"Pendiente"}
           </div>
         </div>
         <div className="detail-section">
