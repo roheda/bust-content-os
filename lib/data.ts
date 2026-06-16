@@ -174,7 +174,7 @@ export const emptyRequest: ContentRequest = {
   priority: "Media",
   dueDate: "",
   internalNotes: "",
-  comments: []""
+  comments: [],
 };
 
 export function isImageFile(file: ReferenceFile) {

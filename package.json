@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "1.2.0-calendar",
+  "version": "1.2.1-calendar",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -1,46 +1,15 @@
-# BUST Content OS — Calendar v3
+# BUST Content OS — Calendar v3.1
 
-## Calendario operativo
+## Fix de deploy
 
-Se reemplazó el Calendario por una vista de trabajo real:
+Se corrigió error de sintaxis en `lib/data.ts`:
 
-### Vista semanal
-- Se muestra por defecto.
-- Muestra todos los días de la semana actual.
-- Dentro de cada día aparecen las tareas asignadas a esa fecha operativa.
+`comments: []""` → `comments: [],`
 
-### Vista mensual
-- Muestra el mes actual.
-- Se puede navegar por mes.
-- Cada día muestra sus tareas asignadas.
-
-### Tareas
-Al abrir una tarea:
-- Se ve el detalle del post.
-- Se ve material y referencias.
-- Se puede cambiar estado:
-  - Asignada
-  - En proceso
-  - En revisión
-  - Finalizada
-  - Programada
-  - Publicada
-- Se pueden agregar comentarios y dudas.
-
-### Comentarios / dudas
-- Cada comentario puede dirigirse a:
-  - Content
-  - Key Account
-  - Diseño
-  - Audiovisual
-  - Cliente
-  - Interno
-- Se pueden usar @menciones.
-- El panel lateral muestra dudas y menciones activas.
-
-## Fecha usada
-
-La tarea se coloca en calendario usando:
-1. dueDate
-2. batchDueDate
-3. publishDate
+Mantiene todos los cambios de Calendar v3:
+- calendario semanal
+- calendario mensual
+- apertura de tareas
+- estados de trabajo
+- comentarios con @menciones
+- panel de dudas
