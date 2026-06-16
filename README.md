@@ -1,55 +1,43 @@
-# BUST Content OS — Reportes v1
+# BUST Content OS — Feedback v1
 
-## Nuevo módulo de Reportes
+## Botón flotante de feedback
 
-Se convirtió el módulo de Reportes en un radar directivo.
+Se agregó un botón flotante global:
 
-Incluye:
+**Feedback / Mejoras**
 
-### Filtros
-- Cliente
-- Área
-- Persona
-- Rango de fechas
+Aparece en todo el sistema.
 
-### Indicadores principales
-- Salud de operación
-- Total de tareas
-- Tareas vencidas
-- Finalizadas
-- En aprobación
-- Rebotadas
-- Sin asignar
-- Producciones sin material
+## Funcionalidad
 
-### Embudo operativo
-- Solicitudes
-- Asignadas
-- En revisión
-- En aprobación
-- Copy Out
-- Finalizadas
+Los usuarios pueden registrar:
+- Mejoras
+- Bugs
+- Ideas
+- Urgencias
+- Ajustes UX/UI
+- Problemas de proceso
 
-### Dashboards
-- Carga por cliente
-- Carga por área
-- Estado de tareas
-- Motivos de no aprobación
-- Rendimiento por persona
-- Cuellos de botella
-- Tareas vencidas críticas
+Cada feedback incluye:
+- Título
+- Descripción
+- Tipo
+- Prioridad
+- Módulo
+- Autor
 
-### Exportación
-- Exporta reporte CSV con filtros aplicados.
-- Incluye cliente, lote, área, responsable, estado, fechas, vencimiento, aprobación, link final y Copy Out.
+## Estados
 
-## Uso directivo
+- Pendiente: sin color especial
+- Mejora realizada: color verde
 
-El módulo permite detectar:
-- quién está saturado,
-- qué cliente trae más carga,
-- qué área está más atorada,
-- qué tareas están vencidas,
-- dónde se rechaza más contenido,
-- qué piezas están detenidas en aprobación o Copy Out,
-- qué producciones siguen sin material.
+Se puede:
+- marcar como mejora realizada,
+- regresar a pendiente,
+- filtrar por pendientes, realizadas o todas.
+
+## Colección Firestore
+
+Los feedbacks se guardan en:
+
+`systemFeedback`

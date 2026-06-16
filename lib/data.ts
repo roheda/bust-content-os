@@ -33,6 +33,17 @@ export const requestStates = [
 export const areas = ["Diseño", "Audiovisual", "Copy", "Mixto"];
 export const priorities = ["Baja", "Media", "Alta", "Urgente"];
 
+export type FeedbackItem = {
+  id?: string;
+  title: string;
+  description: string;
+  type: string;
+  priority: string;
+  status: string;
+  author: string;
+  module: string;
+};
+
 export type TaskComment = {
   id: string;
   author: string;
@@ -368,6 +379,28 @@ export async function listProductions() {
 
 export async function updateProduction(id: string, data: Partial<Production>) {
   return updateDoc(doc(db, "productions", id), {
+    ...data,
+    updatedAt: serverTimestamp()
+  });
+}
+
+
+export async function saveFeedback(item: FeedbackItem) {
+  return addDoc(collection(db, "systemFeedback"), {
+    ...item,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function listFeedback() {
+  const q = query(collection(db, "systemFeedback"), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FeedbackItem));
+}
+
+export async function updateFeedback(id: string, data: Partial<FeedbackItem>) {
+  return updateDoc(doc(db, "systemFeedback", id), {
     ...data,
     updatedAt: serverTimestamp()
   });

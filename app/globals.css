@@ -458,3 +458,26 @@ textarea{min-height:82px}
 .health-bad{background:#fee2e2;color:#991b1b}
 @media(max-width:1200px){.metric-grid,.people-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.funnel{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.metric-grid,.people-grid,.funnel{grid-template-columns:1fr}.bar-row{grid-template-columns:1fr}}
+
+.feedback-fab{position:fixed;right:22px;bottom:22px;z-index:1500;border:0;border-radius:999px;background:#111827;color:#fff;padding:14px 18px;font-weight:900;box-shadow:0 14px 35px rgba(17,24,39,.28);cursor:pointer}
+.feedback-fab:hover{transform:translateY(-1px)}
+.feedback-panel{position:fixed;right:22px;bottom:82px;width:min(440px,calc(100vw - 32px));max-height:76vh;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:24px;box-shadow:0 24px 80px rgba(17,24,39,.25);z-index:1500;padding:18px;display:grid;gap:14px}
+.feedback-panel-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.feedback-panel-head h3{margin:0}
+.feedback-close{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 10px;font-weight:900;cursor:pointer}
+.feedback-form{display:grid;gap:10px;border:1px solid var(--line);background:#f9fafb;border-radius:18px;padding:12px}
+.feedback-form input,.feedback-form textarea,.feedback-form select{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;width:100%}
+.feedback-form textarea{min-height:80px}
+.feedback-item{border:1px solid var(--line);border-radius:16px;background:#fff;padding:12px;display:grid;gap:8px}
+.feedback-item.done{border-color:#bbf7d0;background:#f0fdf4}
+.feedback-item h4{margin:0;font-size:14px}
+.feedback-item p{margin:0;color:#475467;font-size:12px;line-height:1.45;white-space:pre-wrap}
+.feedback-meta{display:flex;gap:6px;flex-wrap:wrap}
+.feedback-mini-pill{display:inline-flex;border-radius:999px;background:#f3f4f6;color:#374151;padding:5px 8px;font-size:10px;font-weight:900;text-transform:uppercase}
+.feedback-mini-pill.done{background:#dcfce7;color:#166534}
+.feedback-actions{display:flex;gap:8px;flex-wrap:wrap}
+.feedback-actions button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 10px;font-size:12px;font-weight:900;cursor:pointer}
+.feedback-actions button.done{background:#16a34a;color:#fff;border-color:#16a34a}
+.feedback-tabs{display:flex;gap:8px;flex-wrap:wrap}
+.feedback-tabs button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 10px;font-size:12px;font-weight:900;cursor:pointer}
+.feedback-tabs button.active{background:#111827;color:#fff;border-color:#111827}

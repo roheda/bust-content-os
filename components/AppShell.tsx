@@ -1,4 +1,5 @@
 import Link from "next/link";
+import FeedbackWidget from "./FeedbackWidget";
 
 const items = [
   ["Dashboard", "/dashboard"],
@@ -32,5 +33,6 @@ export default function AppShell({
       </div>
     </aside>
     <main className="main">{children}</main>
+    <FeedbackWidget/>
   </div>;
 }

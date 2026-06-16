@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "1.4.0-reportes",
+  "version": "1.5.0-feedback",
   "private": true,
   "scripts": {
     "dev": "next dev",
