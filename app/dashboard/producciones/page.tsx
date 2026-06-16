@@ -33,6 +33,7 @@ export default function ProductionsPage(){
   const [showModal,setShowModal]=useState(false);
   const [editing,setEditing]=useState<Production|null>(null);
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
+  const [brief,setBrief]=useState<Production|null>(null);
   const [uploading,setUploading]=useState(false);
 
   async function load(){
@@ -146,8 +147,16 @@ export default function ProductionsPage(){
 
     <section className="card" style={{marginTop:24}}>
       <h3>Calendario de producciones</h3>
-      <table className="table"><thead><tr><th>Producción</th><th>Cliente</th><th>Fecha</th><th>Solicitudes</th><th>Estado</th><th>Brief</th></tr></thead><tbody>{productions.map(p=><tr key={p.id}><td><strong>{p.title}</strong></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar links</button> <button className="btn" onClick={()=>window.print()}>Exportar</button></td></tr>)}</tbody></table>
+      <table className="table"><thead><tr><th>Producción</th><th>Cliente</th><th>Fecha</th><th>Solicitudes</th><th>Estado</th><th>Brief</th></tr></thead><tbody>{productions.map(p=><tr key={p.id}><td><strong>{p.title}</strong></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar links</button> <button className="btn" onClick={()=>setBrief(p)}>Exportar brief</button></td></tr>)}</tbody></table>
     </section>
+
+    {brief && <div className="modal-backdrop"><div className="modal-card" style={{width:"min(1200px,96vw)"}}>
+      <div className="brief-actions">
+        <button className="btn blue" onClick={()=>window.print()}>Imprimir / Guardar PDF</button>
+        <button className="btn red" onClick={()=>setBrief(null)}>Cerrar</button>
+      </div>
+      <ProductionBrief production={brief} requests={requests}/>
+    </div></div>}
 
     {editing && <div className="modal-backdrop"><div className="modal-card">
       <h2>Completar material de producción</h2>
@@ -210,6 +219,132 @@ export default function ProductionsPage(){
       <div style={{display:"flex",gap:12,marginTop:16}}><button className="btn blue" onClick={submit}>Crear producción</button><button className="btn red" onClick={()=>setShowModal(false)}>Cerrar</button></div>
     </div></div>}
   </AppShell>
+}
+
+
+
+function splitLinks(value:string){
+  return (value||"")
+    .split(/\s|,|\n/)
+    .map(x=>x.trim())
+    .filter(x=>x.startsWith("http://")||x.startsWith("https://"));
+}
+
+function ProductionBrief({production,requests}:{production:Production;requests:ContentRequest[]}){
+  const included = (production.requestIds||[])
+    .map(id=>requests.find(x=>x.id===id))
+    .filter(Boolean) as ContentRequest[];
+
+  const generalLinks = splitLinks(production.materialLinks||"");
+
+  return <section className="production-brief">
+    <div className="brief-cover">
+      <p className="eyebrow">Brief visual de producción</p>
+      <h1>{production.title}</h1>
+      <p>{production.clientName}</p>
+    </div>
+
+    <div className="brief-meta-grid">
+      <div className="brief-meta"><span>Fecha</span><strong>{production.scheduledDate||"Sin fecha"}</strong></div>
+      <div className="brief-meta"><span>Horario</span><strong>{production.startTime||"--"} - {production.endTime||"--"}</strong></div>
+      <div className="brief-meta"><span>Locación</span><strong>{production.location||"Sin locación"}</strong></div>
+      <div className="brief-meta"><span>Responsable</span><strong>{production.producer||"Sin responsable"}</strong></div>
+    </div>
+
+    <div className="brief-columns">
+      <div className="brief-box">
+        <h4>Objetivo general</h4>
+        {production.objective||"Sin objetivo general"}
+      </div>
+      <div className="brief-box">
+        <h4>Equipo / Requerimientos</h4>
+        <strong>Equipo:</strong> {production.team||"Sin equipo"}{"\n"}
+        <strong>Requerimientos:</strong> {production.requirements||"Sin requerimientos"}
+      </div>
+    </div>
+
+    <div className="brief-box">
+      <h4>Shotlist general</h4>
+      {production.shotList||"Sin shotlist general"}
+    </div>
+
+    <div className="brief-box">
+      <h4>Notas generales</h4>
+      {production.notes||"Sin notas"}
+      {generalLinks.length>0 && <div style={{marginTop:10}}>
+        <strong>Link general de material:</strong>
+        {generalLinks.map((link,index)=><a className="brief-link" href={link} target="_blank" key={index}>{link}</a>)}
+      </div>}
+    </div>
+
+    <div>
+      <h2 style={{margin:"4px 0 14px"}}>Solicitudes / tomas por pieza</h2>
+      <div style={{display:"grid",gap:16}}>
+        {included.map((item,index)=>{
+          const referenceLinks = splitLinks(item.referenceLinks);
+          const materialLink = (production.materialLinksByRequest||{})[item.id||""] || item.materialLinks || production.materialLinks || "";
+          const materialLinks = splitLinks(materialLink);
+          const refs = item.referenceFiles || [];
+          return <article className="brief-request-card" key={item.id||index}>
+            <div className="brief-request-head">
+              <div>
+                <p className="eyebrow">Pieza {index+1}</p>
+                <h3 className="brief-request-title">{item.contentType} · {item.objective}</h3>
+                <p className="mini">Publica: {item.publishDate||"Sin fecha"} · Área: {item.suggestedArea||"Sin área"}</p>
+              </div>
+              <span className="pill">{item.status}</span>
+            </div>
+
+            <div className="brief-columns">
+              <div className="brief-box">
+                <h4>Idea creativa</h4>
+                {item.creativeIdea||"Sin idea creativa"}
+              </div>
+              <div className="brief-box">
+                <h4>Notas para producción</h4>
+                {item.productionNotes||"Sin notas específicas"}
+              </div>
+            </div>
+
+            <div className="brief-columns">
+              <div className="brief-box">
+                <h4>Copy In / Mensaje</h4>
+                <strong>Copy:</strong> {item.copyIn||"Sin copy"}{"\n"}
+                <strong>Mensaje:</strong> {item.keyMessage||"Sin mensaje"}{"\n"}
+                <strong>CTA:</strong> {item.cta||"Sin CTA"}
+              </div>
+              <div className="brief-box">
+                <h4>Checklist de producción</h4>
+                <div className="brief-shotlist">
+                  <div className="brief-check">Capturar toma principal de la idea</div>
+                  <div className="brief-check">Capturar recurso vertical para redes</div>
+                  <div className="brief-check">Capturar detalle / close-up</div>
+                  <div className="brief-check">Capturar toma de contexto / ambiente</div>
+                  <div className="brief-check">Validar referencia antes de cerrar pieza</div>
+                </div>
+              </div>
+            </div>
+
+            {(refs.length>0 || referenceLinks.length>0) && <div>
+              <h4 style={{margin:"0 0 10px",textTransform:"uppercase",color:"var(--muted)",fontSize:12}}>Referencias visuales</h4>
+              {refs.length>0 && <div className="brief-ref-grid">
+                {refs.map((file,i)=><div className="brief-ref" key={i}>
+                  {isImageFile(file)?<img src={file.url} alt="Referencia"/>:<span className="mini">Archivo de referencia</span>}
+                </div>)}
+              </div>}
+              {referenceLinks.map((link,i)=><a className="brief-link" href={link} target="_blank" key={i}>{link}</a>)}
+            </div>}
+
+            {materialLinks.length>0 && <div>
+              <h4 style={{margin:"0 0 10px",textTransform:"uppercase",color:"var(--muted)",fontSize:12}}>Material final / edición</h4>
+              {materialLinks.map((link,i)=><a className="brief-link" href={link} target="_blank" key={i}>{link}</a>)}
+            </div>}
+          </article>
+        })}
+        {!included.length && <p className="mini">Esta producción no tiene solicitudes ligadas.</p>}
+      </div>
+    </div>
+  </section>;
 }
 
 

@@ -1,16 +1,44 @@
-# BUST Content OS — Operational v2.5
+# BUST Content OS — Operational v2.6
 
-## Producciones: material por post
+## Export visual de producción
 
-Se mantiene el link general de producción, pero ahora también se puede capturar un link por cada solicitud/post incluido en la producción.
+El botón **Exportar brief** en Producciones ahora abre una ficha visual imprimible.
 
-### Lógica
+Incluye:
 
-- Link general: carpeta completa de producción.
-- Link por post: material exacto para cada solicitud.
-- Al marcar Material entregado:
-  - cada solicitud recibe su link individual.
-  - si no tiene link individual, toma el link general como respaldo.
-  - si no hay link individual ni general, el sistema bloquea la entrega.
+- Portada de producción
+- Datos generales:
+  - fecha
+  - horario
+  - locación
+  - responsable
+  - equipo
+  - requerimientos
+- Objetivo general
+- Shotlist general
+- Notas generales
+- Link general de material
+- Ficha por cada solicitud/post:
+  - tipo de contenido
+  - objetivo
+  - fecha de publicación
+  - área
+  - idea creativa
+  - notas de producción
+  - copy in
+  - mensaje
+  - CTA
+  - checklist de tomas
+  - imágenes de referencia
+  - links de referencia
+  - link de material por post
 
-Esto evita que una solicitud quede con una carpeta genérica cuando realmente necesita el asset exacto.
+## Uso
+
+Dentro de Producciones:
+1. Abrir una producción.
+2. Completar links generales o por post.
+3. Dar clic en **Exportar brief**.
+4. Usar **Imprimir / Guardar PDF**.
+
+Este archivo está pensado para ser funcional el día de producción.
