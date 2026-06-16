@@ -1,24 +1,24 @@
-# BUST Content OS — Tareas y Aprobaciones v2.1
+# BUST Content OS — Tareas y Aprobaciones v2.2
 
-## Finalizadas visibles
+## Tareas
 
-Las tareas finalizadas ya no desaparecen.
+En el contexto del lote completo, ahora cada post del lote se puede abrir en modo solo lectura.
 
-### En Tareas
-Se agregó filtro de flujo:
+Esto permite que una persona vea el contexto completo de la solicitud/lote aunque solo tenga asignada una pieza.
 
-- Activas
-- En aprobación
-- Rebotadas
-- Finalizadas
-- Todas
+## Aprobaciones
 
-Las finalizadas se pueden abrir para consultar historial, link final y comentarios, pero ya no se pueden editar ni volver a mandar a aprobación desde Tareas.
+El historial de finalizadas ahora sirve mejor para publicación y control:
 
-### En Aprobaciones
-Se agregó historial de finalizadas para consultar trabajos ya cerrados.
+- Se agrupa por cliente y lote.
+- Tiene filtros por cliente y lote.
+- Permite ordenar por fecha de publicación ascendente o descendente.
+- Cada item finalizado tiene checkbox.
+- Puedes seleccionar por grupo.
+- Puedes exportar lo filtrado o seleccionado a CSV compatible con Excel.
 
-## Regla
-- Tareas puede mandar a aprobación.
-- Aprobaciones es el único módulo que puede marcar como finalizada.
-- Una vez finalizada, queda como historial.
+## Nota futura
+
+Cuando se creen usuarios/permisos:
+- Si un post está asignado a otra persona, se podrá visualizar pero no modificar.
+- Si es tu tarea, podrás trabajarla según tu rol.

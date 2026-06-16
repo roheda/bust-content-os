@@ -29,6 +29,7 @@ export default function TasksPage(){
   const [commentTarget,setCommentTarget]=useState("Content");
   const [finalLink,setFinalLink]=useState("");
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
+  const [contextPost,setContextPost]=useState<ContentRequest|null>(null);
 
   async function load(){
     setRequests(await listRequests());
@@ -277,11 +278,11 @@ export default function TasksPage(){
             <div className="detail-section">
               <h4>Contexto del lote completo</h4>
               <div className="lote-context">
-                {batchContext.map(item=><div className="lote-item" key={item.id}>
+                {batchContext.map(item=><button type="button" className="lote-item clickable" key={item.id} onClick={()=>setContextPost(item)}>
                   <strong>{item.number}. {item.contentType} · {item.objective}</strong>
-                  <p className="mini">Publica: {item.publishDate||"Sin fecha"} · Estado: {item.status}</p>
+                  <p className="mini">Publica: {item.publishDate||"Sin fecha"} · Responsable: {item.assignedTo||"Sin asignar"} · Estado: {statusLabel(item.status||"")}</p>
                   <p className="mini">{item.creativeIdea}</p>
-                </div>)}
+                </button>)}
                 {!batchContext.length && <p className="mini">Esta tarea no tiene lote relacionado.</p>}
               </div>
             </div>
@@ -317,6 +318,42 @@ export default function TasksPage(){
               </div>
             </div>
           </aside>
+        </div>
+      </div>
+    </div>}
+
+    {contextPost && <div className="modal-backdrop">
+      <div className="modal-card" style={{width:"min(880px,96vw)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"start"}}>
+          <div>
+            <p className="eyebrow">Post del lote / solo lectura</p>
+            <h2 style={{margin:"0 0 4px"}}>{contextPost.clientName} · {contextPost.contentType}</h2>
+            <p className="mini">Responsable: {contextPost.assignedTo||"Sin asignar"} · Publica: {contextPost.publishDate||"Sin fecha"} · Estado: {statusLabel(contextPost.status||"")}</p>
+          </div>
+          <button className="btn red" onClick={()=>setContextPost(null)}>Cerrar</button>
+        </div>
+
+        <div className="readonly-note">
+          Vista de contexto. Cuando creemos usuarios y permisos, si esta pieza está asignada a otra persona solo podrá visualizarse.
+        </div>
+
+        <div className="detail-section">
+          <h4>Idea creativa</h4>
+          <div className="detail-copy">{contextPost.creativeIdea||"Sin idea"}</div>
+        </div>
+        <div className="detail-section">
+          <h4>Copy / Mensaje / CTA</h4>
+          <div className="detail-copy">
+            <strong>Copy:</strong> {contextPost.copyIn||"Sin copy"}{"\n"}
+            <strong>Mensaje:</strong> {contextPost.keyMessage||"Sin mensaje"}{"\n"}
+            <strong>CTA:</strong> {contextPost.cta||"Sin CTA"}{"\n"}
+            <strong>Link final:</strong> {contextPost.finalPostLink||"Pendiente"}
+          </div>
+        </div>
+        <div className="detail-section">
+          <h4>Material / referencias</h4>
+          <FilePreviewGrid files={[...(contextPost.referenceFiles||[]),...(contextPost.materialFiles||[])]} onPreview={setPreview}/>
+          <LinkList value={`${contextPost.referenceLinks||""}\n${contextPost.materialLinks||""}\n${contextPost.finalPostLink||""}`}/>
         </div>
       </div>
     </div>}
