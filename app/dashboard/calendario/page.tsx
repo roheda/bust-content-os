@@ -22,7 +22,7 @@ export default function CalendarPage(){
   ),[requests,person,area]);
 
   const events = [
-    ...filtered.map(x=>({date:x.dueDate||x.publishDate,title:`${x.clientName} · ${x.contentType}`,type:"Tarea",person:x.assignedTo||"Sin asignar",area:x.assignedArea||x.suggestedArea,status:x.status})),
+    ...filtered.map(x=>({date:x.dueDate||x.batchDueDate||x.publishDate,title:`${x.clientName} · ${x.contentType}`,type:"Entrega operativa",person:x.assignedTo||"Sin asignar",area:x.assignedArea||x.suggestedArea,status:x.status,publishDate:x.publishDate})),
     ...productions.map(x=>({date:x.scheduledDate,title:x.title,type:"Producción",person:x.producer||"Sin responsable",area:"Producción",status:x.status}))
   ].filter(x=>x.date);
 
@@ -59,13 +59,13 @@ function CalendarBoard({events}:{events:any[]}){
 }
 
 function ListView({events}:{events:any[]}){
-  return <section className="card"><h3>Lista</h3><table className="table"><thead><tr><th>Fecha</th><th>Tipo</th><th>Título</th><th>Responsable</th><th>Estado</th></tr></thead><tbody>{events.sort((a,b)=>a.date.localeCompare(b.date)).map((e,i)=><tr key={i}><td>{e.date}</td><td>{e.type}</td><td>{e.title}</td><td>{e.person}</td><td>{e.status}</td></tr>)}</tbody></table></section>
+  return <section className="card"><h3>Lista</h3><table className="table"><thead><tr><th>Fecha operativa</th><th>Tipo</th><th>Título</th><th>Publicación</th><th>Responsable</th><th>Estado</th></tr></thead><tbody>{events.sort((a,b)=>a.date.localeCompare(b.date)).map((e,i)=><tr key={i}><td>{e.date}</td><td>{e.type}</td><td>{e.title}</td><td>{e.publishDate||"-"}</td><td>{e.person}</td><td>{e.status}</td></tr>)}</tbody></table></section>
 }
 
 function PersonView({requests}:{requests:ContentRequest[]}){
   const grouped:Record<string,ContentRequest[]>={};
   requests.forEach(r=>{const key=r.assignedTo||"Sin asignar";grouped[key]=grouped[key]||[];grouped[key].push(r)});
-  return <section className="status-grid">{Object.entries(grouped).map(([person,items])=><div className="status-card" key={person}><div className="status-head"><strong>{person}</strong><span className="pill">{items.length}</span></div>{items.map(x=><div className="draft-item" key={x.id}><strong>{x.clientName} · {x.contentType}</strong><span className="mini">{x.creativeIdea}</span><span className="mini">{x.publishDate}</span></div>)}</div>)}</section>
+  return <section className="status-grid">{Object.entries(grouped).map(([person,items])=><div className="status-card" key={person}><div className="status-head"><strong>{person}</strong><span className="pill">{items.length}</span></div>{items.map(x=><div className="draft-item" key={x.id}><strong>{x.clientName} · {x.contentType}</strong><span className="mini">{x.creativeIdea}</span><span className="mini">Límite: {x.dueDate||x.batchDueDate||"Sin fecha"} · Publica: {x.publishDate||"Sin fecha"}</span></div>)}</div>)}</section>
 }
 
 function ProductionsView({productions}:{productions:Production[]}){

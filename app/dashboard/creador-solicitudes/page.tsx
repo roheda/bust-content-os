@@ -29,6 +29,7 @@ export default function CreatorPage(){
   const [drafts,setDrafts]=useState<PlannerDraft[]>([]);
   const [currentDraftId,setCurrentDraftId]=useState("");
   const [draftName,setDraftName]=useState("");
+  const [batchDueDate,setBatchDueDate]=useState("");
   const [clientId,setClientId]=useState("");
   const [items,setItems]=useState<ContentRequest[]>([]);
   const [manual,setManual]=useState<ContentRequest>(emptyRequest);
@@ -79,6 +80,8 @@ export default function CreatorPage(){
       total: items.length + 1,
       number: items.length + 1,
       status: req.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
+      batchDueDate,
+      dueDate: req.dueDate || batchDueDate,
       source
     };
   }
@@ -91,9 +94,9 @@ export default function CreatorPage(){
     setBusy(true);
     try{
       if(currentDraftId){
-        await updatePlannerDraft(currentDraftId,{name,clientId:client.id,clientName:client.name,status:"draft",items});
+        await updatePlannerDraft(currentDraftId,{name,clientId:client.id,clientName:client.name,status:"draft",batchDueDate,items:items.map(x=>({...x,batchDueDate,dueDate:x.dueDate||batchDueDate}))});
       }else{
-        const ref = await savePlannerDraft({name,clientId:client.id,clientName:client.name,status:"draft",items});
+        const ref = await savePlannerDraft({name,clientId:client.id,clientName:client.name,status:"draft",batchDueDate,items:items.map(x=>({...x,batchDueDate,dueDate:x.dueDate||batchDueDate}))});
         setCurrentDraftId(ref.id);
       }
       setDraftName(name);
@@ -105,13 +108,15 @@ export default function CreatorPage(){
   function openDraft(draft: PlannerDraft){
     setCurrentDraftId(draft.id||"");
     setDraftName(draft.name);
+    setBatchDueDate(draft.batchDueDate || "");
     setClientId(draft.clientId);
-    setItems(draft.items||[]);
+    setItems((draft.items||[]).map(item=>({...item,batchDueDate:draft.batchDueDate||item.batchDueDate||""})));
   }
 
   function newDraft(){
     setCurrentDraftId("");
     setDraftName("");
+    setBatchDueDate("");
     setItems([]);
     setManual(emptyRequest);
   }
@@ -212,11 +217,12 @@ export default function CreatorPage(){
   async function publishBatch(){
     if(!client?.id)return alert("Selecciona cliente");
     const name = draftName || `${client.name} · Lote ${new Date().toLocaleDateString("es-MX")}`;
+    if(!batchDueDate)return alert("Define la fecha límite del lote.");
     if(!validateBatch())return;
     setBusy(true);
     try{
-      await saveRequestBatch({name,clientId:client.id,clientName:client.name,totalRequests:items.length,status:"sent_to_assignment"},items.map((x,i)=>({...x,number:i+1,total:items.length})));
-      if(currentDraftId)await updatePlannerDraft(currentDraftId,{status:"sent_to_assignment",items});
+      await saveRequestBatch({name,clientId:client.id,clientName:client.name,totalRequests:items.length,status:"sent_to_assignment",batchDueDate},items.map((x,i)=>({...x,number:i+1,total:items.length,batchDueDate,dueDate:x.dueDate||batchDueDate})));
+      if(currentDraftId)await updatePlannerDraft(currentDraftId,{status:"sent_to_assignment",batchDueDate,items:items.map(x=>({...x,batchDueDate,dueDate:x.dueDate||batchDueDate}))});
       setItems([]);
       setCurrentDraftId("");
       setDraftName("");
@@ -229,17 +235,21 @@ export default function CreatorPage(){
     <div className="page-title">
       <p className="eyebrow">Content</p>
       <h1>Creador de Solicitudes</h1>
-      <p>Content crea solicitudes completas. Si no requiere producción, el material es obligatorio antes de enviar a Asignación.</p>
+      <p>Content crea lotes completos. La fecha límite del lote es la entrega operativa; cada pieza mantiene su fecha de publicación.</p>
     </div>
 
     <section className="grid kpis">
-      {[["Cliente",client?.name||"Sin cliente"],["En lote",String(items.length)],["Solicitudes existentes",String(existing)],["Borradores",String(drafts.length)],["Estado",busy?"Guardando":"Listo"],["Destino","Asignación"]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Cliente",client?.name||"Sin cliente"],["En lote",String(items.length)],["Solicitudes existentes",String(existing)],["Borradores",String(drafts.length)],["Estado",busy?"Guardando":"Listo"],["Límite lote",batchDueDate||"Sin fecha"]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
     <div className="batch-bar">
       <div className="field" style={{margin:0,flex:1}}>
         <label>Nombre del lote</label>
         <input value={draftName} onChange={e=>setDraftName(e.target.value)} placeholder="Ej. Cliente · Semana 2 julio"/>
+      </div>
+      <div className="field" style={{margin:0}}>
+        <label>Fecha límite del lote</label>
+        <input type="date" value={batchDueDate} onChange={e=>setBatchDueDate(e.target.value)}/>
       </div>
       <button className="btn blue" onClick={saveDraft}>Guardar borrador</button>
       <button className="btn dark" onClick={publishBatch}>Aprobar lote y enviar a Asignación</button>
@@ -319,7 +329,7 @@ export default function CreatorPage(){
           <div className="draft-list">
             {drafts.map(draft=><div className="draft-item" key={draft.id}>
               <strong>{draft.name}</strong>
-              <span className="mini">{draft.clientName} · {draft.items?.length||0} solicitudes · {draft.status}</span>
+              <span className="mini">{draft.clientName} · {draft.items?.length||0} solicitudes · Límite: {draft.batchDueDate||"Sin fecha"} · {draft.status}</span>
               <button className="btn" onClick={()=>openDraft(draft)}>Abrir</button>
             </div>)}
             {!drafts.length && <p className="mini">Aún no hay borradores.</p>}

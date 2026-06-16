@@ -53,6 +53,7 @@ export default function AssignmentPage(){
       assignedArea:item.assignedArea||item.suggestedArea,
       assignedTo:item.assignedTo||team[0],
       priority:item.priority||"Media",
+      dueDate:item.dueDate||item.batchDueDate||item.publishDate,
       status:"asignada"
     });
   }
@@ -84,12 +85,13 @@ export default function AssignmentPage(){
       <div className="card">
         <h3>Solicitudes para asignar</h3>
         <div className="table-wrap"><table className="table">
-          <thead><tr><th></th><th>Solicitud</th><th>Estado</th><th>Área</th><th>Asignación</th><th></th></tr></thead>
+          <thead><tr><th></th><th>Solicitud</th><th>Límite lote</th><th>Estado</th><th>Área</th><th>Asignación</th><th></th></tr></thead>
           <tbody>{filtered.map(item=>{
             const op=getOperationalStatus(item);
             return <tr key={item.id}>
               <td><input type="checkbox" checked={selected.includes(item.id!)} onChange={()=>toggle(item.id!)}/></td>
-              <td><strong>{item.clientName}</strong><br/><span>{item.contentType} · {item.objective}</span><br/><span className="mini">{item.creativeIdea}</span></td>
+              <td><strong>{item.clientName}</strong><br/><span>{item.contentType} · {item.objective}</span><br/><span className="mini">{item.creativeIdea}</span><br/><span className="mini">Publica: {item.publishDate||"Sin fecha"}</span></td>
+              <td><strong>{item.batchDueDate||item.dueDate||"Sin fecha"}</strong><br/><span className="mini">Entrega operativa</span></td>
               <td><StatusPill status={op}/></td>
               <td>{item.suggestedArea}</td>
               <td>
@@ -97,7 +99,7 @@ export default function AssignmentPage(){
                 <br/><br/>
                 <select value={item.assignedTo||""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})}><option value="">Sin asignar</option>{team.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
-                <select value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select>
+                <select value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select><br/><br/><input type="date" value={item.dueDate||item.batchDueDate||""} onChange={e=>item.id&&update(item.id,{dueDate:e.target.value})}/>
               </td>
               <td><button className="btn blue" onClick={()=>assign(item)}>Asignar</button><br/><br/><button className="btn" onClick={()=>setEditing(item)}>Detalle</button></td>
             </tr>
@@ -111,7 +113,7 @@ export default function AssignmentPage(){
           <p><strong>{editing.clientName}</strong></p>
           <p className="mini">{editing.creativeIdea}</p>
           <p><span className="pill">{editing.contentType}</span> <span className="pill blue">{editing.suggestedArea}</span></p>
-          <p><strong>Producción:</strong> {editing.requiresProduction?"Sí":"No"}</p>
+          <p><strong>Fecha límite lote:</strong> {editing.batchDueDate||editing.dueDate||"Sin fecha"}</p><p><strong>Fecha publicación:</strong> {editing.publishDate||"Sin fecha"}</p><p><strong>Producción:</strong> {editing.requiresProduction?"Sí":"No"}</p>
           <p><strong>Material:</strong> {hasMaterial(editing)?"Disponible":"No disponible"}</p>
           <p><strong>Links material:</strong></p>
           <p className="mini">{editing.materialLinks||"Sin links"}</p>

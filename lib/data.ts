@@ -73,6 +73,7 @@ export type ContentRequest = {
   source: string;
   batchId?: string;
   batchName?: string;
+  batchDueDate?: string;
 
   requiresProduction: boolean;
   materialAvailable: boolean;
@@ -96,6 +97,7 @@ export type PlannerDraft = {
   clientId: string;
   clientName: string;
   status: string;
+  batchDueDate: string;
   items: ContentRequest[];
 };
 
@@ -106,6 +108,7 @@ export type RequestBatch = {
   clientName: string;
   totalRequests: number;
   status: string;
+  batchDueDate: string;
 };
 
 export type Production = {
@@ -144,6 +147,7 @@ export const emptyRequest: ContentRequest = {
   publishDate: "",
   status: "lista_asignacion",
   source: "manual",
+  batchDueDate: "",
   requiresProduction: false,
   materialAvailable: false,
   materialLinks: "",
@@ -285,6 +289,8 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
       total: items.length,
       batchId,
       batchName: batch.name,
+      batchDueDate: batch.batchDueDate,
+      dueDate: item.dueDate || batch.batchDueDate,
       status
     });
   }));
