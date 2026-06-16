@@ -1,16 +1,55 @@
-# BUST Content OS — Integración BUST It Now v1.1
+# BUST Content OS — Oficial + BUST It Now módulo v1
 
-## Fix de deploy
+## Naming
 
-Se corrigió error en Creador de Solicitudes:
+BUST Content OS queda como el software oficial.
 
-`loadDrafts` no existía en esta versión del archivo.
+BUST It Now deja de tratarse como software separado y queda como módulo/herramienta dentro del sistema.
 
-Ahora, al eliminar un borrador, recarga la página después de eliminar para actualizar la lista sin romper el build.
+## Menú
 
-Mantiene:
-- botón de eliminar borradores con confirmación,
-- soft delete de solicitudes,
-- clientes compartidos con BUST It Now,
-- módulo Generador,
-- envío desde Tareas al Generador.
+El menú ahora muestra:
+
+- Tareas
+- BUST It Now
+- Aprobaciones
+- Reportes
+
+## Clientes
+
+Se rediseñó la pantalla de Clientes como base compartida entre BUST Content OS y BUST It Now.
+
+El cliente se da de alta una sola vez y se guarda en la misma colección `clients`.
+
+La ficha de cliente ahora incluye:
+- datos comerciales,
+- estatus,
+- industria,
+- ubicación,
+- responsable / KAM,
+- paquete,
+- contacto,
+- email,
+- teléfono,
+- sitio web,
+- Instagram,
+- métricas del paquete,
+- servicios/módulos activos,
+- tono,
+- audiencia,
+- personalidad de marca,
+- estilo visual,
+- pilares de contenido,
+- Brand Brain.
+
+## BUST It Now
+
+El módulo BUST It Now recibe tareas enviadas desde Tareas.
+
+Desde Tareas ahora el botón dice:
+
+Enviar a BUST It Now
+
+y el log queda como:
+
+Enviado a BUST It Now.

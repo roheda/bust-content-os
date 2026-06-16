@@ -71,6 +71,22 @@ export type Brand = {
   productions: number;
   month?: string;
   brandNotes?: string;
+  status?: string;
+  accountOwner?: string;
+  contactName?: string;
+  contactRole?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  website?: string;
+  instagram?: string;
+  location?: string;
+  packageName?: string;
+  services?: string[];
+  brandPersonality?: string;
+  visualStyle?: string;
+  contentPillars?: string;
+  sharedSystems?: string[];
+  bustItNowStatus?: string;
 };
 
 export type ContentRequest = {

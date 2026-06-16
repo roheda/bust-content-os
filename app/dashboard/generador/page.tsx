@@ -46,12 +46,12 @@ export default function GeneratorPage(){
     await load();
   }
 
-  return <AppShell active="Generador">
+  return <AppShell active="BUST It Now">
     <section className="hero">
       <div>
         <p className="eyebrow">Herramienta integrada</p>
-        <h1>Generador BUST It Now</h1>
-        <p>Centro de piezas enviadas desde Tareas para que los editores tengan contexto y puedan trabajar con el generador.</p>
+        <h1>BUST It Now</h1>
+        <p>Módulo integrado dentro de BUST Content OS para trabajar piezas enviadas desde Tareas.</p>
       </div>
     </section>
 

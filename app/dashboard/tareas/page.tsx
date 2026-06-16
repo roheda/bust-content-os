@@ -162,8 +162,8 @@ export default function TasksPage(){
     comments.push({
       id:`${Date.now()}`,
       author:"Sistema",
-      target:"Generador",
-      body:"Enviado al Generador BUST It Now.",
+      target:"BUST It Now",
+      body:"Enviado a BUST It Now.",
       mentions:[],
       createdAt:new Date().toISOString()
     });
@@ -174,7 +174,7 @@ export default function TasksPage(){
     });
     setSelected({...selected,generatorStatus:"enviado",generatorSentAt:new Date().toISOString(),comments});
     await load();
-    alert("Tarea enviada al Generador");
+    alert("Tarea enviada a BUST It Now");
   }
 
   const batchContext = selected?.batchId ? requests.filter(x=>x.batchId===selected.batchId).sort((a,b)=>(a.number||0)-(b.number||0)) : [];
@@ -265,8 +265,8 @@ export default function TasksPage(){
           <div>
             <div className="detail-section">
               <h4>Herramientas</h4>
-              <button className="btn" onClick={sendToGenerator}>Enviar al Generador</button>
-              {selected.generatorStatus==="enviado" && <span className="generator-badge">Enviado al generador</span>}
+              <button className="btn" onClick={sendToGenerator}>Enviar a BUST It Now</button>
+              {selected.generatorStatus==="enviado" && <span className="generator-badge">Enviado a BUST It Now</span>}
             </div>
 
             <div className="detail-section">

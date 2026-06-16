@@ -488,3 +488,23 @@ textarea{min-height:82px}
 .soft-delete-note{border:1px solid #fecaca;background:#fff1f2;color:#991b1b;border-radius:14px;padding:10px;font-size:12px;font-weight:800}
 .shared-client-note{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:16px;padding:12px;margin:12px 0;font-size:13px;font-weight:800}
 .draft-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+.logo span{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.68)}
+.client-os-hero{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;align-items:stretch;margin-bottom:18px}
+.client-os-card{border:1px solid var(--line);border-radius:24px;background:#fff;padding:18px;display:grid;gap:14px}
+.client-system-pills{display:flex;gap:8px;flex-wrap:wrap}
+.system-pill{display:inline-flex;border-radius:999px;background:#eef2ff;color:#3730a3;padding:7px 10px;font-size:11px;font-weight:900;text-transform:uppercase}
+.client-profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.client-card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.client-profile-card{border:1px solid var(--line);border-radius:20px;background:#fff;padding:16px;display:grid;gap:10px}
+.client-profile-card h3{margin:0;font-size:18px}
+.client-profile-card p{margin:0;color:#475467;font-size:13px;line-height:1.45}
+.client-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.client-metric{border:1px solid var(--line);border-radius:14px;background:#f9fafb;padding:10px;text-align:center}
+.client-metric strong{display:block;font-size:20px}
+.client-metric span{font-size:10px;color:var(--muted);font-weight:900;text-transform:uppercase}
+.client-actions{display:flex;gap:8px;flex-wrap:wrap}
+.client-actions button,.client-actions a{font-size:12px}
+.shared-client-banner{border:1px solid #bfdbfe;background:linear-gradient(135deg,#eff6ff,#fff);color:#1d4ed8;border-radius:20px;padding:16px;display:grid;gap:6px}
+.shared-client-banner strong{font-size:16px;color:#1e3a8a}
+@media(max-width:1100px){.client-os-hero,.client-card-grid,.client-profile-grid{grid-template-columns:1fr}}

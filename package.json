@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "1.6.1-integracion",
+  "version": "1.6.2-oficial",
   "private": true,
   "scripts": {
     "dev": "next dev",
