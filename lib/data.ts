@@ -183,6 +183,10 @@ export function hasMaterial(item: Partial<ContentRequest>) {
 }
 
 export function getOperationalStatus(item: ContentRequest) {
+  if (item.status === "rebotada") return "rebotada";
+  if (item.status === "asignada") return "asignada";
+  if (item.status === "material_listo") return "lista_asignacion";
+  if (item.requiresProduction && hasMaterial(item)) return "lista_asignacion";
   if (item.requiresProduction) return item.productionId ? "produccion_programada" : "pendiente_produccion";
   if (!hasMaterial(item)) return "bloqueada";
   return item.status || "lista_asignacion";

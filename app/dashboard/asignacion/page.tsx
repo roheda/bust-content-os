@@ -139,7 +139,7 @@ export default function AssignmentPage(){
       <select value={area} onChange={e=>setArea(e.target.value)}><option value="all">Todas las áreas</option>{areas.map(x=><option key={x}>{x}</option>)}</select>
       <select value={status} onChange={e=>setStatus(e.target.value)}>
         <option value="all">Todos los estados</option>
-        <option value="lista_asignacion">Lista para asignación</option>
+        <option value="lista_asignacion">Lista para asignación / Material listo</option>
         <option value="pendiente_produccion">Pendiente producción</option>
         <option value="bloqueada">Bloqueada</option>
         <option value="rebotada">Rebotada</option>
@@ -415,7 +415,7 @@ function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
 function StatusPill({status}:{status:string}){
   if(status==="bloqueada")return <span className="pill red">Bloqueada</span>;
   if(status==="pendiente_produccion")return <span className="pill orange">Pendiente producción</span>;
-  if(status==="lista_asignacion")return <span className="pill green">Lista</span>;
+  if(status==="lista_asignacion")return <span className="pill green">Lista para asignar</span>;
   if(status==="asignada")return <span className="pill blue">Asignada</span>;
   if(status==="rebotada")return <span className="pill red">Rebotada</span>;
   return <span className="pill">{status}</span>;

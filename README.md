@@ -1,18 +1,22 @@
-# BUST Content OS — Operational v2.7
+# BUST Content OS — Operational v2.8
 
-## Corrección de impresión del brief visual
+## Corrección de estado después de producción
 
-Se corrigió el comportamiento de impresión para que el brief de producción no se reduzca como una vista tipo post.
+Antes, una solicitud con producción podía seguir apareciendo como `produccion_programada` en Asignación aunque ya tuviera material entregado.
 
-Ahora al imprimir:
+Se corrigió la lógica:
 
-- se oculta el dashboard completo,
-- se imprime únicamente el brief visual,
-- el modal pasa a tamaño hoja,
-- se usa formato carta,
-- las fichas de cada post evitan cortarse mal,
-- las imágenes y referencias mantienen mejor tamaño.
+- Si la solicitud tiene estado `material_listo`, ahora aparece como **Lista para asignar**.
+- Si requiere producción pero ya tiene material, también aparece como **Lista para asignar**.
+- Si sigue sin material, permanece como **Producción programada** o **Pendiente producción**.
 
-Uso recomendado:
+## Flujo correcto
 
-Producciones → Exportar brief → Imprimir / Guardar PDF tamaño hoja
+Producciones:
+1. Completar links por post.
+2. Marcar material entregado.
+3. La solicitud queda en `material_listo`.
+
+Asignación:
+1. La solicitud aparece como **Lista para asignar**.
+2. El jefe de área ya puede asignarla.
