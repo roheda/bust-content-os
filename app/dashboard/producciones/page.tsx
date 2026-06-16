@@ -36,6 +36,21 @@ export default function ProductionsPage(){
   const [brief,setBrief]=useState<Production|null>(null);
   const [uploading,setUploading]=useState(false);
 
+  const [reqClientFilter,setReqClientFilter]=useState("all");
+  const [reqAreaFilter,setReqAreaFilter]=useState("all");
+  const [reqTypeFilter,setReqTypeFilter]=useState("all");
+  const [reqStartDate,setReqStartDate]=useState("");
+  const [reqEndDate,setReqEndDate]=useState("");
+  const [reqSearch,setReqSearch]=useState("");
+
+  const [prodClientFilter,setProdClientFilter]=useState("all");
+  const [prodStatusFilter,setProdStatusFilter]=useState("all");
+  const [prodProducerFilter,setProdProducerFilter]=useState("all");
+  const [prodMaterialFilter,setProdMaterialFilter]=useState("all");
+  const [prodStartDate,setProdStartDate]=useState("");
+  const [prodEndDate,setProdEndDate]=useState("");
+  const [prodSearch,setProdSearch]=useState("");
+
   async function load(){
     setBrands(await listBrands());
     setRequests(await listRequests());
@@ -43,7 +58,47 @@ export default function ProductionsPage(){
   }
   useEffect(()=>{load()},[]);
 
-  const productionRequests = useMemo(()=>requests.filter(x=>x.requiresProduction && !x.productionId),[requests]);
+  function inDateRange(value:string|undefined, start:string, end:string){
+    if(!value)return true;
+    if(start && value < start)return false;
+    if(end && value > end)return false;
+    return true;
+  }
+
+  function includesText(value:string|undefined, search:string){
+    if(!search.trim())return true;
+    return (value||"").toLowerCase().includes(search.trim().toLowerCase());
+  }
+
+  const producerOptions = useMemo(()=>{
+    const set = new Set(productions.map(x=>x.producer).filter(Boolean));
+    return Array.from(set);
+  },[productions]);
+
+  const productionRequests = useMemo(()=>requests.filter(x=>{
+    const text = `${x.clientName} ${x.contentType} ${x.objective} ${x.creativeIdea} ${x.productionNotes}`.toLowerCase();
+    return x.requiresProduction &&
+      !x.productionId &&
+      (reqClientFilter==="all" || x.clientId===reqClientFilter) &&
+      (reqAreaFilter==="all" || x.suggestedArea===reqAreaFilter || x.assignedArea===reqAreaFilter) &&
+      (reqTypeFilter==="all" || x.contentType===reqTypeFilter) &&
+      inDateRange(x.publishDate,reqStartDate,reqEndDate) &&
+      (!reqSearch.trim() || text.includes(reqSearch.trim().toLowerCase()));
+  }),[requests,reqClientFilter,reqAreaFilter,reqTypeFilter,reqStartDate,reqEndDate,reqSearch]);
+
+  const filteredProductions = useMemo(()=>productions.filter(x=>{
+    const text = `${x.title} ${x.clientName} ${x.location} ${x.producer} ${x.team} ${x.notes}`.toLowerCase();
+    const hasGeneralMaterial = Boolean((x.materialLinks||"").trim()) || Boolean((x.materialFiles||[]).length);
+    const hasAnyPostMaterial = Boolean(Object.values(x.materialLinksByRequest||{}).some(v=>String(v||"").trim()));
+    const hasMaterial = hasGeneralMaterial || hasAnyPostMaterial;
+    return (prodClientFilter==="all" || x.clientId===prodClientFilter) &&
+      (prodStatusFilter==="all" || x.status===prodStatusFilter) &&
+      (prodProducerFilter==="all" || x.producer===prodProducerFilter) &&
+      (prodMaterialFilter==="all" || (prodMaterialFilter==="with" ? hasMaterial : !hasMaterial)) &&
+      inDateRange(x.scheduledDate,prodStartDate,prodEndDate) &&
+      (!prodSearch.trim() || text.includes(prodSearch.trim().toLowerCase()));
+  }),[productions,prodClientFilter,prodStatusFilter,prodProducerFilter,prodMaterialFilter,prodStartDate,prodEndDate,prodSearch]);
+
   const selectedRequests = productionRequests.filter(x=>selected.includes(x.id!));
 
   function toggle(id:string){setSelected(selected.includes(id)?selected.filter(x=>x!==id):[...selected,id])}
@@ -130,13 +185,28 @@ export default function ProductionsPage(){
     <section className="hero"><div><p className="eyebrow">Producciones</p><h1>Producciones</h1><p>Selecciona solicitudes pendientes y crea una producción con esas fichas.</p></div><button className="btn" onClick={openModal}>Producción nueva</button></section>
 
     <section className="grid kpis">
-      {[["Pendientes",String(productionRequests.length)],["Seleccionadas",String(selected.length)],["Producciones",String(productions.length)],["Programadas",String(productions.filter(x=>x.status==="programada").length)],["Material",String(productions.filter(x=>x.status==="material_entregado").length)],["Clientes",String(brands.length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Pendientes",String(productionRequests.length)],["Seleccionadas",String(selected.length)],["Producciones",String(filteredProductions.length)],["Programadas",String(filteredProductions.filter(x=>x.status==="programada").length)],["Material",String(filteredProductions.filter(x=>x.status==="material_entregado").length)],["Clientes",String(brands.length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+    </section>
+
+    <section className="filter-panel">
+      <h3>Filtros de solicitudes pendientes de producción</h3>
+      <div className="filter-grid">
+        <div className="field"><label>Cliente</label><select value={reqClientFilter} onChange={e=>setReqClientFilter(e.target.value)}><option value="all">Todos</option>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+        <div className="field"><label>Área</label><select value={reqAreaFilter} onChange={e=>setReqAreaFilter(e.target.value)}><option value="all">Todas</option><option>Diseño</option><option>Audiovisual</option><option>Copy</option><option>Mixto</option></select></div>
+        <div className="field"><label>Tipo</label><select value={reqTypeFilter} onChange={e=>setReqTypeFilter(e.target.value)}><option value="all">Todos</option>{Array.from(new Set(requests.map(x=>x.contentType).filter(Boolean))).map(x=><option key={x}>{x}</option>)}</select></div>
+        <div className="field"><label>Desde publicación</label><input type="date" value={reqStartDate} onChange={e=>setReqStartDate(e.target.value)}/></div>
+        <div className="field"><label>Hasta publicación</label><input type="date" value={reqEndDate} onChange={e=>setReqEndDate(e.target.value)}/></div>
+        <div className="field" style={{gridColumn:"span 2"}}><label>Buscar</label><input value={reqSearch} onChange={e=>setReqSearch(e.target.value)} placeholder="Cliente, idea, objetivo, notas..."/></div>
+        <div className="filter-actions">
+          <button className="btn" onClick={()=>{setReqClientFilter("all");setReqAreaFilter("all");setReqTypeFilter("all");setReqStartDate("");setReqEndDate("");setReqSearch("");}}>Limpiar</button>
+        </div>
+      </div>
     </section>
 
     <section className="grid two-col">
       <div className="card">
         <h3>Solicitudes pendientes de producción</h3>
-        <div className="table-wrap"><table className="table"><thead><tr><th></th><th>Solicitud</th><th>Notas producción</th><th>Fecha publicación</th></tr></thead><tbody>{productionRequests.map(x=><tr key={x.id}><td><input type="checkbox" checked={selected.includes(x.id!)} onChange={()=>toggle(x.id!)}/></td><td><strong>{x.clientName}</strong><br/>{x.contentType} · {x.objective}<br/><span className="mini">{x.creativeIdea}</span></td><td>{x.productionNotes||"Sin notas"}</td><td>{x.publishDate}</td></tr>)}</tbody></table></div>
+        <div className="table-wrap"><table className="table"><thead><tr><th></th><th>Solicitud</th><th>Notas producción</th><th>Fecha publicación</th></tr></thead><tbody>{productionRequests.map(x=><tr key={x.id}><td><input type="checkbox" checked={selected.includes(x.id!)} onChange={()=>toggle(x.id!)}/></td><td><strong>{x.clientName}</strong><br/>{x.contentType} · {x.objective}<br/><span className="mini">{x.creativeIdea}</span></td><td>{x.productionNotes||"Sin notas"}</td><td>{x.publishDate}</td></tr>)}</tbody></table></div>{!productionRequests.length && <p className="mini">No hay solicitudes pendientes con esos filtros.</p>}
       </div>
       <aside className="card">
         <h3>Seleccionadas</h3>
@@ -145,9 +215,29 @@ export default function ProductionsPage(){
       </aside>
     </section>
 
+    <section className="filter-panel">
+      <h3>Filtros del calendario de producciones</h3>
+      <div className="filter-grid">
+        <div className="field"><label>Cliente</label><select value={prodClientFilter} onChange={e=>setProdClientFilter(e.target.value)}><option value="all">Todos</option>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+        <div className="field"><label>Estado</label><select value={prodStatusFilter} onChange={e=>setProdStatusFilter(e.target.value)}><option value="all">Todos</option><option value="programada">Programada</option><option value="material_entregado">Material entregado</option><option value="cancelada">Cancelada</option></select></div>
+        <div className="field"><label>Responsable</label><select value={prodProducerFilter} onChange={e=>setProdProducerFilter(e.target.value)}><option value="all">Todos</option>{producerOptions.map(x=><option key={x}>{x}</option>)}</select></div>
+        <div className="field"><label>Material</label><select value={prodMaterialFilter} onChange={e=>setProdMaterialFilter(e.target.value)}><option value="all">Todo</option><option value="with">Con material</option><option value="without">Sin material</option></select></div>
+        <div className="field"><label>Desde producción</label><input type="date" value={prodStartDate} onChange={e=>setProdStartDate(e.target.value)}/></div>
+        <div className="field"><label>Hasta producción</label><input type="date" value={prodEndDate} onChange={e=>setProdEndDate(e.target.value)}/></div>
+        <div className="field" style={{gridColumn:"span 2"}}><label>Buscar</label><input value={prodSearch} onChange={e=>setProdSearch(e.target.value)} placeholder="Producción, cliente, locación, responsable..."/></div>
+        <div className="filter-actions">
+          <button className="btn" onClick={()=>{setProdClientFilter("all");setProdStatusFilter("all");setProdProducerFilter("all");setProdMaterialFilter("all");setProdStartDate("");setProdEndDate("");setProdSearch("");}}>Limpiar</button>
+        </div>
+      </div>
+    </section>
+
     <section className="card" style={{marginTop:24}}>
       <h3>Calendario de producciones</h3>
-      <table className="table"><thead><tr><th>Producción</th><th>Cliente</th><th>Fecha</th><th>Solicitudes</th><th>Estado</th><th>Brief</th></tr></thead><tbody>{productions.map(p=><tr key={p.id}><td><strong>{p.title}</strong></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar links</button> <button className="btn" onClick={()=>setBrief(p)}>Exportar brief</button></td></tr>)}</tbody></table>
+      <table className="table"><thead><tr><th>Producción</th><th>Cliente</th><th>Fecha</th><th>Responsable</th><th>Material</th><th>Solicitudes</th><th>Estado</th><th>Brief</th></tr></thead><tbody>{filteredProductions.map(p=>{
+        const hasMaterial = Boolean((p.materialLinks||"").trim()) || Boolean((p.materialFiles||[]).length) || Boolean(Object.values(p.materialLinksByRequest||{}).some(v=>String(v||"").trim()));
+        return <tr key={p.id}><td><strong>{p.title}</strong><br/><span className="mini">{p.location||"Sin locación"}</span></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.producer||"Sin responsable"}</td><td>{hasMaterial?<span className="pill green">Con material</span>:<span className="pill orange">Sin material</span>}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar links</button> <button className="btn" onClick={()=>setBrief(p)}>Exportar brief</button></td></tr>
+      })}</tbody></table>
+      {!filteredProductions.length && <p className="mini">No hay producciones con esos filtros.</p>}
     </section>
 
     {brief && <div className="modal-backdrop"><div className="modal-card" style={{width:"min(1200px,96vw)"}}>

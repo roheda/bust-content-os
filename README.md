@@ -1,22 +1,27 @@
-# BUST Content OS — Operational v2.8
+# BUST Content OS — Operational v2.9
 
-## Corrección de estado después de producción
+## Filtros en Producciones
 
-Antes, una solicitud con producción podía seguir apareciendo como `produccion_programada` en Asignación aunque ya tuviera material entregado.
+Se agregaron filtros separados para:
 
-Se corrigió la lógica:
+### Solicitudes pendientes de producción
+- Cliente
+- Área
+- Tipo de contenido
+- Rango de fechas de publicación
+- Búsqueda por texto
 
-- Si la solicitud tiene estado `material_listo`, ahora aparece como **Lista para asignar**.
-- Si requiere producción pero ya tiene material, también aparece como **Lista para asignar**.
-- Si sigue sin material, permanece como **Producción programada** o **Pendiente producción**.
+### Calendario de producciones
+- Cliente
+- Estado
+- Responsable / productor
+- Material: con material o sin material
+- Rango de fechas de producción
+- Búsqueda por texto
 
-## Flujo correcto
+## Recomendación operativa
 
-Producciones:
-1. Completar links por post.
-2. Marcar material entregado.
-3. La solicitud queda en `material_listo`.
-
-Asignación:
-1. La solicitud aparece como **Lista para asignar**.
-2. El jefe de área ya puede asignarla.
+Usar:
+- Rango de publicación para filtrar solicitudes pendientes.
+- Rango de producción para filtrar el calendario de producciones.
+- Filtro “sin material” para detectar producciones que todavía no desbloquean solicitudes.
