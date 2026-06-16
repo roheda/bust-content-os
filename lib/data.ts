@@ -33,6 +33,27 @@ export const requestStates = [
 export const areas = ["Diseño", "Audiovisual", "Copy", "Mixto"];
 export const priorities = ["Baja", "Media", "Alta", "Urgente"];
 
+export type BustItNowJob = {
+  id?: string;
+  clientId: string;
+  clientName: string;
+  contentRequestId?: string;
+  batchId?: string;
+  batchName?: string;
+  source: string;
+  title: string;
+  format: string;
+  objective: string;
+  prompt: string;
+  copyIn?: string;
+  copyOut?: string;
+  referenceLinks?: string;
+  finalLink?: string;
+  status: string;
+  assignedTo?: string;
+  notes?: string;
+};
+
 export type FeedbackItem = {
   id?: string;
   title: string;
@@ -432,6 +453,28 @@ export async function listFeedback() {
 
 export async function updateFeedback(id: string, data: Partial<FeedbackItem>) {
   return updateDoc(doc(db, "systemFeedback", id), {
+    ...data,
+    updatedAt: serverTimestamp()
+  });
+}
+
+
+export async function saveBustItNowJob(item: BustItNowJob) {
+  return addDoc(collection(db, "bustItNowJobs"), {
+    ...item,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function listBustItNowJobs() {
+  const q = query(collection(db, "bustItNowJobs"), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as BustItNowJob));
+}
+
+export async function updateBustItNowJob(id: string, data: Partial<BustItNowJob>) {
+  return updateDoc(doc(db, "bustItNowJobs", id), {
     ...data,
     updatedAt: serverTimestamp()
   });

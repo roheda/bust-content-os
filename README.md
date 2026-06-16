@@ -1,55 +1,41 @@
-# BUST Content OS — Oficial + BUST It Now módulo v1
+# BUST Content OS — Plataforma unificada v1
 
-## Naming
+## Cambio conceptual
 
-BUST Content OS queda como el software oficial.
+BUST Content OS es la plataforma única.
 
-BUST It Now deja de tratarse como software separado y queda como módulo/herramienta dentro del sistema.
+BUST It Now ya no funciona como sistema externo ni separado. Ahora es un módulo interno dentro de BUST Content OS usando la misma base de datos.
 
-## Menú
+## Firestore compartido
 
-El menú ahora muestra:
+Colecciones compartidas:
 
-- Tareas
-- BUST It Now
-- Aprobaciones
-- Reportes
+- `clients`: base única de clientes
+- `contentRequests`: solicitudes, tareas, calendario y aprobaciones
+- `bustItNowJobs`: trabajos internos del módulo BUST It Now
+- `systemFeedback`: mejoras internas del sistema
 
-## Clientes
+## Módulo BUST It Now
 
-Se rediseñó la pantalla de Clientes como base compartida entre BUST Content OS y BUST It Now.
+El módulo ahora tiene pestañas:
 
-El cliente se da de alta una sola vez y se guarda en la misma colección `clients`.
+- Bandeja desde Tareas
+- Trabajos BUST It Now
+- Nuevo trabajo
+- Mapa de integración
 
-La ficha de cliente ahora incluye:
-- datos comerciales,
-- estatus,
-- industria,
-- ubicación,
-- responsable / KAM,
-- paquete,
-- contacto,
-- email,
-- teléfono,
-- sitio web,
-- Instagram,
-- métricas del paquete,
-- servicios/módulos activos,
-- tono,
-- audiencia,
-- personalidad de marca,
-- estilo visual,
-- pilares de contenido,
-- Brand Brain.
+## Flujo
 
-## BUST It Now
+### Desde Tareas
+Una tarea se puede mandar a BUST It Now.
 
-El módulo BUST It Now recibe tareas enviadas desde Tareas.
+Esa pieza aparece en Bandeja desde Tareas.
 
-Desde Tareas ahora el botón dice:
+Desde ahí se puede convertir a un job interno sin duplicar cliente.
 
-Enviar a BUST It Now
+### Desde BUST It Now
+También se puede crear un trabajo nuevo seleccionando un cliente existente de la misma base `clients`.
 
-y el log queda como:
+## Objetivo
 
-Enviado a BUST It Now.
+Un solo login, una sola base de clientes, una sola operación, varios módulos.
