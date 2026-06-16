@@ -87,6 +87,8 @@ export type ContentRequest = {
   priority?: string;
   dueDate?: string;
   internalNotes?: string;
+  rejectionNote?: string;
+  rejectedAt?: string;
   productionId?: string;
   productionName?: string;
 };
@@ -298,6 +300,13 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
   }));
 
   return batchId;
+}
+
+
+export async function listRequestBatches() {
+  const q = query(collection(db, "requestBatches"), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as RequestBatch));
 }
 
 export async function listRequests() {

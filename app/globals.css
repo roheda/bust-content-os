@@ -156,3 +156,10 @@ textarea{min-height:82px}
 .assignment-actions{border-top:1px solid var(--line);padding-top:16px;margin-top:16px}
 .production-material-box{border:1px solid var(--line);border-radius:18px;background:#f9fafb;padding:14px;margin-top:12px}
 .production-card-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+
+.batch-reuse-grid{display:grid;gap:10px}
+.batch-reuse-card{border:1px solid var(--line);border-radius:16px;background:#fff;padding:12px;display:grid;gap:8px}
+.batch-reuse-card strong{font-size:14px}
+.danger-zone{border:1px solid #fecaca;background:#fff1f2;border-radius:18px;padding:14px;margin-top:14px}
+.bulk-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
+.reject-note{background:#fff7ed;border:1px solid #fed7aa;border-radius:14px;padding:10px;margin-top:8px;color:#9a3412;font-size:12px}

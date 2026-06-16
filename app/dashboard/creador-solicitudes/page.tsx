@@ -5,6 +5,7 @@ import {
   Brand,
   ContentRequest,
   PlannerDraft,
+  RequestBatch,
   ReferenceFile,
   areas,
   contentTypes,
@@ -14,6 +15,7 @@ import {
   isImageFile,
   listBrands,
   listPlannerDrafts,
+  listRequestBatches,
   listRequests,
   objectives,
   savePlannerDraft,
@@ -27,6 +29,7 @@ export default function CreatorPage(){
   const [brands,setBrands]=useState<Brand[]>([]);
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [drafts,setDrafts]=useState<PlannerDraft[]>([]);
+  const [batches,setBatches]=useState<RequestBatch[]>([]);
   const [currentDraftId,setCurrentDraftId]=useState("");
   const [draftName,setDraftName]=useState("");
   const [batchDueDate,setBatchDueDate]=useState("");
@@ -45,14 +48,16 @@ export default function CreatorPage(){
   const [must,setMust]=useState("CTA claro, alineado al tono de marca y sin contenido de relleno.");
 
   async function load(){
-    const [loadedBrands, loadedRequests, loadedDrafts] = await Promise.all([
+    const [loadedBrands, loadedRequests, loadedDrafts, loadedBatches] = await Promise.all([
       listBrands(),
       listRequests(),
-      listPlannerDrafts()
+      listPlannerDrafts(),
+      listRequestBatches()
     ]);
     setBrands(loadedBrands);
     setRequests(loadedRequests);
     setDrafts(loadedDrafts);
+    setBatches(loadedBatches);
     if(!clientId && loadedBrands[0]?.id)setClientId(loadedBrands[0].id);
   }
 
@@ -119,6 +124,29 @@ export default function CreatorPage(){
     setBatchDueDate("");
     setItems([]);
     setManual(emptyRequest);
+  }
+
+  function reuseBatch(batch: RequestBatch){
+    const batchItems = requests.filter(x=>x.batchId===batch.id).sort((a,b)=>(a.number||0)-(b.number||0));
+    if(!batchItems.length)return alert("Este lote no tiene solicitudes para reusar.");
+    setCurrentDraftId("");
+    setClientId(batch.clientId);
+    setDraftName(`${batch.name} · Reuso`);
+    setBatchDueDate("");
+    setItems(batchItems.map((item,index)=>({
+      ...item,
+      id: undefined,
+      batchId: undefined,
+      batchName: undefined,
+      batchDueDate: "",
+      dueDate: "",
+      publishDate: "",
+      status: item.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
+      source: "reuse",
+      number: index + 1,
+      total: batchItems.length
+    })));
+    window.scrollTo({top:0,behavior:"smooth"});
   }
 
   function generateAI(){
@@ -338,6 +366,18 @@ export default function CreatorPage(){
         <div className="card">
           <h3>Calendario del lote</h3>
           <CalendarPanel items={calendarItems}/>
+        </div>
+
+        <div className="card">
+          <h3>Lotes realizados para reusar</h3>
+          <div className="batch-reuse-grid">
+            {batches.filter(batch=>client?.id ? batch.clientId===client.id : true).slice(0,8).map(batch=><div className="batch-reuse-card" key={batch.id}>
+              <strong>{batch.name}</strong>
+              <span className="mini">{batch.clientName} · Límite anterior: {batch.batchDueDate||"Sin fecha"} · {batch.totalRequests||0} solicitudes</span>
+              <button className="btn" onClick={()=>reuseBatch(batch)}>Reusar lote</button>
+            </div>)}
+            {!batches.length && <p className="mini">Cuando envíes lotes a Asignación aparecerán aquí para reutilizarlos.</p>}
+          </div>
         </div>
       </aside>
     </section>

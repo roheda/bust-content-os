@@ -12,7 +12,8 @@ import {
   listBrands,
   listRequests,
   priorities,
-  updateRequest
+  updateRequest,
+  deleteRequest
 } from "@/lib/data";
 
 const team = ["Ana Diseño","Luis Diseño","Carlos Editor","Mariana Editora","Pedro Video","Mafer KAM","Rodrigo"];
@@ -27,6 +28,10 @@ export default function AssignmentPage(){
   const [editing,setEditing]=useState<ContentRequest|null>(null);
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
   const [detailDraft,setDetailDraft]=useState<Partial<ContentRequest>>({});
+  const [rejectModal,setRejectModal]=useState(false);
+  const [rejectNote,setRejectNote]=useState("");
+  const [deleteModal,setDeleteModal]=useState(false);
+  const [deleteConfirm,setDeleteConfirm]=useState("");
 
   async function load(){setItems(await listRequests());setBrands(await listBrands())}
   useEffect(()=>{load()},[]);
@@ -86,6 +91,40 @@ export default function AssignmentPage(){
     alert("Solicitud asignada");
   }
 
+  async function rejectRequests(ids:string[], note:string){
+    if(!ids.length)return alert("Selecciona al menos una solicitud.");
+    if(!note.trim())return alert("Escribe una nota para rebotar la solicitud.");
+    await Promise.all(ids.map(id=>updateRequest(id,{
+      status:"rebotada",
+      rejectionNote:note.trim(),
+      assignedTo:"",
+      assignedArea:"",
+      internalNotes: note.trim()
+    })));
+    setSelected([]);
+    setRejectNote("");
+    setRejectModal(false);
+    setEditing(null);
+    await load();
+    alert("Solicitud(es) rebotadas");
+  }
+
+  async function deleteSelectedRequests(){
+    if(!selected.length)return alert("Selecciona al menos una solicitud.");
+    if(deleteConfirm !== "ELIMINAR")return alert("Debes escribir ELIMINAR para confirmar.");
+    await Promise.all(selected.map(id=>deleteRequest(id)));
+    setSelected([]);
+    setDeleteConfirm("");
+    setDeleteModal(false);
+    await load();
+    alert("Solicitud(es) eliminadas");
+  }
+
+  async function rejectFromDetail(item:ContentRequest, note:string){
+    if(!item.id)return;
+    await rejectRequests([item.id], note);
+  }
+
   return <AppShell active="Asignación">
     <section className="hero">
       <div><p className="eyebrow">Operación</p><h1>Asignación</h1><p>Los jefes de área asignan solicitudes listas. Las piezas sin material quedan bloqueadas desde origen.</p></div>
@@ -103,11 +142,18 @@ export default function AssignmentPage(){
         <option value="lista_asignacion">Lista para asignación</option>
         <option value="pendiente_produccion">Pendiente producción</option>
         <option value="bloqueada">Bloqueada</option>
+        <option value="rebotada">Rebotada</option>
         <option value="asignada">Asignada</option>
       </select>
       <button className="btn" onClick={load}>Actualizar</button>
       {selected.length>0 && <a className="btn blue" href="/dashboard/producciones">Crear producción con seleccionadas →</a>}
     </div>
+
+    {selected.length>0 && <div className="bulk-actions">
+      <span className="pill">{selected.length} seleccionada(s)</span>
+      <button className="btn" onClick={()=>setRejectModal(true)}>Rebotar seleccionadas</button>
+      <button className="btn red" onClick={()=>setDeleteModal(true)}>Eliminar seleccionadas</button>
+    </div>}
 
     <section className="grid two-col">
       <div className="card">
@@ -118,7 +164,7 @@ export default function AssignmentPage(){
             const op=getOperationalStatus(item);
             return <tr key={item.id}>
               <td><input type="checkbox" checked={selected.includes(item.id!)} onChange={()=>toggle(item.id!)}/></td>
-              <td><strong>{item.clientName}</strong><br/><span>{item.contentType} · {item.objective}</span><br/><span className="mini">{item.creativeIdea}</span><br/><span className="mini">Publica: {item.publishDate||"Sin fecha"}</span></td>
+              <td><strong>{item.clientName}</strong><br/><span>{item.contentType} · {item.objective}</span><br/><span className="mini">{item.creativeIdea}</span><br/><span className="mini">Publica: {item.publishDate||"Sin fecha"}</span>{item.rejectionNote && <div className="reject-note">Rebotada: {item.rejectionNote}</div>}</td>
               <td><strong>{item.batchDueDate||item.dueDate||"Sin fecha"}</strong><br/><span className="mini">Entrega operativa</span></td>
               <td><StatusPill status={op}/></td>
               <td>{item.suggestedArea}</td>
@@ -137,13 +183,33 @@ export default function AssignmentPage(){
 
       <aside className="card">
         <h3>{editing?"Detalle":"Reglas"}</h3>
-        {editing ? <RequestDetail item={editing} draft={detailDraft} setDraft={setDetailDraft} onAssign={assignFromDetail} onClose={()=>setEditing(null)} onPreview={setPreview}/> : <div className="draft-list">
+        {editing ? <RequestDetail item={editing} draft={detailDraft} setDraft={setDetailDraft} onAssign={assignFromDetail} onReject={rejectFromDetail} onClose={()=>setEditing(null)} onPreview={setPreview}/> : <div className="draft-list">
           <div className="draft-item"><strong>No requiere producción</strong><span className="mini">Debe traer material/link desde el Creador. Si no, queda bloqueada.</span></div>
           <div className="draft-item"><strong>Requiere producción</strong><span className="mini">Se agrupa en Producciones y no se asigna a ejecución hasta tener material.</span></div>
           <div className="draft-item"><strong>Asignada</strong><span className="mini">Aparece en Calendario por persona, área y fecha.</span></div>
         </div>}
       </aside>
     </section>
+    {rejectModal && <div className="modal-backdrop"><div className="modal-card">
+      <h2>Rebotar solicitudes</h2>
+      <p className="mini">Escribe la razón para que Content pueda corregirlas.</p>
+      <div className="field"><label>Nota de rechazo</label><textarea value={rejectNote} onChange={e=>setRejectNote(e.target.value)} placeholder="Ej. Falta material correcto / brief incompleto / no aplica al objetivo."/></div>
+      <div style={{display:"flex",gap:12}}>
+        <button className="btn blue" onClick={()=>rejectRequests(selected,rejectNote)}>Rebotar</button>
+        <button className="btn red" onClick={()=>setRejectModal(false)}>Cancelar</button>
+      </div>
+    </div></div>}
+
+    {deleteModal && <div className="modal-backdrop"><div className="modal-card">
+      <h2>Eliminar solicitudes</h2>
+      <p>Esta acción eliminará {selected.length} solicitud(es). Para confirmar escribe <strong>ELIMINAR</strong>.</p>
+      <div className="field"><label>Confirmación</label><input value={deleteConfirm} onChange={e=>setDeleteConfirm(e.target.value)} placeholder="ELIMINAR"/></div>
+      <div style={{display:"flex",gap:12}}>
+        <button className="btn red" onClick={deleteSelectedRequests}>Eliminar definitivamente</button>
+        <button className="btn" onClick={()=>setDeleteModal(false)}>Cancelar</button>
+      </div>
+    </div></div>}
+
     {preview && <PreviewModal file={preview} onClose={()=>setPreview(null)}/>}
   </AppShell>
 }
@@ -161,6 +227,7 @@ function RequestDetail({
   draft,
   setDraft,
   onAssign,
+  onReject,
   onClose,
   onPreview
 }:{
@@ -168,11 +235,13 @@ function RequestDetail({
   draft:Partial<ContentRequest>;
   setDraft:(data:Partial<ContentRequest>)=>void;
   onAssign:(item:ContentRequest)=>void;
+  onReject:(item:ContentRequest,note:string)=>void;
   onClose:()=>void;
   onPreview:(file:ReferenceFile)=>void;
 }){
   const referenceLinks = splitLinks(item.referenceLinks);
   const materialLinks = splitLinks(item.materialLinks);
+  const [localRejectNote,setLocalRejectNote]=useState("");
   const op = getOperationalStatus(item);
 
   return <div className="assignment-detail-scroll">
@@ -195,6 +264,7 @@ function RequestDetail({
         </span>
       </div>
 
+      {item.rejectionNote && <div className="reject-note">Rebotada: {item.rejectionNote}</div>}
       <div className="form-grid">
         <div className="field">
           <label>Fecha límite lote</label>
@@ -259,6 +329,7 @@ function RequestDetail({
 
     <div className="assignment-actions">
       <h4>Asignar desde detalle</h4>
+      {item.rejectionNote && <div className="reject-note">Rebotada: {item.rejectionNote}</div>}
       <div className="form-grid">
         <div className="field">
           <label>Área</label>
@@ -287,6 +358,13 @@ function RequestDetail({
       <div style={{display:"flex",gap:12,marginTop:12}}>
         <button className="btn blue" onClick={()=>onAssign(item)}>Asignar solicitud</button>
         <button className="btn" onClick={onClose}>Cerrar detalle</button>
+      </div>
+
+      <div className="danger-zone">
+        <h4>Rebotar solicitud</h4>
+        <p className="mini">Regrésala a Content con una nota clara para corrección.</p>
+        <textarea value={localRejectNote} onChange={e=>setLocalRejectNote(e.target.value)} placeholder="Motivo del rebote"/>
+        <button className="btn red" style={{marginTop:10}} onClick={()=>onReject(item,localRejectNote)}>Rebotar solicitud</button>
       </div>
     </div>
   </div>;
@@ -339,5 +417,6 @@ function StatusPill({status}:{status:string}){
   if(status==="pendiente_produccion")return <span className="pill orange">Pendiente producción</span>;
   if(status==="lista_asignacion")return <span className="pill green">Lista</span>;
   if(status==="asignada")return <span className="pill blue">Asignada</span>;
+  if(status==="rebotada")return <span className="pill red">Rebotada</span>;
   return <span className="pill">{status}</span>;
 }

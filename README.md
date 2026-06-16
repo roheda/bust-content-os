@@ -1,24 +1,25 @@
-# BUST Content OS — Operational v2.3
+# BUST Content OS — Operational v2.4
+
+## Creador de Solicitudes
+
+Se agregó debajo del calendario:
+
+- **Lotes realizados para reusar**
+- Permite tomar un lote anterior y convertirlo en un nuevo borrador.
+- Limpia fechas de publicación y fecha límite del lote para que el equipo las vuelva a definir.
 
 ## Asignación
 
-- Se puede asignar desde la ventana de detalle.
-- Se elimina la edición de fecha límite desde la tabla de asignación.
-- La fecha límite del lote permanece definida desde Creador de Solicitudes.
+Se agregan acciones de control:
 
-## Producciones
+- Seleccionar varias solicitudes.
+- Rebotar solicitudes con nota obligatoria.
+- Rebotar desde detalle.
+- Ver nota de rebote.
+- Eliminar solicitudes seleccionadas.
+- Para eliminar se debe escribir `ELIMINAR`.
 
-Nuevo flujo después de crear producción:
+## Flujo de rebote
 
-1. Crear producción con solicitudes incluidas.
-2. Entrar a “Completar material”.
-3. Agregar links o archivos del material producido.
-4. Guardar material o marcar “Material entregado”.
-5. Al marcar material entregado:
-   - las solicitudes incluidas reciben el material,
-   - quedan en `material_listo`,
-   - ya se pueden asignar en Asignación.
-
-## Lógica
-
-La producción no termina al calendarizarse. Termina cuando el material queda cargado y entregado.
+Asignación puede regresar solicitudes a Content cuando falte información, material, claridad o estrategia.
+La solicitud queda con estado `rebotada` y con nota visible para corrección.
