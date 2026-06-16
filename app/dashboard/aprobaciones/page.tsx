@@ -142,6 +142,19 @@ export default function ApprovalsPage(){
       </aside>
     </section>
 
+    {requests.filter(x=>x.status==="finalizada").length>0 && <section className="card" style={{marginTop:20}}>
+      <h3>Historial de finalizadas</h3>
+      <div className="table-wrap"><table className="table">
+        <thead><tr><th>Tarea</th><th>Responsable</th><th>Link final</th><th>Fecha publicación</th></tr></thead>
+        <tbody>{requests.filter(x=>x.status==="finalizada").slice(0,30).map(item=><tr key={item.id}>
+          <td><strong>{item.clientName} · {item.contentType}</strong><br/><span className="mini">{item.creativeIdea}</span></td>
+          <td>{item.assignedTo||"Sin responsable"}</td>
+          <td>{item.finalPostLink ? <a href={item.finalPostLink} target="_blank">Abrir link</a> : "Sin link"}</td>
+          <td>{item.publishDate||"Sin fecha"}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </section>}
+
     {rejected.length>0 && <section className="card" style={{marginTop:20}}>
       <h3>Últimas no aprobadas</h3>
       <div className="table-wrap"><table className="table">

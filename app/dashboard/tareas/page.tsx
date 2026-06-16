@@ -22,6 +22,7 @@ export default function TasksPage(){
   const [person,setPerson]=useState("Todos");
   const [area,setArea]=useState("Todas");
   const [statusFilter,setStatusFilter]=useState("all");
+  const [workflowFilter,setWorkflowFilter]=useState("active");
   const [overdueFilter,setOverdueFilter]=useState("all");
   const [selected,setSelected]=useState<ContentRequest|null>(null);
   const [comment,setComment]=useState("");
@@ -37,14 +38,23 @@ export default function TasksPage(){
   useEffect(()=>{load()},[]);
 
   const filtered = useMemo(()=>requests.filter(x=>{
-    const assignedOrWork = ["asignada","en_revision","rebotada","pendiente_aprobacion"].includes(x.status || "");
+    const taskStates = ["asignada","en_revision","rebotada","pendiente_aprobacion","finalizada"].includes(x.status || "");
     const overdue = isOverdue(x);
-    return assignedOrWork &&
+    const workflowOk =
+      workflowFilter==="all" ? true :
+      workflowFilter==="active" ? ["asignada","en_revision"].includes(x.status||"") :
+      workflowFilter==="approval" ? x.status==="pendiente_aprobacion" :
+      workflowFilter==="rejected" ? x.status==="rebotada" :
+      workflowFilter==="finished" ? x.status==="finalizada" :
+      true;
+
+    return taskStates &&
+      workflowOk &&
       (person==="Todos"||x.assignedTo===person) &&
       (area==="Todas"||x.assignedArea===area||x.suggestedArea===area) &&
       (statusFilter==="all"||x.status===statusFilter) &&
       (overdueFilter==="all" || (overdueFilter==="overdue" ? overdue : !overdue));
-  }),[requests,person,area,statusFilter,overdueFilter]);
+  }),[requests,person,area,statusFilter,workflowFilter,overdueFilter]);
 
   const weekDays = useMemo(()=>getWeekDays(cursor),[cursor]);
   const monthDays = useMemo(()=>getMonthDays(cursor),[cursor]);
@@ -172,9 +182,17 @@ export default function TasksPage(){
       </>}
       <select value={person} onChange={e=>setPerson(e.target.value)}>{people.map(x=><option key={x}>{x}</option>)}</select>
       <select value={area} onChange={e=>setArea(e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select>
+      <select value={workflowFilter} onChange={e=>setWorkflowFilter(e.target.value)}>
+        <option value="active">Activas</option>
+        <option value="approval">En aprobación</option>
+        <option value="rejected">Rebotadas</option>
+        <option value="finished">Finalizadas</option>
+        <option value="all">Todas</option>
+      </select>
       <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
         <option value="all">Todos los estados</option>
         {workStatuses.map(([value,label])=><option key={value} value={value}>{label}</option>)}
+        <option value="finalizada">Finalizada</option>
       </select>
       <select value={overdueFilter} onChange={e=>setOverdueFilter(e.target.value)}>
         <option value="all">Vencidas y vigentes</option>
@@ -184,7 +202,7 @@ export default function TasksPage(){
     </div>
 
     <section className="grid kpis">
-      {[["Tareas",String(filtered.length)],["Vencidas",String(overdueCount)],["Dudas",String(mentionsFeed.length)],["Producciones",String(productions.length)],["Persona",person],["Área",area]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Tareas",String(filtered.length)],["Vencidas",String(overdueCount)],["Finalizadas",String(requests.filter(x=>x.status==="finalizada").length)],["Dudas",String(mentionsFeed.length)],["Persona",person],["Área",area]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
     <section className="calendar-workspace">
@@ -225,17 +243,21 @@ export default function TasksPage(){
           <div>
             <div className="detail-section">
               <h4>Estado de trabajo</h4>
-              <div className="status-buttons">
+              {selected.status==="finalizada" ? <div className="pill green">Finalizada / cerrada</div> : <div className="status-buttons">
                 {workStatuses.map(([value,label])=><button key={value} className={selected.status===value?"active":""} onClick={()=>setStatus(value)}>{label}</button>)}
-              </div>
+              </div>}
             </div>
 
-            <div className="finalize-box">
+            {selected.status!=="finalizada" ? <div className="finalize-box">
               <h4>Mandar a aprobación</h4>
               <p className="mini">Para mandar a aprobación debes pegar el link final del post en Drive.</p>
               <input value={finalLink} onChange={e=>setFinalLink(e.target.value)} placeholder="Link final de Drive"/>
               <button className="btn blue" style={{marginTop:10}} onClick={sendToApproval}>Enviar a aprobación</button>
-            </div>
+            </div> : <div className="finalize-box">
+              <h4>Tarea cerrada</h4>
+              <p className="mini">Esta tarea ya fue aprobada y finalizada. Se conserva como historial.</p>
+              {selected.finalPostLink && <a className="link-card" href={selected.finalPostLink} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a>}
+            </div>}
 
             <div className="detail-section">
               <h4>Idea creativa</h4>

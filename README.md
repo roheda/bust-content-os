@@ -1,42 +1,24 @@
-# BUST Content OS — Tareas y Aprobaciones v2
+# BUST Content OS — Tareas y Aprobaciones v2.1
 
-## Estados corregidos
+## Finalizadas visibles
+
+Las tareas finalizadas ya no desaparecen.
 
 ### En Tareas
-Los estados operativos ahora son:
+Se agregó filtro de flujo:
 
-- Asignada
-- En revisión
-- Rebotada
+- Activas
 - En aprobación
+- Rebotadas
+- Finalizadas
+- Todas
 
-El usuario ya no puede marcar una tarea como Finalizada desde Tareas.
-
-### Enviar a aprobación
-Desde Tareas, el usuario debe pegar el link final de Drive y dar clic en:
-
-Enviar a aprobación
-
-Esto genera automáticamente un comentario/log:
-
-Enviado a aprobación. Link final: ...
+Las finalizadas se pueden abrir para consultar historial, link final y comentarios, pero ya no se pueden editar ni volver a mandar a aprobación desde Tareas.
 
 ### En Aprobaciones
-Aprobaciones es el único módulo que puede dar el último check.
+Se agregó historial de finalizadas para consultar trabajos ya cerrados.
 
-Si aprueba:
-- estado pasa a `finalizada`
-- approvalStatus pasa a `aprobada`
-- se agrega log: "Aprobado. Tarea finalizada."
-
-Si no aprueba:
-- estado pasa a `rebotada`
-- approvalStatus pasa a `rechazada`
-- se agrega log: "Rebotado por [motivo]."
-
-## Log de movimientos
-Cada movimiento importante queda registrado como comentario de sistema dentro de la tarea:
-- cambio de estado
-- envío a aprobación
-- aprobación
-- rechazo/rebote
+## Regla
+- Tareas puede mandar a aprobación.
+- Aprobaciones es el único módulo que puede marcar como finalizada.
+- Una vez finalizada, queda como historial.
