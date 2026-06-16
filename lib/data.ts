@@ -33,6 +33,15 @@ export const requestStates = [
 export const areas = ["Diseño", "Audiovisual", "Copy", "Mixto"];
 export const priorities = ["Baja", "Media", "Alta", "Urgente"];
 
+export type TaskComment = {
+  id: string;
+  author: string;
+  target: string;
+  body: string;
+  createdAt: string;
+  mentions: string[];
+};
+
 export type ReferenceFile = {
   name: string;
   url: string;
@@ -89,6 +98,7 @@ export type ContentRequest = {
   internalNotes?: string;
   rejectionNote?: string;
   rejectedAt?: string;
+  comments?: TaskComment[];
   productionId?: string;
   productionName?: string;
 };
@@ -163,7 +173,8 @@ export const emptyRequest: ContentRequest = {
   assignedTo: "",
   priority: "Media",
   dueDate: "",
-  internalNotes: ""
+  internalNotes: "",
+  comments: []""
 };
 
 export function isImageFile(file: ReferenceFile) {

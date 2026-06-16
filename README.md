@@ -1,27 +1,46 @@
-# BUST Content OS — Operational v2.9
+# BUST Content OS — Calendar v3
 
-## Filtros en Producciones
+## Calendario operativo
 
-Se agregaron filtros separados para:
+Se reemplazó el Calendario por una vista de trabajo real:
 
-### Solicitudes pendientes de producción
-- Cliente
-- Área
-- Tipo de contenido
-- Rango de fechas de publicación
-- Búsqueda por texto
+### Vista semanal
+- Se muestra por defecto.
+- Muestra todos los días de la semana actual.
+- Dentro de cada día aparecen las tareas asignadas a esa fecha operativa.
 
-### Calendario de producciones
-- Cliente
-- Estado
-- Responsable / productor
-- Material: con material o sin material
-- Rango de fechas de producción
-- Búsqueda por texto
+### Vista mensual
+- Muestra el mes actual.
+- Se puede navegar por mes.
+- Cada día muestra sus tareas asignadas.
 
-## Recomendación operativa
+### Tareas
+Al abrir una tarea:
+- Se ve el detalle del post.
+- Se ve material y referencias.
+- Se puede cambiar estado:
+  - Asignada
+  - En proceso
+  - En revisión
+  - Finalizada
+  - Programada
+  - Publicada
+- Se pueden agregar comentarios y dudas.
 
-Usar:
-- Rango de publicación para filtrar solicitudes pendientes.
-- Rango de producción para filtrar el calendario de producciones.
-- Filtro “sin material” para detectar producciones que todavía no desbloquean solicitudes.
+### Comentarios / dudas
+- Cada comentario puede dirigirse a:
+  - Content
+  - Key Account
+  - Diseño
+  - Audiovisual
+  - Cliente
+  - Interno
+- Se pueden usar @menciones.
+- El panel lateral muestra dudas y menciones activas.
+
+## Fecha usada
+
+La tarea se coloca en calendario usando:
+1. dueDate
+2. batchDueDate
+3. publishDate
