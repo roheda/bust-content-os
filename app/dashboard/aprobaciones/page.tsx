@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { ContentRequest, listRequests, updateRequest } from "@/lib/data";
+import { ContentRequest, TaskComment, listRequests, updateRequest } from "@/lib/data";
 
 const reasons = [
   "Errores ortográficos",
@@ -29,25 +29,51 @@ export default function ApprovalsPage(){
 
   async function approve(item:ContentRequest){
     if(!item.id)return;
-    await updateRequest(item.id,{status:"aprobada",approvalStatus:"aprobada",approvalRejectionReason:"",approvalNotes:""});
+    const log:TaskComment = {
+      id:`${Date.now()}`,
+      author:"Sistema",
+      target:"Interno",
+      body:"Aprobado. Tarea finalizada.",
+      mentions:[],
+      createdAt:new Date().toISOString()
+    };
+    const comments = [...(item.comments||[]), log];
+    await updateRequest(item.id,{
+      status:"finalizada",
+      approvalStatus:"aprobada",
+      approvalRejectionReason:"",
+      approvalNotes:"",
+      comments
+    });
     await load();
     setSelected(null);
-    alert("Tarea aprobada");
+    alert("Tarea aprobada y finalizada");
   }
 
   async function reject(item:ContentRequest){
     if(!item.id)return;
     if(!reason)return alert("Selecciona motivo.");
+    const noteText = notes.trim() ? ` Nota: ${notes.trim()}` : "";
+    const log:TaskComment = {
+      id:`${Date.now()}`,
+      author:"Sistema",
+      target:"Interno",
+      body:`Rebotado por ${reason}.${noteText}`,
+      mentions:[],
+      createdAt:new Date().toISOString()
+    };
+    const comments = [...(item.comments||[]), log];
     await updateRequest(item.id,{
-      status:"en_revision",
+      status:"rebotada",
       approvalStatus:"rechazada",
       approvalRejectionReason:reason,
-      approvalNotes:notes
+      approvalNotes:notes,
+      comments
     });
     await load();
     setSelected(null);
     setNotes("");
-    alert("Tarea rechazada y devuelta a revisión");
+    alert("Tarea rechazada y rebotada");
   }
 
   return <AppShell active="Aprobaciones">
@@ -60,7 +86,7 @@ export default function ApprovalsPage(){
     </section>
 
     <section className="grid kpis">
-      {[["Pendientes",String(pending.length)],["Rechazadas",String(rejected.length)],["Total",String(requests.length)],["Aprobadas",String(requests.filter(x=>x.approvalStatus==="aprobada").length)],["En revisión",String(requests.filter(x=>x.status==="en_revision").length)],["Finalizadas",String(requests.filter(x=>x.status==="finalizada").length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Pendientes",String(pending.length)],["Rechazadas",String(rejected.length)],["Total",String(requests.length)],["Aprobadas",String(requests.filter(x=>x.approvalStatus==="aprobada").length)],["Rebotadas",String(requests.filter(x=>x.status==="rebotada").length)],["Finalizadas",String(requests.filter(x=>x.status==="finalizada").length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
     <section className="grid two-col">
@@ -98,9 +124,19 @@ export default function ApprovalsPage(){
           </div>
 
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            <button className="btn blue" onClick={()=>approve(selected)}>Aprobar</button>
-            <button className="btn red" onClick={()=>reject(selected)}>No aprobar</button>
+            <button className="btn blue" onClick={()=>approve(selected)}>Aprobar y finalizar</button>
+            <button className="btn red" onClick={()=>reject(selected)}>No aprobar / rebotar</button>
             <button className="btn" onClick={()=>setSelected(null)}>Cerrar</button>
+          </div>
+
+          <div className="detail-section">
+            <h4>Log de movimientos</h4>
+            {((selected.comments||[]).slice().reverse()).map(c=><div className="comment-box" key={c.id}>
+              <strong>{c.author} → {c.target}</strong>
+              <span className="mini">{new Date(c.createdAt).toLocaleString("es-MX")}</span>
+              <p>{c.body}</p>
+            </div>)}
+            {!(selected.comments||[]).length && <p className="mini">Sin movimientos todavía.</p>}
           </div>
         </div> : <p className="mini">Elige una tarea de la lista para aprobarla o rechazarla.</p>}
       </aside>

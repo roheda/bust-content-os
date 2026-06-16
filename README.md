@@ -1,47 +1,42 @@
-# BUST Content OS — Tareas y Aprobaciones v1
+# BUST Content OS — Tareas y Aprobaciones v2
 
-## Cambios principales
+## Estados corregidos
 
-### Calendario → Tareas
-La sección ahora se llama **Tareas**.
+### En Tareas
+Los estados operativos ahora son:
 
-Mantiene:
-- Vista calendario semanal/mensual
-- Vista lista de tareas
-- Vista por persona
+- Asignada
+- En revisión
+- Rebotada
+- En aprobación
 
-### Tareas vencidas
-- Las tareas con fecha operativa vencida aparecen en rojo.
-- Se agregó filtro para ver solo vencidas.
+El usuario ya no puede marcar una tarea como Finalizada desde Tareas.
 
-### Abrir tarea
-Al abrir una tarea se puede:
-- Ver detalle del post
-- Ver referencias y material
-- Ver el lote completo al que pertenece
-- Comentar dudas con @menciones
-- Cambiar estado de trabajo
+### Enviar a aprobación
+Desde Tareas, el usuario debe pegar el link final de Drive y dar clic en:
 
-### Finalizar tarea
-Para finalizar se debe poner link final de Drive.
-Al finalizar:
-- Estado pasa a `pendiente_aprobacion`
-- Se manda a Aprobaciones
+Enviar a aprobación
 
-### Aprobaciones
-Nueva lógica:
-- Ver pendientes de aprobación
-- Abrir link final
-- Aprobar
-- No aprobar con motivo:
-  - Errores ortográficos
-  - Copy no alineado
-  - Diseño no alineado a marca
-  - Formato incorrecto
-  - Material incorrecto
-  - Falta información
-  - No cumple objetivo
-  - Baja calidad visual
-  - Otro
+Esto genera automáticamente un comentario/log:
 
-Si no se aprueba, regresa a `en_revision`.
+Enviado a aprobación. Link final: ...
+
+### En Aprobaciones
+Aprobaciones es el único módulo que puede dar el último check.
+
+Si aprueba:
+- estado pasa a `finalizada`
+- approvalStatus pasa a `aprobada`
+- se agrega log: "Aprobado. Tarea finalizada."
+
+Si no aprueba:
+- estado pasa a `rebotada`
+- approvalStatus pasa a `rechazada`
+- se agrega log: "Rebotado por [motivo]."
+
+## Log de movimientos
+Cada movimiento importante queda registrado como comentario de sistema dentro de la tarea:
+- cambio de estado
+- envío a aprobación
+- aprobación
+- rechazo/rebote

@@ -8,10 +8,9 @@ const areas = ["Todas","Diseño","Audiovisual","Copy","Mixto"];
 const commentTargets = ["Content","Key Account","Diseño","Audiovisual","Cliente","Interno"];
 const workStatuses = [
   ["asignada","Asignada"],
-  ["en_ejecucion","En proceso"],
   ["en_revision","En revisión"],
-  ["pendiente_aprobacion","En aprobación"],
-  ["finalizada","Finalizada"]
+  ["rebotada","Rebotada"],
+  ["pendiente_aprobacion","En aprobación"]
 ];
 
 export default function TasksPage(){
@@ -38,7 +37,7 @@ export default function TasksPage(){
   useEffect(()=>{load()},[]);
 
   const filtered = useMemo(()=>requests.filter(x=>{
-    const assignedOrWork = ["asignada","en_ejecucion","en_revision","finalizada","pendiente_aprobacion"].includes(x.status || "");
+    const assignedOrWork = ["asignada","en_revision","rebotada","pendiente_aprobacion"].includes(x.status || "");
     const overdue = isOverdue(x);
     return assignedOrWork &&
       (person==="Todos"||x.assignedTo===person) &&
@@ -84,8 +83,18 @@ export default function TasksPage(){
 
   async function setStatus(status:string){
     if(!selected?.id)return;
-    await updateRequest(selected.id,{status});
-    const updated = {...selected,status};
+    const label = statusLabel(status);
+    const nextLog:TaskComment = {
+      id: `${Date.now()}`,
+      author: "Sistema",
+      target: "Interno",
+      body: `Cambio de estado: ${label}`,
+      mentions: [],
+      createdAt: new Date().toISOString()
+    };
+    const comments = [...(selected.comments||[]), nextLog];
+    await updateRequest(selected.id,{status,comments});
+    const updated = {...selected,status,comments};
     setSelected(updated);
     await load();
   }
@@ -113,15 +122,15 @@ export default function TasksPage(){
     await load();
   }
 
-  async function finalizeTask(){
+  async function sendToApproval(){
     if(!selected?.id)return;
-    if(!finalLink.trim())return alert("Para finalizar debes pegar el link final de Drive.");
+    if(!finalLink.trim())return alert("Para mandar a aprobación debes pegar el link final de Drive.");
     const comments = [...(selected.comments||[])];
     comments.push({
       id:`${Date.now()}`,
-      author:"Usuario",
-      target:"Interno",
-      body:`Tarea finalizada y enviada a aprobación. Link final: ${finalLink.trim()}`,
+      author:"Sistema",
+      target:"Aprobaciones",
+      body:`Enviado a aprobación. Link final: ${finalLink.trim()}`,
       mentions:[],
       createdAt:new Date().toISOString()
     });
@@ -222,10 +231,10 @@ export default function TasksPage(){
             </div>
 
             <div className="finalize-box">
-              <h4>Finalizar y mandar a aprobación</h4>
-              <p className="mini">Para finalizar debes pegar el link final del post en Drive.</p>
+              <h4>Mandar a aprobación</h4>
+              <p className="mini">Para mandar a aprobación debes pegar el link final del post en Drive.</p>
               <input value={finalLink} onChange={e=>setFinalLink(e.target.value)} placeholder="Link final de Drive"/>
-              <button className="btn blue" style={{marginTop:10}} onClick={finalizeTask}>Finalizar y enviar a aprobación</button>
+              <button className="btn blue" style={{marginTop:10}} onClick={sendToApproval}>Enviar a aprobación</button>
             </div>
 
             <div className="detail-section">
@@ -294,6 +303,19 @@ export default function TasksPage(){
   </AppShell>
 }
 
+
+function statusLabel(status:string){
+  const labels:Record<string,string> = {
+    asignada: "Asignada",
+    en_revision: "En revisión",
+    rebotada: "Rebotada",
+    pendiente_aprobacion: "En aprobación",
+    aprobada: "Aprobada",
+    finalizada: "Finalizada"
+  };
+  return labels[status] || status;
+}
+
 function getTaskDate(item:ContentRequest){
   return item.dueDate || item.batchDueDate || item.publishDate || "";
 }
@@ -302,7 +324,7 @@ function isOverdue(item:ContentRequest){
   const date = getTaskDate(item);
   if(!date)return false;
   const today = new Date().toISOString().slice(0,10);
-  return date < today && !["finalizada","pendiente_aprobacion","aprobada"].includes(item.status||"");
+  return date < today && !["pendiente_aprobacion","aprobada","finalizada"].includes(item.status||"");
 }
 
 function key(date:Date){
@@ -356,11 +378,11 @@ function DayBox({date,tasks,onOpen,muted=false,variant}:{date:Date;tasks:Content
 
 function TaskChip({task,onOpen}:{task:ContentRequest;onOpen:(item:ContentRequest)=>void}){
   const overdue = isOverdue(task);
-  const done = ["finalizada","pendiente_aprobacion"].includes(task.status||"");
+  const done = ["pendiente_aprobacion","aprobada","finalizada"].includes(task.status||"");
   return <button className={`task-chip ${overdue?"overdue":""} ${done?"done":""}`} onClick={()=>onOpen(task)}>
     <strong>{task.clientName}</strong>
     <span>{task.contentType} · {task.assignedTo||"Sin asignar"}</span>
-    <span className="mini-status">{overdue ? "VENCIDA" : task.status}</span>
+    <span className="mini-status">{overdue ? "VENCIDA" : statusLabel(task.status||"")}</span>
   </button>;
 }
 
@@ -368,7 +390,7 @@ function ListView({tasks,onOpen}:{tasks:ContentRequest[];onOpen:(item:ContentReq
   if(!tasks.length)return <div className="card"><p>No hay tareas con estos filtros.</p></div>;
   return <div>{tasks.sort((a,b)=>getTaskDate(a).localeCompare(getTaskDate(b))).map(task=><button className={`list-task-card ${isOverdue(task)?"task-chip overdue":""}`} key={task.id} onClick={()=>onOpen(task)}>
     <strong>{task.clientName} · {task.contentType}</strong>
-    <span className="mini">Fecha operativa: {getTaskDate(task)||"Sin fecha"} · Responsable: {task.assignedTo||"Sin asignar"} · Estado: {isOverdue(task) ? "VENCIDA" : task.status}</span>
+    <span className="mini">Fecha operativa: {getTaskDate(task)||"Sin fecha"} · Responsable: {task.assignedTo||"Sin asignar"} · Estado: {isOverdue(task) ? "VENCIDA" : statusLabel(task.status||"")}</span>
     <span className="mini">{task.creativeIdea}</span>
   </button>)}</div>;
 }
