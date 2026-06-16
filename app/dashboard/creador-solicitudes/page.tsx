@@ -264,7 +264,7 @@ export default function CreatorPage(){
     const ok = window.confirm("¿Seguro que quieres eliminar este borrador? Esta acción no afecta solicitudes ya enviadas.");
     if (!ok) return;
     await deletePlannerDraft(id);
-    await loadDrafts();
+    window.location.reload();
   }
 
   return <AppShell active="Creador de Solicitudes">

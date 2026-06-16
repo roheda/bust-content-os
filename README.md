@@ -1,26 +1,16 @@
-# BUST Content OS — Integración BUST It Now v1
+# BUST Content OS — Integración BUST It Now v1.1
 
-## Borradores del Creador
-Se agregó botón para eliminar borradores guardados con confirmación.
+## Fix de deploy
 
-## Eliminación de solicitudes
-Las solicitudes ya no se borran físicamente. Ahora `deleteRequest` hace soft delete:
-- status: `eliminada`
-- deletedAt
-- deletedReason
+Se corrigió error en Creador de Solicitudes:
 
-Las vistas operativas ocultan eliminadas, pero queda rastreabilidad en `/dashboard/eliminadas`.
+`loadDrafts` no existía en esta versión del archivo.
 
-## Clientes compartidos
-El módulo de Clientes queda como base compartida entre BUST Content OS y BUST It Now.
+Ahora, al eliminar un borrador, recarga la página después de eliminar para actualizar la lista sin romper el build.
 
-## Generador BUST It Now
-Se agregó módulo en menú izquierdo debajo de Tareas: `Generador`.
-
-Desde Tareas se puede enviar una tarea/post al Generador.
-
-En Generador se puede:
-- filtrar por cliente,
-- ver enviadas/en proceso/generadas,
-- cambiar estado del trabajo,
-- ver contexto del post.
+Mantiene:
+- botón de eliminar borradores con confirmación,
+- soft delete de solicitudes,
+- clientes compartidos con BUST It Now,
+- módulo Generador,
+- envío desde Tareas al Generador.
