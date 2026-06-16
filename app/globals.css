@@ -481,3 +481,10 @@ textarea{min-height:82px}
 .feedback-tabs{display:flex;gap:8px;flex-wrap:wrap}
 .feedback-tabs button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 10px;font-size:12px;font-weight:900;cursor:pointer}
 .feedback-tabs button.active{background:#111827;color:#fff;border-color:#111827}
+
+.generator-badge{display:inline-flex;border-radius:999px;background:#eef2ff;color:#3730a3;padding:6px 10px;font-size:11px;font-weight:900;text-transform:uppercase}
+.generator-card{border:1px solid var(--line);border-radius:20px;background:#fff;padding:16px;display:grid;gap:10px;margin-bottom:12px}
+.generator-card.sent{border-color:#c7d2fe;background:#eef2ff}
+.soft-delete-note{border:1px solid #fecaca;background:#fff1f2;color:#991b1b;border-radius:14px;padding:10px;font-size:12px;font-weight:800}
+.shared-client-note{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:16px;padding:12px;margin:12px 0;font-size:13px;font-weight:800}
+.draft-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}

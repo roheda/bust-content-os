@@ -32,7 +32,7 @@ export default function ApprovalsPage(){
   const [finalSort,setFinalSort]=useState<"asc"|"desc">("asc");
   const [finalSelected,setFinalSelected]=useState<string[]>([]);
 
-  async function load(){setRequests(await listRequests())}
+  async function load(){setRequests((await listRequests()).filter(x=>x.status!=="eliminada"))}
   useEffect(()=>{load()},[]);
 
   const clients = useMemo(()=>{

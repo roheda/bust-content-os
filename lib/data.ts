@@ -112,6 +112,11 @@ export type ContentRequest = {
   approvalStatus?: string;
   approvalRejectionReason?: string;
   approvalNotes?: string;
+  generatorStatus?: string;
+  generatorSentAt?: string;
+  generatorNotes?: string;
+  deletedAt?: string;
+  deletedReason?: string;
   rejectionNote?: string;
   rejectedAt?: string;
   comments?: TaskComment[];
@@ -195,6 +200,11 @@ export const emptyRequest: ContentRequest = {
   approvalStatus: "",
   approvalRejectionReason: "",
   approvalNotes: "",
+  generatorStatus: "",
+  generatorSentAt: "",
+  generatorNotes: "",
+  deletedAt: "",
+  deletedReason: "",
   comments: [],
 };
 
@@ -359,8 +369,13 @@ export async function updateRequest(id: string, data: Partial<ContentRequest>) {
   });
 }
 
-export async function deleteRequest(id: string) {
-  return deleteDoc(doc(db, "contentRequests", id));
+export async function deleteRequest(id: string, reason = "Eliminada desde sistema") {
+  return updateDoc(doc(db, "contentRequests", id), {
+    status: "eliminada",
+    deletedAt: new Date().toISOString(),
+    deletedReason: reason,
+    updatedAt: serverTimestamp()
+  });
 }
 
 export async function saveProduction(item: Production) {

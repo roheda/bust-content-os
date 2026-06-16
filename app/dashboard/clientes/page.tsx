@@ -81,6 +81,10 @@ export default function ClientsPage(){
           </tr>)}</tbody>
         </table>
       </div>
+    </section> 
+    <section className="shared-client-note">
+      Esta alta de cliente será la base compartida entre BUST Content OS y BUST It Now. El cliente se crea una sola vez y ambos sistemas podrán usarlo.
     </section>
+
   </AppShell>;
 }

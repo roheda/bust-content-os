@@ -8,6 +8,7 @@ const items = [
   ["Asignación", "/dashboard/asignacion"],
   ["Producciones", "/dashboard/producciones"],
   ["Tareas", "/dashboard/tareas"],
+  ["Generador", "/dashboard/generador"],
   ["Aprobaciones", "/dashboard/aprobaciones"],
   ["Reportes", "/dashboard/reportes"]
 ];

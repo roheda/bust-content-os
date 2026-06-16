@@ -39,7 +39,7 @@ export default function TasksPage(){
   useEffect(()=>{load()},[]);
 
   const filtered = useMemo(()=>requests.filter(x=>{
-    const taskStates = ["asignada","en_revision","rebotada","pendiente_aprobacion","finalizada"].includes(x.status || "");
+    const taskStates = ["asignada","en_revision","rebotada","pendiente_aprobacion","finalizada"].includes(x.status || "") && x.status !== "eliminada";
     const overdue = isOverdue(x);
     const workflowOk =
       workflowFilter==="all" ? true :
@@ -156,6 +156,27 @@ export default function TasksPage(){
     alert("Tarea enviada a aprobación");
   }
 
+  async function sendToGenerator(){
+    if(!selected?.id)return;
+    const comments = [...(selected.comments||[])];
+    comments.push({
+      id:`${Date.now()}`,
+      author:"Sistema",
+      target:"Generador",
+      body:"Enviado al Generador BUST It Now.",
+      mentions:[],
+      createdAt:new Date().toISOString()
+    });
+    await updateRequest(selected.id,{
+      generatorStatus:"enviado",
+      generatorSentAt:new Date().toISOString(),
+      comments
+    });
+    setSelected({...selected,generatorStatus:"enviado",generatorSentAt:new Date().toISOString(),comments});
+    await load();
+    alert("Tarea enviada al Generador");
+  }
+
   const batchContext = selected?.batchId ? requests.filter(x=>x.batchId===selected.batchId).sort((a,b)=>(a.number||0)-(b.number||0)) : [];
 
   return <AppShell active="Tareas">
@@ -242,6 +263,12 @@ export default function TasksPage(){
 
         <div className="task-modal-grid">
           <div>
+            <div className="detail-section">
+              <h4>Herramientas</h4>
+              <button className="btn" onClick={sendToGenerator}>Enviar al Generador</button>
+              {selected.generatorStatus==="enviado" && <span className="generator-badge">Enviado al generador</span>}
+            </div>
+
             <div className="detail-section">
               <h4>Estado de trabajo</h4>
               {selected.status==="finalizada" ? <div className="pill green">Finalizada / cerrada</div> : <div className="status-buttons">

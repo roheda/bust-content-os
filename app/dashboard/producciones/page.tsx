@@ -53,7 +53,7 @@ export default function ProductionsPage(){
 
   async function load(){
     setBrands(await listBrands());
-    setRequests(await listRequests());
+    setRequests((await listRequests()).filter(x=>x.status!=="eliminada"));
     setProductions(await listProductions());
   }
   useEffect(()=>{load()},[]);

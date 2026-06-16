@@ -14,7 +14,7 @@ import {
   hasMaterial,
   isImageFile,
   listBrands,
-  listPlannerDrafts,
+  listPlannerDrafts, deletePlannerDraft,
   listRequestBatches,
   listRequests,
   objectives,
@@ -257,6 +257,14 @@ export default function CreatorPage(){
       await load();
       alert("Lote aprobado y enviado a Asignación");
     }finally{setBusy(false)}
+  }
+
+  async function removeDraft(id?: string) {
+    if (!id) return;
+    const ok = window.confirm("¿Seguro que quieres eliminar este borrador? Esta acción no afecta solicitudes ya enviadas.");
+    if (!ok) return;
+    await deletePlannerDraft(id);
+    await loadDrafts();
   }
 
   return <AppShell active="Creador de Solicitudes">

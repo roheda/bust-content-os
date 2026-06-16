@@ -1,43 +1,26 @@
-# BUST Content OS — Feedback v1
+# BUST Content OS — Integración BUST It Now v1
 
-## Botón flotante de feedback
+## Borradores del Creador
+Se agregó botón para eliminar borradores guardados con confirmación.
 
-Se agregó un botón flotante global:
+## Eliminación de solicitudes
+Las solicitudes ya no se borran físicamente. Ahora `deleteRequest` hace soft delete:
+- status: `eliminada`
+- deletedAt
+- deletedReason
 
-**Feedback / Mejoras**
+Las vistas operativas ocultan eliminadas, pero queda rastreabilidad en `/dashboard/eliminadas`.
 
-Aparece en todo el sistema.
+## Clientes compartidos
+El módulo de Clientes queda como base compartida entre BUST Content OS y BUST It Now.
 
-## Funcionalidad
+## Generador BUST It Now
+Se agregó módulo en menú izquierdo debajo de Tareas: `Generador`.
 
-Los usuarios pueden registrar:
-- Mejoras
-- Bugs
-- Ideas
-- Urgencias
-- Ajustes UX/UI
-- Problemas de proceso
+Desde Tareas se puede enviar una tarea/post al Generador.
 
-Cada feedback incluye:
-- Título
-- Descripción
-- Tipo
-- Prioridad
-- Módulo
-- Autor
-
-## Estados
-
-- Pendiente: sin color especial
-- Mejora realizada: color verde
-
-Se puede:
-- marcar como mejora realizada,
-- regresar a pendiente,
-- filtrar por pendientes, realizadas o todas.
-
-## Colección Firestore
-
-Los feedbacks se guardan en:
-
-`systemFeedback`
+En Generador se puede:
+- filtrar por cliente,
+- ver enviadas/en proceso/generadas,
+- cambiar estado del trabajo,
+- ver contexto del post.
