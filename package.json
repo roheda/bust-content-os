@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "1.3.4-tareas",
+  "version": "1.4.0-reportes",
   "private": true,
   "scripts": {
     "dev": "next dev",

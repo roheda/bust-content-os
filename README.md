@@ -1,30 +1,55 @@
-# BUST Content OS — Tareas y Aprobaciones v2.3
+# BUST Content OS — Reportes v1
 
-## Copy Out
+## Nuevo módulo de Reportes
 
-Se agregó `copyOut` a cada tarea/post.
+Se convirtió el módulo de Reportes en un radar directivo.
 
-### Nuevo flujo
-1. Tareas manda la pieza a aprobación con link final de Drive.
-2. Aprobaciones revisa.
-3. Si aprueba, la pieza pasa a **Aprobadas para Copy Out**.
-4. Ahí se captura el Copy Out final.
-5. Al guardar Copy Out, la tarea pasa a **Finalizada**.
-6. El historial de finalizadas incluye Copy Out y lo exporta a CSV.
+Incluye:
 
-## Filtros en Por aprobar
-
-Se agregaron filtros:
+### Filtros
 - Cliente
-- Lote
-- Búsqueda por texto
+- Área
+- Persona
+- Rango de fechas
 
-## Historial finalizadas
+### Indicadores principales
+- Salud de operación
+- Total de tareas
+- Tareas vencidas
+- Finalizadas
+- En aprobación
+- Rebotadas
+- Sin asignar
+- Producciones sin material
 
-Sigue agrupado por cliente/lote, con:
-- checkboxes
-- selección por grupo
-- orden por fecha de publicación asc/desc
-- exportación Excel/CSV
+### Embudo operativo
+- Solicitudes
+- Asignadas
+- En revisión
+- En aprobación
+- Copy Out
+- Finalizadas
 
-El CSV ahora incluye Copy Out.
+### Dashboards
+- Carga por cliente
+- Carga por área
+- Estado de tareas
+- Motivos de no aprobación
+- Rendimiento por persona
+- Cuellos de botella
+- Tareas vencidas críticas
+
+### Exportación
+- Exporta reporte CSV con filtros aplicados.
+- Incluye cliente, lote, área, responsable, estado, fechas, vencimiento, aprobación, link final y Copy Out.
+
+## Uso directivo
+
+El módulo permite detectar:
+- quién está saturado,
+- qué cliente trae más carga,
+- qué área está más atorada,
+- qué tareas están vencidas,
+- dónde se rechaza más contenido,
+- qué piezas están detenidas en aprobación o Copy Out,
+- qué producciones siguen sin material.
