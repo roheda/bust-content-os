@@ -1,41 +1,65 @@
-# BUST Content OS — Plataforma unificada v1
+# BUST Content OS — BUST It Now real integrado v1
 
-## Cambio conceptual
+## Integración real
 
-BUST Content OS es la plataforma única.
+Se tomó la lógica clave de BUST It Now y se integró dentro de BUST Content OS como módulo interno.
 
-BUST It Now ya no funciona como sistema externo ni separado. Ahora es un módulo interno dentro de BUST Content OS usando la misma base de datos.
+## Incluye
 
-## Firestore compartido
+### API de generación
+Ruta nueva:
 
-Colecciones compartidas:
+`/api/generate-image`
 
-- `clients`: base única de clientes
-- `contentRequests`: solicitudes, tareas, calendario y aprobaciones
-- `bustItNowJobs`: trabajos internos del módulo BUST It Now
-- `systemFeedback`: mejoras internas del sistema
+Usa Gemini con variable de entorno:
 
-## Módulo BUST It Now
+`GEMINI_API_KEY`
 
-El módulo ahora tiene pestañas:
+### Constructor de prompt
+Archivo nuevo:
 
+`lib/build-generation-prompt.ts`
+
+Incluye reglas reales de:
+- formato,
+- objetivo,
+- tipo de contenido,
+- textos oficiales dentro de imagen,
+- jerarquía por prioridad,
+- instrucciones exactas,
+- Brand Brain,
+- elementos visuales,
+- tono/emoción,
+- reglas de logo,
+- reglas de seguridad visual.
+
+### Módulo BUST It Now
+Ahora tiene:
 - Bandeja desde Tareas
-- Trabajos BUST It Now
+- Trabajos
 - Nuevo trabajo
-- Mapa de integración
+- Estudio generador
+- Mapa
 
-## Flujo
+### Estudio generador
+Permite:
+- abrir un job,
+- configurar formato,
+- objetivo,
+- tipo,
+- modelo,
+- variantes,
+- textos oficiales,
+- emociones,
+- elementos visuales,
+- instrucciones,
+- construir prompt,
+- generar imagen,
+- descargar imagen generada.
 
-### Desde Tareas
-Una tarea se puede mandar a BUST It Now.
-
-Esa pieza aparece en Bandeja desde Tareas.
-
-Desde ahí se puede convertir a un job interno sin duplicar cliente.
-
-### Desde BUST It Now
-También se puede crear un trabajo nuevo seleccionando un cliente existente de la misma base `clients`.
-
-## Objetivo
-
-Un solo login, una sola base de clientes, una sola operación, varios módulos.
+## Base compartida
+Sigue usando:
+- clients
+- contentRequests
+- bustItNowJobs
+- systemFeedback

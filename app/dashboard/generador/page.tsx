@@ -2,14 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
 import { Brand, BustItNowJob, ContentRequest, listBrands, listBustItNowJobs, listRequests, saveBustItNowJob, updateBustItNowJob, updateRequest } from "@/lib/data";
+
+type TextBlock = {
+  id: string;
+  text: string;
+  role: string;
+  priority: string;
+  instruction: string;
+  locked: boolean;
+};
 
 const emptyJob: BustItNowJob = {
   clientId: "",
   clientName: "",
   source: "BUST It Now",
   title: "",
-  format: "Post",
+  format: "instagram-post",
   objective: "",
   prompt: "",
   copyIn: "",
@@ -21,22 +31,73 @@ const emptyJob: BustItNowJob = {
   notes: ""
 };
 
+const formats = [
+  { id: "instagram-post", label: "Post Instagram 4:5" },
+  { id: "instagram-story", label: "Story 9:16" },
+  { id: "square-post", label: "Cuadrado 1:1" },
+  { id: "reel-cover", label: "Portada de Reel" },
+  { id: "ad-creative", label: "Creativo para pauta" },
+];
+
+const goals = [
+  { id: "sell", label: "Vender" },
+  { id: "inform", label: "Informar" },
+  { id: "announce", label: "Anunciar" },
+  { id: "position", label: "Posicionar marca" },
+  { id: "interaction", label: "Generar interacción" },
+  { id: "trust", label: "Dar confianza" },
+];
+
+const contentTypes = [
+  { id: "promotion", label: "Promoción" },
+  { id: "product", label: "Producto o servicio" },
+  { id: "event", label: "Evento" },
+  { id: "notice", label: "Aviso" },
+  { id: "seasonal", label: "Fecha especial" },
+  { id: "branding", label: "Contenido de marca" },
+];
+
+const emotions = ["Premium","Urgente","Elegante","Comercial","Tecnológico","Cercano","Apetitoso","Familiar","Sofisticado","Divertido"];
+const visualElements = ["Producto","Persona","Ambiente","Local o espacio","Precio","Fecha","CTA","Fondo limpio","Textura o patrón de marca"];
+
+function newTextBlock(): TextBlock {
+  return {
+    id: `tb-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+    text: "",
+    role: "headline",
+    priority: "high",
+    instruction: "",
+    locked: true
+  };
+}
+
 export default function BustItNowPage(){
   const [clients,setClients]=useState<Brand[]>([]);
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [jobs,setJobs]=useState<BustItNowJob[]>([]);
-  const [tab,setTab]=useState<"inbox"|"jobs"|"new"|"map">("inbox");
+  const [tab,setTab]=useState<"inbox"|"jobs"|"new"|"studio"|"map">("inbox");
   const [clientFilter,setClientFilter]=useState("all");
   const [statusFilter,setStatusFilter]=useState("all");
   const [search,setSearch]=useState("");
   const [form,setForm]=useState<BustItNowJob>(emptyJob);
+  const [selectedJob,setSelectedJob]=useState<BustItNowJob|null>(null);
+
+  const [goal,setGoal]=useState("sell");
+  const [contentType,setContentType]=useState("promotion");
+  const [mainMessage,setMainMessage]=useState("");
+  const [textBlocks,setTextBlocks]=useState<TextBlock[]>([newTextBlock()]);
+  const [selectedEmotions,setSelectedEmotions]=useState<string[]>([]);
+  const [selectedVisualElements,setSelectedVisualElements]=useState<string[]>([]);
+  const [specificInstructions,setSpecificInstructions]=useState("");
+  const [model,setModel]=useState("gemini-3-pro-image");
+  const [variantCount,setVariantCount]=useState(1);
+  const [generatedPrompt,setGeneratedPrompt]=useState("");
+  const [isGenerating,setIsGenerating]=useState(false);
+  const [generatedImages,setGeneratedImages]=useState<string[]>([]);
+  const [generationError,setGenerationError]=useState("");
 
   async function load(){
-    const [c,r,j] = await Promise.all([
-      listBrands(),
-      listRequests(),
-      listBustItNowJobs()
-    ]);
+    const [c,r,j] = await Promise.all([listBrands(),listRequests(),listBustItNowJobs()]);
     setClients(c);
     setRequests(r.filter(x=>x.status!=="eliminada"));
     setJobs(j);
@@ -72,11 +133,7 @@ export default function BustItNowPage(){
     if(!form.clientId)return alert("Selecciona cliente.");
     if(!form.title.trim())return alert("Agrega título del trabajo.");
     if(!form.prompt.trim())return alert("Agrega prompt o instrucción.");
-    await saveBustItNowJob({
-      ...form,
-      source:"BUST It Now",
-      status:"nuevo"
-    });
+    await saveBustItNowJob({...form,source:"BUST It Now",status:"nuevo"});
     setForm(emptyJob);
     await load();
     setTab("jobs");
@@ -92,7 +149,7 @@ export default function BustItNowPage(){
       batchName:item.batchName,
       source:"Content OS",
       title:`${item.contentType} · ${item.objective}`,
-      format:item.contentType,
+      format:"instagram-post",
       objective:item.objective,
       prompt:item.creativeIdea || item.keyMessage || "",
       copyIn:item.copyIn,
@@ -103,9 +160,7 @@ export default function BustItNowPage(){
       assignedTo:item.assignedTo,
       notes:"Creado desde tarea enviada por Content OS"
     });
-    if(item.id){
-      await updateRequest(item.id,{generatorStatus:"convertido_job"});
-    }
+    if(item.id) await updateRequest(item.id,{generatorStatus:"convertido_job"});
     await load();
     setTab("jobs");
     alert("Trabajo creado en BUST It Now usando la misma base de datos");
@@ -132,31 +187,128 @@ export default function BustItNowPage(){
     await load();
   }
 
+  function openStudio(job:BustItNowJob){
+    setSelectedJob(job);
+    setMainMessage(job.prompt || job.title || "");
+    setSpecificInstructions(job.notes || "");
+    setTextBlocks([
+      { ...newTextBlock(), text: job.copyOut || job.copyIn || job.title || "", role:"headline", priority:"high", locked:true }
+    ]);
+    setGeneratedImages([]);
+    setGenerationError("");
+    setGeneratedPrompt("");
+    setTab("studio");
+  }
+
+  function toggle(value:string, current:string[], setter:(value:string[])=>void){
+    setter(current.includes(value) ? current.filter(x=>x!==value) : [...current,value]);
+  }
+
+  function updateTextBlock(id:string, patch:Partial<TextBlock>){
+    setTextBlocks(textBlocks.map(block=>block.id===id ? {...block,...patch} : block));
+  }
+
+  function removeTextBlock(id:string){
+    setTextBlocks(textBlocks.filter(block=>block.id!==id));
+  }
+
+  function currentClient(){
+    const id = selectedJob?.clientId || form.clientId;
+    return clients.find(c=>c.id===id);
+  }
+
+  function buildPrompt(){
+    const client = currentClient();
+    const prompt = buildGenerationPrompt({
+      clientName: selectedJob?.clientName || form.clientName || client?.name,
+      clientIndustry: client?.industry,
+      format: selectedJob?.format || form.format || "instagram-post",
+      goal,
+      contentType,
+      mainMessage,
+      textBlocks: textBlocks.filter(x=>x.text.trim()).map(block=>({
+        ...block,
+        roleLabel: block.role,
+        priorityLabel: block.priority
+      })),
+      selectedEmotions,
+      selectedVisualElements,
+      specificInstructions,
+      brandBrainSnapshot:{
+        brandDescription: client?.brandNotes || client?.brandPersonality || "",
+        tone: client?.tone || "",
+        typography: client?.visualStyle || "",
+        visualStyle: client?.visualStyle ? [client.visualStyle] : [],
+        dos: client?.contentPillars ? [client.contentPillars] : [],
+        donts: []
+      }
+    });
+    setGeneratedPrompt(prompt);
+    return prompt;
+  }
+
+  async function generateImage(){
+    if(!selectedJob && !form.clientId)return alert("Selecciona o crea un trabajo primero.");
+    const prompt = buildPrompt();
+    setIsGenerating(true);
+    setGenerationError("");
+    setGeneratedImages([]);
+    try{
+      const response = await fetch("/api/generate-image",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          prompt,
+          format:selectedJob?.format || form.format || "instagram-post",
+          model,
+          variantCount
+        })
+      });
+      const payload = await response.json();
+      if(!response.ok)throw new Error(payload.error || "No se pudo generar imagen.");
+      setGeneratedImages(payload.imagesBase64 || []);
+      if(selectedJob?.id){
+        await updateBustItNowJob(selectedJob.id,{
+          status:"generado",
+          generatedPrompt:prompt,
+          executedModel:payload.executedModel,
+          generationMode:payload.generationMode
+        });
+        await load();
+      }
+    }catch(error){
+      setGenerationError(error instanceof Error ? error.message : "Error al generar.");
+    }finally{
+      setIsGenerating(false);
+    }
+  }
+
   return <AppShell active="BUST It Now">
     <section className="hero">
       <div>
         <p className="eyebrow">Módulo integrado</p>
         <h1>BUST It Now</h1>
-        <p>No es un sistema separado: vive dentro de BUST Content OS y usa los mismos clientes, tareas y base de datos.</p>
+        <p>Generador real integrado dentro de BUST Content OS, usando clientes, tareas y Firestore compartido.</p>
       </div>
     </section>
 
     <section className="shared-db-banner">
       <strong>Una sola plataforma, una sola base de datos.</strong>
-      <span>BUST Content OS es el sistema oficial. BUST It Now es un módulo interno conectado a las mismas colecciones de Firestore.</span>
+      <span>BUST It Now ahora vive dentro de BUST Content OS con la lógica real de prompt y generación de imagen.</span>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <span className="db-pill">clients</span>
         <span className="db-pill">contentRequests</span>
         <span className="db-pill">bustItNowJobs</span>
-        <span className="db-pill">systemFeedback</span>
+        <span className="db-pill">/api/generate-image</span>
       </div>
     </section>
 
     <div className="bitnow-tabs">
       <button className={tab==="inbox"?"active":""} onClick={()=>setTab("inbox")}>Bandeja desde Tareas</button>
-      <button className={tab==="jobs"?"active":""} onClick={()=>setTab("jobs")}>Trabajos BUST It Now</button>
+      <button className={tab==="jobs"?"active":""} onClick={()=>setTab("jobs")}>Trabajos</button>
       <button className={tab==="new"?"active":""} onClick={()=>setTab("new")}>Nuevo trabajo</button>
-      <button className={tab==="map"?"active":""} onClick={()=>setTab("map")}>Mapa de integración</button>
+      <button className={tab==="studio"?"active":""} onClick={()=>setTab("studio")}>Estudio generador</button>
+      <button className={tab==="map"?"active":""} onClick={()=>setTab("map")}>Mapa</button>
     </div>
 
     <div className="report-filters">
@@ -177,12 +329,11 @@ export default function BustItNowPage(){
     </div>
 
     <section className="grid kpis">
-      {[["Clientes compartidos",String(clients.length)],["Desde Tareas",String(sentFromContent.length)],["Jobs internos",String(jobs.length)],["Generados",String(jobs.filter(x=>x.status==="generado").length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Clientes",String(clients.length)],["Desde Tareas",String(sentFromContent.length)],["Jobs",String(jobs.length)],["Generados",String(jobs.filter(x=>x.status==="generado").length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
     {tab==="inbox" && <section className="report-section">
       <h3>Bandeja desde Tareas</h3>
-      <p className="mini">Posts enviados desde Tareas para usar en BUST It Now. Se pueden convertir a trabajo interno sin duplicar cliente ni base de datos.</p>
       {sentFromContent.map(item=><div className={`bitnow-card ${item.generatorStatus==="enviado"?"sent":""}`} key={item.id}>
         <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"start"}}>
           <div>
@@ -217,6 +368,7 @@ export default function BustItNowPage(){
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button className="btn" onClick={()=>updateJobStatus(job,"en_proceso")}>En proceso</button>
+            <button className="btn" onClick={()=>openStudio(job)}>Abrir generador</button>
             <button className="btn blue" onClick={()=>updateJobStatus(job,"generado")}>Generado</button>
           </div>
         </div>
@@ -225,8 +377,7 @@ export default function BustItNowPage(){
           <strong>Prompt:</strong> {job.prompt||"Sin prompt"}{"\n"}
           <strong>Copy In:</strong> {job.copyIn||"Sin copy in"}{"\n"}
           <strong>Copy Out:</strong> {job.copyOut||"Pendiente"}{"\n"}
-          <strong>Referencias:</strong> {job.referenceLinks||"Sin referencias"}{"\n"}
-          <strong>Link final:</strong> {job.finalLink||"Pendiente"}
+          <strong>Modelo:</strong> {job.executedModel||"Pendiente"}
         </div>
       </div>)}
       {!filteredJobs.length && <p className="mini">No hay trabajos con estos filtros.</p>}
@@ -234,29 +385,70 @@ export default function BustItNowPage(){
 
     {tab==="new" && <section className="bitnow-layout">
       <div className="report-section">
-        <h3>Crear trabajo dentro de BUST It Now</h3>
-        <p className="mini">Usa la misma base de clientes de BUST Content OS. No hay alta separada.</p>
+        <h3>Crear trabajo BUST It Now</h3>
         <div className="bitnow-form">
           <div className="field"><label>Cliente</label><select value={form.clientId} onChange={e=>setJobField("clientId",e.target.value)}><option value="">Selecciona cliente</option>{clients.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
           <div className="field"><label>Título</label><input value={form.title} onChange={e=>setJobField("title",e.target.value)} placeholder="Ej. Post de promoción"/></div>
-          <div className="field"><label>Formato</label><select value={form.format} onChange={e=>setJobField("format",e.target.value)}><option>Post</option><option>Reel</option><option>Historia</option><option>Carrusel</option><option>Anuncio</option><option>Otro</option></select></div>
+          <div className="field"><label>Formato</label><select value={form.format} onChange={e=>setJobField("format",e.target.value)}>{formats.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
           <div className="field"><label>Objetivo</label><input value={form.objective||""} onChange={e=>setJobField("objective",e.target.value)} placeholder="Awareness, venta, tráfico..."/></div>
           <div className="field"><label>Prompt / instrucción</label><textarea value={form.prompt} onChange={e=>setJobField("prompt",e.target.value)} placeholder="Describe qué debe generar BUST It Now."/></div>
           <div className="field"><label>Copy In</label><textarea value={form.copyIn||""} onChange={e=>setJobField("copyIn",e.target.value)}/></div>
-          <div className="field"><label>Referencias / links</label><textarea value={form.referenceLinks||""} onChange={e=>setJobField("referenceLinks",e.target.value)}/></div>
           <button className="btn blue" onClick={createJob}>Crear trabajo</button>
         </div>
       </div>
+      <aside className="bitnow-sidebar"><h3>Base compartida</h3><p className="mini">El trabajo queda conectado al cliente de Content OS y podrá abrirse en el estudio generador.</p></aside>
+    </section>}
 
-      <aside className="bitnow-sidebar">
-        <h3>Contexto compartido</h3>
-        <p className="mini">El trabajo queda conectado al cliente seleccionado y vive en la colección bustItNowJobs.</p>
-        <div className="detail-copy">
-          <strong>Cliente:</strong> {form.clientName||"Pendiente"}{"\n"}
-          <strong>Formato:</strong> {form.format}{"\n"}
-          <strong>Fuente:</strong> BUST It Now{"\n"}
-          <strong>Base:</strong> Firestore compartido
+    {tab==="studio" && <section className="studio-grid">
+      <div className="studio-panel">
+        <h3>Estudio generador</h3>
+        <p className="mini">{selectedJob ? `Trabajo: ${selectedJob.clientName} · ${selectedJob.title}` : "Abre un job desde Trabajos o configura manualmente."}</p>
+
+        <div className="form-grid">
+          <div className="field"><label>Formato</label><select value={selectedJob?.format || form.format || "instagram-post"} onChange={e=>setForm({...form,format:e.target.value})}>{formats.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
+          <div className="field"><label>Objetivo</label><select value={goal} onChange={e=>setGoal(e.target.value)}>{goals.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
+          <div className="field"><label>Tipo</label><select value={contentType} onChange={e=>setContentType(e.target.value)}>{contentTypes.map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
+          <div className="field"><label>Modelo</label><select value={model} onChange={e=>setModel(e.target.value)}><option value="gemini-3-pro-image">Gemini Pro Imagen</option><option value="gemini-3.1-flash-image">Gemini 3.1 Flash</option><option value="gemini-2.5-flash-image">Gemini 2.5 Flash</option></select></div>
+          <div className="field"><label>Variantes</label><select value={variantCount} onChange={e=>setVariantCount(Number(e.target.value))}><option value={1}>1</option><option value={2}>2</option><option value={4}>4</option></select></div>
         </div>
+
+        <div className="field"><label>Mensaje principal</label><textarea value={mainMessage} onChange={e=>setMainMessage(e.target.value)} placeholder="Mensaje central de la pieza"/></div>
+
+        <h4>Textos oficiales dentro de la imagen</h4>
+        {textBlocks.map(block=><div className="textblock-row" key={block.id}>
+          <textarea value={block.text} onChange={e=>updateTextBlock(block.id,{text:e.target.value})} placeholder="Texto exacto que debe aparecer"/>
+          <div className="form-grid">
+            <select value={block.role} onChange={e=>updateTextBlock(block.id,{role:e.target.value})}><option value="headline">Titular</option><option value="subheadline">Subtítulo</option><option value="claim">Claim</option><option value="price">Precio</option><option value="promotion">Promoción</option><option value="cta">CTA</option><option value="date">Fecha</option><option value="free">Libre</option></select>
+            <select value={block.priority} onChange={e=>updateTextBlock(block.id,{priority:e.target.value})}><option value="high">Alta</option><option value="medium">Media</option><option value="low">Baja</option></select>
+            <button className="btn red" onClick={()=>removeTextBlock(block.id)}>Eliminar</button>
+          </div>
+          <input value={block.instruction} onChange={e=>updateTextBlock(block.id,{instruction:e.target.value})} placeholder="Instrucción específica opcional"/>
+        </div>)}
+        <button className="btn" onClick={()=>setTextBlocks([...textBlocks,newTextBlock()])}>Agregar texto</button>
+
+        <div className="field"><label>Emoción / tono visual</label><div className="client-system-pills">{emotions.map(x=><button type="button" className={selectedEmotions.includes(x)?"btn blue":"btn"} key={x} onClick={()=>toggle(x,selectedEmotions,setSelectedEmotions)}>{x}</button>)}</div></div>
+        <div className="field"><label>Elementos visuales</label><div className="client-system-pills">{visualElements.map(x=><button type="button" className={selectedVisualElements.includes(x)?"btn blue":"btn"} key={x} onClick={()=>toggle(x,selectedVisualElements,setSelectedVisualElements)}>{x}</button>)}</div></div>
+        <div className="field"><label>Instrucciones específicas</label><textarea value={specificInstructions} onChange={e=>setSpecificInstructions(e.target.value)}/></div>
+
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <button className="btn" onClick={buildPrompt}>Construir prompt</button>
+          <button className="btn blue" onClick={generateImage} disabled={isGenerating}>{isGenerating ? "Generando..." : "Generar imagen"}</button>
+        </div>
+
+        {generationError && <div className="reason-box">{generationError}</div>}
+
+        {generatedImages.length>0 && <div className="generated-grid">
+          {generatedImages.map((img,index)=><div className="generated-image-card" key={index}>
+            <img src={`data:image/png;base64,${img}`} alt={`Generada ${index+1}`}/>
+            <a className="btn" download={`bust-it-now-${index+1}.png`} href={`data:image/png;base64,${img}`}>Descargar</a>
+          </div>)}
+        </div>}
+      </div>
+
+      <aside className="studio-panel">
+        <h3>Prompt construido</h3>
+        <p className="mini">Este prompt usa la lógica real de BUST It Now: textos oficiales, reglas de marca, jerarquía, formatos y seguridad visual.</p>
+        <pre className="prompt-preview">{generatedPrompt || "Construye el prompt para verlo aquí."}</pre>
       </aside>
     </section>}
 
@@ -266,7 +458,7 @@ export default function BustItNowPage(){
         <div className="platform-node"><strong>clients</strong><span>Alta única de cliente. La usan Content OS y BUST It Now.</span></div>
         <div className="platform-node"><strong>contentRequests</strong><span>Piezas, tareas, aprobaciones, copy out y calendario operativo.</span></div>
         <div className="platform-node"><strong>bustItNowJobs</strong><span>Trabajos propios del módulo BUST It Now, ligados a cliente y opcionalmente a una tarea.</span></div>
-        <div className="platform-node"><strong>systemFeedback</strong><span>Mejoras internas para evolucionar todo el sistema.</span></div>
+        <div className="platform-node"><strong>/api/generate-image</strong><span>Endpoint real de generación con Gemini.</span></div>
       </div>
     </section>}
   </AppShell>

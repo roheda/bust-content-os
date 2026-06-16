@@ -49,6 +49,9 @@ export type BustItNowJob = {
   copyOut?: string;
   referenceLinks?: string;
   finalLink?: string;
+  generatedPrompt?: string;
+  executedModel?: string;
+  generationMode?: string;
   status: string;
   assignedTo?: string;
   notes?: string;
