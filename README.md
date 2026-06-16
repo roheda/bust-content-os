@@ -1,17 +1,24 @@
-# BUST Content OS — Operational v2.2
+# BUST Content OS — Operational v2.3
 
-## Asignación visual
+## Asignación
 
-Mejora el panel de detalle en Asignación:
+- Se puede asignar desde la ventana de detalle.
+- Se elimina la edición de fecha límite desde la tabla de asignación.
+- La fecha límite del lote permanece definida desde Creador de Solicitudes.
 
-- Ficha visual completa de la solicitud
-- Preview de imágenes de referencia
-- Preview de material disponible
-- Links clickeables
-- Copy In visible
-- Idea creativa visible
-- Fechas visibles:
-  - fecha límite del lote
-  - fecha de publicación
-- Estado operativo
-- Producción/material
+## Producciones
+
+Nuevo flujo después de crear producción:
+
+1. Crear producción con solicitudes incluidas.
+2. Entrar a “Completar material”.
+3. Agregar links o archivos del material producido.
+4. Guardar material o marcar “Material entregado”.
+5. Al marcar material entregado:
+   - las solicitudes incluidas reciben el material,
+   - quedan en `material_listo`,
+   - ya se pueden asignar en Asignación.
+
+## Lógica
+
+La producción no termina al calendarizarse. Termina cuando el material queda cargado y entregado.

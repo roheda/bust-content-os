@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { Brand, ContentRequest, Production, listBrands, listProductions, listRequests, saveProduction, updateRequest } from "@/lib/data";
+import { Brand, ContentRequest, Production, ReferenceFile, isImageFile, listBrands, listProductions, listRequests, saveProduction, updateProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
 
 const empty: Production = {
   title: "",
@@ -18,6 +18,8 @@ const empty: Production = {
   shotList: "",
   requirements: "",
   notes: "",
+  materialLinks: "",
+  materialFiles: [],
   status: "programada"
 };
 
@@ -28,6 +30,9 @@ export default function ProductionsPage(){
   const [selected,setSelected]=useState<string[]>([]);
   const [form,setForm]=useState<Production>(empty);
   const [showModal,setShowModal]=useState(false);
+  const [editing,setEditing]=useState<Production|null>(null);
+  const [preview,setPreview]=useState<ReferenceFile|null>(null);
+  const [uploading,setUploading]=useState(false);
 
   async function load(){
     setBrands(await listBrands());
@@ -61,6 +66,43 @@ export default function ProductionsPage(){
     alert("Producción creada");
   }
 
+  function setEditingField(k:keyof Production,v:any){
+    if(editing)setEditing({...editing,[k]:v});
+  }
+
+  async function uploadProductionMaterial(files:FileList|null){
+    if(!editing||!files)return;
+    setUploading(true);
+    try{
+      const uploaded=await uploadReferenceFiles(files,"production-material");
+      setEditing({...editing,materialFiles:[...(editing.materialFiles||[]),...uploaded]});
+    }finally{
+      setUploading(false);
+    }
+  }
+
+  function removeProductionFile(index:number){
+    if(!editing)return;
+    setEditing({...editing,materialFiles:(editing.materialFiles||[]).filter((_,i)=>i!==index)});
+  }
+
+  async function saveProductionMaterial(markDelivered=false){
+    if(!editing?.id)return;
+    const nextStatus = markDelivered ? "material_entregado" : editing.status;
+    await updateProduction(editing.id,{...editing,status:nextStatus});
+    if(markDelivered){
+      await Promise.all((editing.requestIds||[]).map(id=>updateRequest(id,{
+        materialAvailable:true,
+        materialLinks:editing.materialLinks||"",
+        materialFiles:editing.materialFiles||[],
+        status:"material_listo"
+      })));
+    }
+    setEditing(null);
+    await load();
+    alert(markDelivered?"Material entregado y solicitudes desbloqueadas":"Producción actualizada");
+  }
+
   return <AppShell active="Producciones">
     <section className="hero"><div><p className="eyebrow">Producciones</p><h1>Producciones</h1><p>Selecciona solicitudes pendientes y crea una producción con esas fichas.</p></div><button className="btn" onClick={openModal}>Producción nueva</button></section>
 
@@ -82,8 +124,37 @@ export default function ProductionsPage(){
 
     <section className="card" style={{marginTop:24}}>
       <h3>Calendario de producciones</h3>
-      <table className="table"><thead><tr><th>Producción</th><th>Cliente</th><th>Fecha</th><th>Solicitudes</th><th>Estado</th><th>Brief</th></tr></thead><tbody>{productions.map(p=><tr key={p.id}><td><strong>{p.title}</strong></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>window.print()}>Exportar / imprimir</button></td></tr>)}</tbody></table>
+      <table className="table"><thead><tr><th>Producción</th><th>Cliente</th><th>Fecha</th><th>Solicitudes</th><th>Estado</th><th>Brief</th></tr></thead><tbody>{productions.map(p=><tr key={p.id}><td><strong>{p.title}</strong></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar material</button> <button className="btn" onClick={()=>window.print()}>Exportar</button></td></tr>)}</tbody></table>
     </section>
+
+    {editing && <div className="modal-backdrop"><div className="modal-card">
+      <h2>Completar material de producción</h2>
+      <p className="mini">{editing.title} · {editing.clientName}</p>
+      <div className="production-material-box">
+        <div className="field">
+          <label>Links del material producido</label>
+          <textarea value={editing.materialLinks||""} onChange={e=>setEditingField("materialLinks",e.target.value)} placeholder="Drive, Dropbox, Frame, WeTransfer, etc."/>
+        </div>
+        <div className="field">
+          <label>Subir material producido</label>
+          <input type="file" multiple onChange={e=>uploadProductionMaterial(e.target.files)}/>
+          <span className="mini">{uploading?"Subiendo...":""}</span>
+        </div>
+        <FileList files={editing.materialFiles||[]} onPreview={setPreview} onRemove={removeProductionFile}/>
+      </div>
+      <h3>Solicitudes incluidas</h3>
+      {(editing.requestIds||[]).map(id=>{
+        const req=requests.find(x=>x.id===id);
+        return <div className="draft-item" key={id}><strong>{req?.contentType||"Solicitud"}</strong><span className="mini">{req?.creativeIdea||id}</span></div>
+      })}
+      <div style={{display:"flex",gap:12,marginTop:16,flexWrap:"wrap"}}>
+        <button className="btn" onClick={()=>saveProductionMaterial(false)}>Guardar material</button>
+        <button className="btn blue" onClick={()=>saveProductionMaterial(true)}>Marcar material entregado</button>
+        <button className="btn red" onClick={()=>setEditing(null)}>Cerrar</button>
+      </div>
+    </div></div>}
+
+    {preview && <PreviewModal file={preview} onClose={()=>setPreview(null)}/>}
 
     {showModal && <div className="modal-backdrop"><div className="modal-card">
       <h2>Producción nueva</h2>
@@ -105,4 +176,23 @@ export default function ProductionsPage(){
       <div style={{display:"flex",gap:12,marginTop:16}}><button className="btn blue" onClick={submit}>Crear producción</button><button className="btn red" onClick={()=>setShowModal(false)}>Cerrar</button></div>
     </div></div>}
   </AppShell>
+}
+
+
+function FileList({files,onPreview,onRemove}:{files:ReferenceFile[];onPreview:(file:ReferenceFile)=>void;onRemove:(index:number)=>void;}){
+  return <div className="ref-grid">
+    {(files||[]).map((file,index)=><button type="button" className="ref-thumb" onClick={()=>onPreview(file)} key={index}>
+      {isImageFile(file)?<img src={file.url} alt="Material"/>:<div className="ref-thumb-file">Archivo</div>}
+      <span className="ref-delete" onClick={(event)=>{event.stopPropagation();onRemove(index);}}>Eliminar</span>
+    </button>)}
+  </div>
+}
+
+function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
+  return <div className="preview-modal" onClick={onClose}>
+    <div className="preview-box" onClick={e=>e.stopPropagation()}>
+      <div className="preview-actions"><strong>{file.name}</strong><button className="btn red" onClick={onClose}>Cerrar</button></div>
+      {isImageFile(file)?<img src={file.url} alt={file.name}/>:<p>Archivo no previsualizable.</p>}
+    </div>
+  </div>
 }

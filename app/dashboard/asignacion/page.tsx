@@ -26,6 +26,7 @@ export default function AssignmentPage(){
   const [selected,setSelected]=useState<string[]>([]);
   const [editing,setEditing]=useState<ContentRequest|null>(null);
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
+  const [detailDraft,setDetailDraft]=useState<Partial<ContentRequest>>({});
 
   async function load(){setItems(await listRequests());setBrands(await listBrands())}
   useEffect(()=>{load()},[]);
@@ -59,6 +60,30 @@ export default function AssignmentPage(){
       dueDate:item.dueDate||item.batchDueDate||item.publishDate,
       status:"asignada"
     });
+  }
+
+  async function assignFromDetail(item:ContentRequest){
+    if(!item.id)return;
+    if(item.requiresProduction && !item.productionId){
+      alert("Esta solicitud requiere producción. Primero completa material desde Producciones.");
+      return;
+    }
+    if(!item.requiresProduction && !hasMaterial(item)){
+      alert("Esta solicitud no tiene material. Debe corregirse desde el Creador de Solicitudes.");
+      return;
+    }
+    await updateRequest(item.id,{
+      assignedArea:detailDraft.assignedArea || item.suggestedArea,
+      assignedTo:detailDraft.assignedTo || "",
+      priority:detailDraft.priority || "Media",
+      internalNotes:detailDraft.internalNotes || "",
+      dueDate:item.dueDate||item.batchDueDate||item.publishDate,
+      status:"asignada"
+    });
+    setEditing(null);
+    setDetailDraft({});
+    await load();
+    alert("Solicitud asignada");
   }
 
   return <AppShell active="Asignación">
@@ -102,9 +127,9 @@ export default function AssignmentPage(){
                 <br/><br/>
                 <select value={item.assignedTo||""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})}><option value="">Sin asignar</option>{team.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
-                <select value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select><br/><br/><input type="date" value={item.dueDate||item.batchDueDate||""} onChange={e=>item.id&&update(item.id,{dueDate:e.target.value})}/>
+                <select value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select>
               </td>
-              <td><button className="btn blue" onClick={()=>assign(item)}>Asignar</button><br/><br/><button className="btn" onClick={()=>setEditing(item)}>Detalle</button></td>
+              <td><button className="btn blue" onClick={()=>assign(item)}>Asignar</button><br/><br/><button className="btn" onClick={()=>{setEditing(item);setDetailDraft({assignedArea:item.assignedArea||item.suggestedArea,assignedTo:item.assignedTo||"",priority:item.priority||"Media",internalNotes:item.internalNotes||""})}}>Detalle</button></td>
             </tr>
           })}</tbody>
         </table></div>
@@ -112,7 +137,7 @@ export default function AssignmentPage(){
 
       <aside className="card">
         <h3>{editing?"Detalle":"Reglas"}</h3>
-        {editing ? <RequestDetail item={editing} onClose={()=>setEditing(null)} onPreview={setPreview}/> : <div className="draft-list">
+        {editing ? <RequestDetail item={editing} draft={detailDraft} setDraft={setDetailDraft} onAssign={assignFromDetail} onClose={()=>setEditing(null)} onPreview={setPreview}/> : <div className="draft-list">
           <div className="draft-item"><strong>No requiere producción</strong><span className="mini">Debe traer material/link desde el Creador. Si no, queda bloqueada.</span></div>
           <div className="draft-item"><strong>Requiere producción</strong><span className="mini">Se agrupa en Producciones y no se asigna a ejecución hasta tener material.</span></div>
           <div className="draft-item"><strong>Asignada</strong><span className="mini">Aparece en Calendario por persona, área y fecha.</span></div>
@@ -133,10 +158,16 @@ function splitLinks(value:string){
 
 function RequestDetail({
   item,
+  draft,
+  setDraft,
+  onAssign,
   onClose,
   onPreview
 }:{
   item:ContentRequest;
+  draft:Partial<ContentRequest>;
+  setDraft:(data:Partial<ContentRequest>)=>void;
+  onAssign:(item:ContentRequest)=>void;
   onClose:()=>void;
   onPreview:(file:ReferenceFile)=>void;
 }){
@@ -226,8 +257,37 @@ function RequestDetail({
       <div className="detail-copy">{item.internalNotes}</div>
     </div>}
 
-    <div style={{display:"flex",gap:12,marginTop:18}}>
-      <button className="btn" onClick={onClose}>Cerrar detalle</button>
+    <div className="assignment-actions">
+      <h4>Asignar desde detalle</h4>
+      <div className="form-grid">
+        <div className="field">
+          <label>Área</label>
+          <select value={draft.assignedArea||item.assignedArea||item.suggestedArea||"Diseño"} onChange={e=>setDraft({...draft,assignedArea:e.target.value})}>
+            {areas.map(x=><option key={x}>{x}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>Responsable</label>
+          <select value={draft.assignedTo||item.assignedTo||""} onChange={e=>setDraft({...draft,assignedTo:e.target.value})}>
+            <option value="">Sin asignar</option>
+            {team.map(x=><option key={x}>{x}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>Prioridad</label>
+          <select value={draft.priority||item.priority||"Media"} onChange={e=>setDraft({...draft,priority:e.target.value})}>
+            {priorities.map(x=><option key={x}>{x}</option>)}
+          </select>
+        </div>
+        <div className="field full">
+          <label>Notas internas</label>
+          <textarea value={draft.internalNotes||item.internalNotes||""} onChange={e=>setDraft({...draft,internalNotes:e.target.value})}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:12,marginTop:12}}>
+        <button className="btn blue" onClick={()=>onAssign(item)}>Asignar solicitud</button>
+        <button className="btn" onClick={onClose}>Cerrar detalle</button>
+      </div>
     </div>
   </div>;
 }

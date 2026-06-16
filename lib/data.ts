@@ -127,6 +127,8 @@ export type Production = {
   shotList: string;
   requirements: string;
   notes: string;
+  materialLinks?: string;
+  materialFiles?: ReferenceFile[];
   status: string;
 };
 
