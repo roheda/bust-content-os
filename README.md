@@ -1,25 +1,16 @@
-# BUST Content OS — Operational v2.4
+# BUST Content OS — Operational v2.5
 
-## Creador de Solicitudes
+## Producciones: material por post
 
-Se agregó debajo del calendario:
+Se mantiene el link general de producción, pero ahora también se puede capturar un link por cada solicitud/post incluido en la producción.
 
-- **Lotes realizados para reusar**
-- Permite tomar un lote anterior y convertirlo en un nuevo borrador.
-- Limpia fechas de publicación y fecha límite del lote para que el equipo las vuelva a definir.
+### Lógica
 
-## Asignación
+- Link general: carpeta completa de producción.
+- Link por post: material exacto para cada solicitud.
+- Al marcar Material entregado:
+  - cada solicitud recibe su link individual.
+  - si no tiene link individual, toma el link general como respaldo.
+  - si no hay link individual ni general, el sistema bloquea la entrega.
 
-Se agregan acciones de control:
-
-- Seleccionar varias solicitudes.
-- Rebotar solicitudes con nota obligatoria.
-- Rebotar desde detalle.
-- Ver nota de rebote.
-- Eliminar solicitudes seleccionadas.
-- Para eliminar se debe escribir `ELIMINAR`.
-
-## Flujo de rebote
-
-Asignación puede regresar solicitudes a Content cuando falte información, material, claridad o estrategia.
-La solicitud queda con estado `rebotada` y con nota visible para corrección.
+Esto evita que una solicitud quede con una carpeta genérica cuando realmente necesita el asset exacto.

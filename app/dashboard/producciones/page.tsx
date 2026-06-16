@@ -19,6 +19,7 @@ const empty: Production = {
   requirements: "",
   notes: "",
   materialLinks: "",
+  materialLinksByRequest: {},
   materialFiles: [],
   status: "programada"
 };
@@ -70,6 +71,17 @@ export default function ProductionsPage(){
     if(editing)setEditing({...editing,[k]:v});
   }
 
+  function setPostMaterialLink(requestId:string, value:string){
+    if(!editing)return;
+    setEditing({
+      ...editing,
+      materialLinksByRequest:{
+        ...(editing.materialLinksByRequest||{}),
+        [requestId]: value
+      }
+    });
+  }
+
   async function uploadProductionMaterial(files:FileList|null){
     if(!editing||!files)return;
     setUploading(true);
@@ -91,12 +103,22 @@ export default function ProductionsPage(){
     const nextStatus = markDelivered ? "material_entregado" : editing.status;
     await updateProduction(editing.id,{...editing,status:nextStatus});
     if(markDelivered){
-      await Promise.all((editing.requestIds||[]).map(id=>updateRequest(id,{
-        materialAvailable:true,
-        materialLinks:editing.materialLinks||"",
-        materialFiles:editing.materialFiles||[],
-        status:"material_listo"
-      })));
+      const missingLinks = (editing.requestIds||[]).filter(id => !((editing.materialLinksByRequest||{})[id] || editing.materialLinks || "").trim());
+      if(missingLinks.length){
+        alert("Falta link de material en una o más solicitudes. Agrega link por post o un link general de respaldo.");
+        return;
+      }
+
+      await Promise.all((editing.requestIds||[]).map(id=>{
+        const individualLink = (editing.materialLinksByRequest||{})[id] || "";
+        const finalLink = individualLink.trim() || editing.materialLinks || "";
+        return updateRequest(id,{
+          materialAvailable:true,
+          materialLinks:finalLink,
+          materialFiles:[],
+          status:"material_listo"
+        });
+      }));
     }
     setEditing(null);
     await load();
@@ -124,7 +146,7 @@ export default function ProductionsPage(){
 
     <section className="card" style={{marginTop:24}}>
       <h3>Calendario de producciones</h3>
-      <table className="table"><thead><tr><th>Producción</th><th>Cliente</th><th>Fecha</th><th>Solicitudes</th><th>Estado</th><th>Brief</th></tr></thead><tbody>{productions.map(p=><tr key={p.id}><td><strong>{p.title}</strong></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar material</button> <button className="btn" onClick={()=>window.print()}>Exportar</button></td></tr>)}</tbody></table>
+      <table className="table"><thead><tr><th>Producción</th><th>Cliente</th><th>Fecha</th><th>Solicitudes</th><th>Estado</th><th>Brief</th></tr></thead><tbody>{productions.map(p=><tr key={p.id}><td><strong>{p.title}</strong></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar links</button> <button className="btn" onClick={()=>window.print()}>Exportar</button></td></tr>)}</tbody></table>
     </section>
 
     {editing && <div className="modal-backdrop"><div className="modal-card">
@@ -132,21 +154,33 @@ export default function ProductionsPage(){
       <p className="mini">{editing.title} · {editing.clientName}</p>
       <div className="production-material-box">
         <div className="field">
-          <label>Links del material producido</label>
-          <textarea value={editing.materialLinks||""} onChange={e=>setEditingField("materialLinks",e.target.value)} placeholder="Drive, Dropbox, Frame, WeTransfer, etc."/>
+          <label>Link general del material producido</label>
+          <textarea value={editing.materialLinks||""} onChange={e=>setEditingField("materialLinks",e.target.value)} placeholder="Carpeta general de Drive, Dropbox, Frame, WeTransfer, etc."/>
+          <div className="material-mode-note">Este link sirve como respaldo general. Lo ideal es llenar también el link específico de cada post.</div>
         </div>
+      </div>
+
+      <h3>Links por solicitud / post</h3>
+      <div className="per-post-material-list">
+        {(editing.requestIds||[]).map(id=>{
+          const req=requests.find(x=>x.id===id);
+          return <div className="per-post-material-card" key={id}>
+            <strong>{req?.contentType||"Solicitud"} · {req?.objective||""}</strong>
+            <span className="mini">{req?.creativeIdea||id}</span>
+            <span className="mini">Publica: {req?.publishDate||"Sin fecha"}</span>
+            <input value={(editing.materialLinksByRequest||{})[id]||""} onChange={e=>setPostMaterialLink(id,e.target.value)} placeholder="Link exacto del material para esta pieza"/>
+          </div>
+        })}
+      </div>
+
+      <div className="production-material-box">
         <div className="field">
-          <label>Subir material producido</label>
+          <label>Archivos generales opcionales</label>
           <input type="file" multiple onChange={e=>uploadProductionMaterial(e.target.files)}/>
           <span className="mini">{uploading?"Subiendo...":""}</span>
         </div>
         <FileList files={editing.materialFiles||[]} onPreview={setPreview} onRemove={removeProductionFile}/>
       </div>
-      <h3>Solicitudes incluidas</h3>
-      {(editing.requestIds||[]).map(id=>{
-        const req=requests.find(x=>x.id===id);
-        return <div className="draft-item" key={id}><strong>{req?.contentType||"Solicitud"}</strong><span className="mini">{req?.creativeIdea||id}</span></div>
-      })}
       <div style={{display:"flex",gap:12,marginTop:16,flexWrap:"wrap"}}>
         <button className="btn" onClick={()=>saveProductionMaterial(false)}>Guardar material</button>
         <button className="btn blue" onClick={()=>saveProductionMaterial(true)}>Marcar material entregado</button>

@@ -130,6 +130,7 @@ export type Production = {
   requirements: string;
   notes: string;
   materialLinks?: string;
+  materialLinksByRequest?: Record<string, string>;
   materialFiles?: ReferenceFile[];
   status: string;
 };
