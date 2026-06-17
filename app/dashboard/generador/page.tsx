@@ -14,6 +14,7 @@ import {
   listGenerationRequests,
   listRequests,
   saveGenerationRequest,
+  uploadReferenceFiles,
   updateGenerationRequest
 } from "@/lib/data";
 
@@ -27,11 +28,13 @@ type TextBlock = {
 };
 
 type RequestAttachment = {
-  file: File;
+  file?: File;
   preview: string;
   name: string;
   role: string;
   notes: string;
+  fileUrl?: string;
+  mimeType?: string;
 };
 
 const formats = [
@@ -150,7 +153,7 @@ function getGeneratedImageUrl(image: any) {
 }
 
 export default function BustItNowPage() {
-  const [tab, setTab] = useState<"brief" | "tareas" | "historial" | "mapa">("brief");
+  const [tab, setTab] = useState<"brief" | "tareas" | "briefs" | "historial" | "mapa">("brief");
   const [clients, setClients] = useState<Brand[]>([]);
   const [requests, setRequests] = useState<ContentRequest[]>([]);
   const [history, setHistory] = useState<GenerationRequest[]>([]);
@@ -222,17 +225,43 @@ export default function BustItNowPage() {
     [history, clientFilter]
   );
 
-  const feedItems = useMemo(() => {
+  const briefItems = useMemo(() => {
     return filteredHistory
-      .map((request) => {
-        const generated = generatedRecords.find((image) => image.requestId === request.id);
+      .slice()
+      .sort((a, b) => String(b.id || "").localeCompare(String(a.id || "")));
+  }, [filteredHistory]);
+
+  const feedItems = useMemo(() => {
+    return generatedRecords
+      .filter((image) => clientFilter === "all" || image.clientId === clientFilter)
+      .map((image) => {
+        const relatedRequest = history.find((request) => request.id === image.requestId);
+        const fallbackRequest: GenerationRequest = {
+          id: image.requestId,
+          clientId: image.clientId || "",
+          clientName: image.clientName || "Cliente",
+          mainMessage: `Variante ${image.variantIndex || ""}`.trim(),
+          format: "",
+          goal: "",
+          contentType: "",
+          selectedEmotions: [],
+          selectedVisualElements: [],
+          specificInstructions: "",
+          textBlocks: [],
+          selectedAssetIds: [],
+          selectedAssetsSnapshot: [],
+          status: image.status || "generated"
+        };
+
         return {
-          request,
-          imageUrl: getGeneratedImageUrl(generated)
+          image,
+          request: relatedRequest || fallbackRequest,
+          imageUrl: getGeneratedImageUrl({ ...image, imageDataUrl: image.finalImageDataUrl || image.imageDataUrl })
         };
       })
-      .sort((a, b) => String(b.request.id || "").localeCompare(String(a.request.id || "")));
-  }, [filteredHistory, generatedRecords]);
+      .filter((item) => item.imageUrl)
+      .sort((a, b) => String(b.image.id || "").localeCompare(String(a.image.id || "")));
+  }, [generatedRecords, clientFilter, history]);
 
   function toggle(value: string, arr: string[], setter: (values: string[]) => void) {
     setter(arr.includes(value) ? arr.filter((item) => item !== value) : [...arr, value]);
@@ -266,10 +295,43 @@ export default function BustItNowPage() {
       setError("La referencia puntual debe ser una imagen PNG, JPG o WEBP.");
       return;
     }
-    setAttachment({ file, preview: URL.createObjectURL(file), name: file.name, role: "producto-principal", notes: "" });
+    setAttachment({ file, preview: URL.createObjectURL(file), name: file.name, role: "producto-principal", notes: "", mimeType: file.type });
   }
 
-  function buildPrompt() {
+  function currentAttachmentSnapshot(requestAttachmentsOverride?: any[]) {
+    if (requestAttachmentsOverride) return requestAttachmentsOverride;
+    return attachment ? [{
+      name: attachment.name,
+      role: attachment.role,
+      notes: attachment.notes,
+      fileUrl: attachment.fileUrl || attachment.preview,
+      mimeType: attachment.mimeType || attachment.file?.type || ""
+    }] : [];
+  }
+
+  async function persistAttachmentForBrief() {
+    if (!attachment) return [];
+    if (attachment.fileUrl) return currentAttachmentSnapshot();
+    if (!client?.id) throw new Error("Selecciona un cliente antes de guardar el brief.");
+
+    if (!attachment.file) throw new Error("Selecciona una imagen puntual válida antes de guardar el brief.");
+    const uploaded = await uploadReferenceFiles([attachment.file], `generation-briefs/${client.id}`);
+    const first = uploaded[0];
+    if (!first?.url) throw new Error("No se pudo subir la imagen puntual del brief.");
+
+    const saved = {
+      name: attachment.name,
+      role: attachment.role,
+      notes: attachment.notes,
+      fileUrl: first.url,
+      mimeType: first.type || attachment.file.type
+    };
+
+    setAttachment((current) => current ? { ...current, fileUrl: first.url, mimeType: first.type || current.file?.type || "" } : current);
+    return [saved];
+  }
+
+  function buildPrompt(requestAttachmentsOverride?: any[]) {
     const logoAsset = assets.find((asset) => asset.id === selectedLogoAssetId);
     const built = buildGenerationPrompt({
       clientName: client?.name,
@@ -289,13 +351,7 @@ export default function BustItNowPage() {
         dos: client?.contentPillars ? [client.contentPillars] : []
       },
       selectedAssetsSnapshot: selectedAssets,
-      requestAttachments: attachment ? [{
-        name: attachment.name,
-        role: attachment.role,
-        notes: attachment.notes,
-        fileUrl: attachment.preview,
-        mimeType: attachment.file.type
-      }] : [],
+      requestAttachments: currentAttachmentSnapshot(requestAttachmentsOverride),
       logoOverlay: logoOverlayEnabled ? {
         enabled: true,
         assetId: selectedLogoAssetId,
@@ -313,7 +369,8 @@ export default function BustItNowPage() {
     if (!client) return alert("Selecciona un cliente.");
     if (!mainMessage.trim()) return alert("Escribe el mensaje principal.");
     if (cleanBlocks().length === 0) return alert("Agrega al menos un bloque de texto.");
-    const built = buildPrompt();
+    const requestAttachments = await persistAttachmentForBrief();
+    const built = buildPrompt(requestAttachments);
     const ref: any = await saveGenerationRequest({
       clientId: client.id!,
       clientName: client.name,
@@ -328,20 +385,14 @@ export default function BustItNowPage() {
       textBlocks: cleanBlocks(),
       selectedAssetIds,
       selectedAssetsSnapshot: selectedAssets,
-      requestAttachments: attachment ? [{
-        name: attachment.name,
-        role: attachment.role,
-        notes: attachment.notes,
-        fileUrl: attachment.preview,
-        mimeType: attachment.file.type
-      }] : [],
+      requestAttachments,
       brandBrainSnapshot: client.brandBrain,
       logoOverlay: { enabled: logoOverlayEnabled, assetId: selectedLogoAssetId, position: logoPosition, size: logoSize },
       generatedPrompt: built,
       executedModel: selectedModel,
       status
     });
-    setSuccess("Brief guardado en historial.");
+    setSuccess("Brief guardado en Briefs.");
     await load();
     return ref?.id || "";
   }
@@ -391,6 +442,15 @@ export default function BustItNowPage() {
     setSelectedEmotions(item.selectedEmotions || []);
     setSelectedVisualElements(item.selectedVisualElements || []);
     setSpecificInstructions(item.specificInstructions || "");
+    const savedAttachment = (item.requestAttachments || [])[0] as any;
+    setAttachment(savedAttachment?.fileUrl ? {
+      preview: savedAttachment.fileUrl,
+      name: savedAttachment.name || "Imagen puntual del brief",
+      role: savedAttachment.role || "referencia-visual",
+      notes: savedAttachment.notes || "",
+      fileUrl: savedAttachment.fileUrl,
+      mimeType: savedAttachment.mimeType || ""
+    } : null);
     setPrompt(item.generatedPrompt || "");
     setTab("brief");
   }
@@ -407,8 +467,9 @@ export default function BustItNowPage() {
 
           <nav className="flex flex-wrap gap-2">
             {[
-              ["brief", "Generador / Brief"],
+              ["brief", "Nuevo brief"],
               ["tareas", "Solicitudes desde Tareas"],
+              ["briefs", "Briefs"],
               ["historial", "Historial"],
               ["mapa", "Integración"]
             ].map(([id, label]) => (
@@ -625,8 +686,7 @@ export default function BustItNowPage() {
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Acciones</p>
                     <div className="mt-5 grid gap-3">
                       <button type="button" onClick={buildPrompt} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50">Construir prompt</button>
-                      <button type="button" onClick={() => saveBriefOnly()} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50">Guardar brief de generación</button>
-                      <button type="button" onClick={generate} disabled={loading} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{loading ? "Generando..." : "Generar imagen"}</button>
+                      <button type="button" onClick={() => saveBriefOnly()} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">Guardar brief de generación</button>
                     </div>
                     {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
                     {success ? <div className="mt-5 rounded-3xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-medium text-green-700">{success}</div> : null}
@@ -641,19 +701,6 @@ export default function BustItNowPage() {
                 </section>
               ) : null}
 
-              {generatedImages.length > 0 ? (
-                <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-                  <h2 className="text-2xl font-semibold tracking-tight">Imágenes generadas</h2>
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    {generatedImages.map((image, index) => (
-                      <article key={index} className="rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
-                        <img src={`data:image/png;base64,${image}`} alt={`Generada ${index + 1}`} className="w-full rounded-2xl" />
-                        <a download={`bust-it-now-${index + 1}.png`} href={`data:image/png;base64,${image}`} className="mt-4 inline-flex h-11 items-center justify-center rounded-2xl bg-zinc-950 px-4 text-sm font-semibold text-white">Descargar</a>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
             </>
           ) : null}
 
@@ -678,6 +725,47 @@ export default function BustItNowPage() {
             </section>
           ) : null}
 
+          {tab === "briefs" ? (
+            <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Briefs</p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-tight">Briefs listos para generar</h2>
+                  <p className="mt-2 text-sm text-zinc-600">Aquí vive cada brief guardado. Desde esta vista abres el brief y generas las variantes que necesites.</p>
+                </div>
+                <select value={clientFilter} onChange={(event) => setClientFilter(event.target.value)} className="h-11 rounded-2xl border border-zinc-200 bg-white px-3 text-sm">
+                  <option value="all">Todos los clientes</option>
+                  {clients.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </div>
+
+              {briefItems.length === 0 ? (
+                <p className="mt-5 text-sm text-zinc-500">No hay briefs guardados.</p>
+              ) : (
+                <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {briefItems.map((request) => (
+                    <article key={request.id} className="rounded-[1.7rem] border border-zinc-200 bg-zinc-50 p-5 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-950 text-xs font-bold text-white">{request.clientName?.slice(0, 1) || "B"}</div>
+                        <div>
+                          <strong className="block text-sm text-zinc-950">{request.clientName}</strong>
+                          <span className="text-xs text-zinc-500">{formatStatus(request.status)}</span>
+                        </div>
+                      </div>
+                      <p className="mt-4 line-clamp-3 text-sm font-semibold leading-6 text-zinc-950">{request.mainMessage}</p>
+                      <p className="mt-2 text-xs text-zinc-500">{request.format} · {request.contentType} · {request.executedModel || "Sin modelo"}</p>
+                      {(request.requestAttachments || []).length ? <p className="mt-2 text-xs font-medium text-zinc-700">Incluye imagen puntual del brief</p> : null}
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => openHistoryItem(request)} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-950 hover:bg-zinc-50">Reusar brief</button>
+                        {request.id ? <Link href={`/dashboard/generador/${request.id}`} className="rounded-2xl bg-zinc-950 px-3 py-2 text-center text-xs font-semibold text-white">Abrir / generar</Link> : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
+
           {tab === "historial" ? (
             <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
               <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -696,8 +784,8 @@ export default function BustItNowPage() {
                 <p className="mt-5 text-sm text-zinc-500">No hay generaciones en historial.</p>
               ) : (
                 <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {feedItems.map(({ request, imageUrl }) => (
-                    <article key={request.id} className="overflow-hidden rounded-[1.7rem] border border-zinc-200 bg-zinc-50 shadow-sm">
+                  {feedItems.map(({ request, image, imageUrl }) => (
+                    <article key={image.id || `${request.id}-${image.variantIndex}`} className="overflow-hidden rounded-[1.7rem] border border-zinc-200 bg-zinc-50 shadow-sm">
                       <div className="flex items-center gap-3 border-b border-zinc-200 bg-white px-4 py-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-950 text-xs font-bold text-white">{request.clientName?.slice(0, 1) || "B"}</div>
                         <div>

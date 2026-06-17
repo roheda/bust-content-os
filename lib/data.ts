@@ -653,6 +653,9 @@ export async function saveGeneratedImageRecord(item: {
   model?: string;
   variantIndex?: number;
   logoOverlayApplied?: boolean;
+  originalImageDataUrl?: string;
+  finalImageDataUrl?: string;
+  logoOverlay?: any;
   status?: string;
 }) {
   return addDoc(collection(db, "generatedImages"), {
@@ -665,4 +668,11 @@ export async function saveGeneratedImageRecord(item: {
 export async function listGeneratedImageRecords() {
   const snap = await getDocs(collection(db, "generatedImages"));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+}
+
+export async function updateGeneratedImageRecord(id: string, data: any) {
+  return updateDoc(doc(db, "generatedImages", id), {
+    ...data,
+    updatedAt: serverTimestamp()
+  });
 }
