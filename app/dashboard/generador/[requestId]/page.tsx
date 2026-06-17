@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
@@ -73,13 +73,29 @@ function isLogo(asset: ClientAsset) {
   );
 }
 
+function isTextAsset(asset: ClientAsset) {
+  const value = `${asset.type} ${asset.category} ${(asset.tags || []).join(" ")} ${asset.name} ${(asset as any).text || ""}`.toLowerCase();
+  return value.includes("bloque-texto") || asset.type === "texto" || asset.mimeType === "text/plain";
+}
+
+function getAssetCategory(asset: ClientAsset) {
+  if (isLogo(asset)) return "Logos";
+  if (isTextAsset(asset)) return "Textos";
+  return asset.category || asset.type || "Otros";
+}
+
 function dataUrlFromBase64(base64: string) {
   if (base64.startsWith("data:image/") || base64.startsWith("http") || base64.startsWith("blob:")) return base64;
   return `data:image/png;base64,${base64}`;
 }
 
 function cleanBase64(value: string) {
+  if (value.startsWith("http") || value.startsWith("blob:")) return value;
   return value.includes(",") ? value.split(",").pop() || "" : value;
+}
+
+function isRemoteImageSource(value: string) {
+  return value.startsWith("http") || value.startsWith("blob:");
 }
 
 function formatStatus(status?: string) {
@@ -105,6 +121,7 @@ export default function GenerationRequestPage() {
   const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [assetCategoryFilter, setAssetCategoryFilter] = useState("all");
 
   const [logoOverlay, setLogoOverlay] = useState<LogoOverlayXY>({
     enabled: false,
@@ -143,11 +160,10 @@ export default function GenerationRequestPage() {
       const clientAssets = await listClientAssets(found.clientId);
       setAssets(clientAssets);
 
-      const selected = found.selectedAssetIds?.length
-        ? found.selectedAssetIds
-        : clientAssets.filter((asset) => asset.isFeatured && !isLogo(asset)).map((asset) => asset.id || "");
+      const selected = found.selectedAssetIds?.length ? found.selectedAssetIds : [];
 
       setSelectedAssetIds(selected.filter(Boolean));
+      setAssetCategoryFilter("all");
 
       const existingLogoOverlay = (found as any).logoOverlay || {};
       const logos = clientAssets.filter(isLogo);
@@ -178,6 +194,13 @@ export default function GenerationRequestPage() {
     () => assets.filter((asset) => selectedAssetIds.includes(asset.id || "")),
     [assets, selectedAssetIds]
   );
+  const visualAssetCategories = useMemo(() => {
+    const categories: string[] = Array.from(new Set(assets.filter((asset) => !isTextAsset(asset)).map((asset) => String(getAssetCategory(asset))).filter(Boolean)));
+    return categories.sort((a, b) => a.localeCompare(b, "es"));
+  }, [assets]);
+  const visibleAssets = useMemo(() => {
+    return assets.filter((asset) => !isTextAsset(asset) && (assetCategoryFilter === "all" || getAssetCategory(asset) === assetCategoryFilter));
+  }, [assets, assetCategoryFilter]);
   const visualReferences = useReferences ? selectedAssets.filter(isImage) : [];
   const requestAttachmentReferences = useMemo(() => (request?.requestAttachments || [])
     .map((attachment: any) => ({ url: attachment.fileUrl || attachment.url || "", name: attachment.name || "Imagen puntual del brief" }))
@@ -219,9 +242,10 @@ export default function GenerationRequestPage() {
     });
   }
 
-  function toggleAsset(id: string) {
+  const toggleAsset = useCallback((id: string) => {
+    if (!id) return;
     setSelectedAssetIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  }
+  }, []);
 
   async function generateImages() {
     if (!request) return;
@@ -317,11 +341,13 @@ export default function GenerationRequestPage() {
     setSuccess("");
 
     try {
+      const originalSource = image.originalBase64 || image.base64;
       const response = await fetch("/api/apply-logo-overlay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageBase64: image.originalBase64 || image.base64,
+          imageBase64: isRemoteImageSource(originalSource) ? "" : originalSource,
+          imageUrl: isRemoteImageSource(originalSource) ? originalSource : "",
           logoOverlay: {
             ...logoOverlay,
             enabled: true
@@ -357,6 +383,8 @@ export default function GenerationRequestPage() {
         });
       }
 
+      setSelectedImageIndex(imageIndex);
+      setIsLogoModalOpen(false);
       setSuccess("Logo insertado. Ya puedes descargar la versión con logo o quitarlo si no te gusta.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al aplicar logo.");
@@ -481,15 +509,17 @@ export default function GenerationRequestPage() {
                     <button type="button" onClick={() => setUseReferences(!useReferences)} className={`rounded-full px-5 py-2 text-sm font-semibold ${useReferences ? "bg-zinc-950 text-white" : "bg-white text-zinc-700 border border-zinc-200"}`}>{useReferences ? "Activo" : "Inactivo"}</button>
                   </div>
 
+                  {visualAssetCategories.length ? (
+                    <PillFilter
+                      className="mt-4"
+                      options={[{ id: "all", label: "Todos" }, ...visualAssetCategories.map((category) => ({ id: category, label: category }))]}
+                      value={assetCategoryFilter}
+                      onChange={setAssetCategoryFilter}
+                    />
+                  ) : null}
+
                   {assets.length ? (
-                    <div className="mt-4 space-y-3">
-                      {assets.filter(isImage).filter((asset) => !isLogo(asset)).map((asset) => (
-                        <button type="button" key={asset.id} onClick={() => toggleAsset(asset.id || "")} className={`flex w-full items-center gap-3 rounded-3xl border p-3 text-left transition ${selectedAssetIds.includes(asset.id || "") ? "border-zinc-950 bg-white" : "border-zinc-200 bg-white/70 hover:border-zinc-400"}`}>
-                          <img src={asset.fileUrl} alt={asset.name} className="h-14 w-14 rounded-2xl object-cover" />
-                          <span><strong className="block text-xs text-zinc-950">{asset.name}</strong><span className="text-xs text-zinc-500">{asset.type} · {asset.category || "Sin categoría"}</span></span>
-                        </button>
-                      ))}
-                    </div>
+                    <AssetPicker assets={visibleAssets.filter((asset) => isImage(asset) && !isLogo(asset))} selectedAssetIds={selectedAssetIds} onToggle={toggleAsset} />
                   ) : null}
                 </div>
 
@@ -528,13 +558,13 @@ export default function GenerationRequestPage() {
                         : `${request.clientName}-variante-${index + 1}.png`;
 
                       return (
-                        <article key={image.id} className={`rounded-3xl border p-3 ${selectedImageIndex === index ? "border-zinc-950" : "border-zinc-200"}`}>
-                          <button type="button" onClick={() => { setSelectedImageIndex(index); setIsLogoModalOpen(true); }} className="relative block w-full overflow-hidden rounded-2xl bg-zinc-100">
-                            <img src={dataUrlFromBase64(visibleImage)} alt={`Generada ${index + 1}`} className="w-full rounded-2xl" />
+                        <article key={image.id} className={`rounded-3xl border-2 p-3 transition ${selectedImageIndex === index ? "border-emerald-500 ring-4 ring-emerald-100" : "border-zinc-200"}`}>
+                          <a href={dataUrlFromBase64(visibleImage)} target="_blank" rel="noopener noreferrer" className="relative block w-full overflow-hidden rounded-2xl bg-zinc-100" title="Abrir imagen en ventana nueva">
+                            <img src={dataUrlFromBase64(visibleImage)} alt={`Generada ${index + 1}`} loading="lazy" decoding="async" className="w-full rounded-2xl" />
                             {image.logoOverlayApplied ? (
                               <span className="absolute bottom-3 left-3 rounded-full bg-zinc-950 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-white">Logo aplicado</span>
                             ) : null}
-                          </button>
+                          </a>
                           <div className="mt-3 grid grid-cols-2 gap-2">
                             <button type="button" onClick={() => { setSelectedImageIndex(index); updateLogoOverlay({ enabled: true }); setIsLogoModalOpen(true); }} className="inline-flex h-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-950">Insertar logo</button>
                             <a download={downloadName} href={dataUrlFromBase64(visibleImage)} className="inline-flex h-11 items-center justify-center rounded-2xl bg-zinc-950 px-4 text-sm font-semibold text-white">Descargar</a>
@@ -568,7 +598,7 @@ export default function GenerationRequestPage() {
 
               <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-4">
                 {generatedImages.map((image, index) => (
-                  <button key={image.id} type="button" onClick={() => setSelectedImageIndex(index)} className={`overflow-hidden rounded-2xl border p-1 ${selectedImageIndex === index ? "border-zinc-950" : "border-zinc-200"}`}>
+                  <button key={image.id} type="button" onClick={() => setSelectedImageIndex(index)} className={`overflow-hidden rounded-2xl border-2 p-1 transition ${selectedImageIndex === index ? "border-emerald-500 ring-4 ring-emerald-200" : "border-zinc-200 hover:border-emerald-400"}`}>
                     <img src={dataUrlFromBase64(image.finalBase64 || image.base64)} alt={`Variante ${index + 1}`} className="aspect-square w-full rounded-xl object-cover" />
                   </button>
                 ))}
@@ -611,7 +641,7 @@ export default function GenerationRequestPage() {
                 {logoAssets.length ? (
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     {logoAssets.map((asset) => (
-                      <button key={asset.id} type="button" onClick={() => handleSelectLogo(asset.id || "")} className={`rounded-2xl border bg-white p-3 text-left ${logoOverlay.assetId === asset.id ? "border-zinc-950" : "border-zinc-200"}`}>
+                      <button key={asset.id} type="button" onClick={() => handleSelectLogo(asset.id || "")} className={`rounded-2xl border-2 bg-white p-3 text-left transition ${logoOverlay.assetId === asset.id ? "border-emerald-500 ring-4 ring-emerald-200" : "border-zinc-200 hover:border-emerald-400"}`}>
                         <img src={asset.fileUrl} alt={asset.name} className="h-16 w-full rounded-xl object-contain" />
                         <strong className="mt-2 block text-xs text-zinc-950">{asset.name}</strong>
                       </button>
@@ -651,6 +681,46 @@ export default function GenerationRequestPage() {
     </AppShell>
   );
 }
+
+function PillFilter({ options, value, onChange, className = "" }: { options: { id: string; label: string }[]; value: string; onChange: (value: string) => void; className?: string }) {
+  return (
+    <div className={`flex flex-wrap gap-2 ${className}`}>
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          onClick={() => onChange(option.id)}
+          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${value === option.id ? "bg-emerald-600 text-white shadow-lg shadow-emerald-200" : "border border-zinc-200 bg-white text-zinc-700 hover:border-emerald-400 hover:text-emerald-700"}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const AssetPicker = memo(function AssetPicker({ assets, selectedAssetIds, onToggle }: { assets: ClientAsset[]; selectedAssetIds: string[]; onToggle: (assetId: string) => void }) {
+  if (!assets.length) return <p className="mt-4 text-sm text-zinc-500">No hay assets para este filtro.</p>;
+
+  return (
+    <div className="mt-5 grid grid-cols-3 gap-2">
+      {assets.map((asset) => {
+        const selected = selectedAssetIds.includes(asset.id || "");
+        return (
+          <button
+            key={asset.id}
+            type="button"
+            onClick={() => onToggle(asset.id || "")}
+            className={`relative overflow-hidden rounded-2xl border-2 text-left transition ${selected ? "border-emerald-500 ring-4 ring-emerald-200 shadow-lg shadow-emerald-100" : "border-zinc-200 hover:border-emerald-400"}`}
+          >
+            {isImage(asset) ? <img src={asset.fileUrl} alt={asset.name} loading="lazy" decoding="async" className="aspect-square w-full object-cover" /> : <div className="flex aspect-square items-center justify-center bg-zinc-100 text-xs text-zinc-500">Archivo</div>}
+            <span className={`absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold shadow ${selected ? "bg-emerald-500 text-white" : "bg-white text-zinc-950"}`}>{selected ? "✓" : "+"}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+});
 
 function RangeControl({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix: string; onChange: (value: number) => void }) {
   return (

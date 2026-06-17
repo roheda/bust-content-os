@@ -553,6 +553,28 @@ export async function uploadClientAsset(clientId: string, clientName: string, fi
   });
 }
 
+
+export async function saveClientTextAsset(clientId: string, clientName: string, meta: { name: string; role: string; priority?: string; text: string; instruction?: string }) {
+  return addDoc(collection(db, "clientAssets"), {
+    clientId,
+    clientName,
+    name: meta.name || meta.text.slice(0, 48) || "Bloque de texto",
+    type: "texto",
+    category: meta.role || "free",
+    tags: ["bloque-texto", meta.role || "free", meta.priority || "medium"].filter(Boolean),
+    notes: meta.instruction || "",
+    text: meta.text,
+    visualRole: meta.role || "free",
+    priority: meta.priority || "medium",
+    fileUrl: "",
+    storagePath: "",
+    mimeType: "text/plain",
+    isFeatured: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
 export async function updateClientAsset(id: string, data: Partial<ClientAsset>) {
   return updateDoc(doc(db, "clientAssets", id), { ...data, updatedAt: serverTimestamp() });
 }

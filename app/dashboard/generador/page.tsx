@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, memo, useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
 import {
@@ -14,6 +14,7 @@ import {
   listGenerationRequests,
   listRequests,
   saveGenerationRequest,
+  saveClientTextAsset,
   uploadReferenceFiles,
   updateGenerationRequest
 } from "@/lib/data";
@@ -137,6 +138,17 @@ function isLogo(asset: ClientAsset) {
   return isImage(asset) && (value.includes("logo") || value.includes("logotipo"));
 }
 
+function isTextAsset(asset: ClientAsset) {
+  const value = `${asset.type} ${asset.category} ${(asset.tags || []).join(" ")} ${asset.name} ${(asset as any).text || ""}`.toLowerCase();
+  return value.includes("bloque-texto") || asset.type === "texto" || asset.mimeType === "text/plain";
+}
+
+function getAssetCategory(asset: ClientAsset) {
+  if (isLogo(asset)) return "Logos";
+  if (isTextAsset(asset)) return "Textos";
+  return asset.category || asset.type || "Otros";
+}
+
 function formatStatus(status?: string) {
   if (status === "completed") return "Generado";
   if (status === "generating") return "Generando";
@@ -182,6 +194,9 @@ export default function BustItNowPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [clientFilter, setClientFilter] = useState("all");
+  const [assetCategoryFilter, setAssetCategoryFilter] = useState("all");
+  const [textAssetRoleFilter, setTextAssetRoleFilter] = useState("all");
+  const [savingTextAssetId, setSavingTextAssetId] = useState("");
 
   async function load() {
     const [c, r, h, g] = await Promise.all([
@@ -199,23 +214,42 @@ export default function BustItNowPage() {
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
+    setAssetCategoryFilter("all");
+    setTextAssetRoleFilter("all");
+
     if (!clientId) {
       setAssets([]);
       setSelectedAssetIds([]);
+      setSelectedLogoAssetId("");
       return;
     }
+
     listClientAssets(clientId).then((rows) => {
       const sorted = [...rows].sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured));
       setAssets(sorted);
-      setSelectedAssetIds(sorted.filter((asset) => asset.isFeatured && !isLogo(asset)).map((asset) => asset.id || "").filter(Boolean));
+      setSelectedAssetIds([]);
       const firstLogo = sorted.find(isLogo);
-      if (firstLogo) setSelectedLogoAssetId(firstLogo.id || "");
+      setSelectedLogoAssetId(firstLogo?.id || "");
     });
   }, [clientId]);
 
   const client = clients.find((item) => item.id === clientId);
-  const selectedAssets = assets.filter((asset) => selectedAssetIds.includes(asset.id || ""));
-  const logoAssets = assets.filter(isLogo);
+  const selectedAssets = useMemo(() => assets.filter((asset) => selectedAssetIds.includes(asset.id || "")), [assets, selectedAssetIds]);
+  const logoAssets = useMemo(() => assets.filter(isLogo), [assets]);
+  const visualAssetCategories = useMemo(() => {
+    const categories: string[] = Array.from(new Set(assets.filter((asset) => !isTextAsset(asset)).map((asset) => String(getAssetCategory(asset))).filter(Boolean)));
+    return categories.sort((a, b) => a.localeCompare(b, "es"));
+  }, [assets]);
+  const visibleAssets = useMemo(() => {
+    return assets.filter((asset) => !isTextAsset(asset) && (assetCategoryFilter === "all" || getAssetCategory(asset) === assetCategoryFilter));
+  }, [assets, assetCategoryFilter]);
+  const textAssetRoleOptions = useMemo(() => {
+    const values: string[] = Array.from(new Set(assets.filter(isTextAsset).map((asset) => String((asset as any).visualRole || asset.category || "free"))));
+    return values.sort((a, b) => a.localeCompare(b, "es"));
+  }, [assets]);
+  const visibleTextAssets = useMemo(() => {
+    return assets.filter((asset) => isTextAsset(asset) && (textAssetRoleFilter === "all" || ((asset as any).visualRole || asset.category || "free") === textAssetRoleFilter));
+  }, [assets, textAssetRoleFilter]);
   const sentTasks = useMemo(
     () => requests.filter((item) => Boolean(item.generatorStatus) && (clientFilter === "all" || item.clientId === clientFilter)),
     [requests, clientFilter]
@@ -264,6 +298,52 @@ export default function BustItNowPage() {
 
   function toggle(value: string, arr: string[], setter: (values: string[]) => void) {
     setter(arr.includes(value) ? arr.filter((item) => item !== value) : [...arr, value]);
+  }
+
+  const toggleAsset = useCallback((assetId: string) => {
+    if (!assetId) return;
+    setSelectedAssetIds((current) => current.includes(assetId) ? current.filter((item) => item !== assetId) : [...current, assetId]);
+  }, []);
+
+  function addTextAssetToBrief(asset: ClientAsset) {
+    const text = String((asset as any).text || asset.notes || asset.name || "").trim();
+    if (!text) return;
+    setTextBlocks((blocks) => [
+      ...blocks,
+      {
+        ...emptyBlock(),
+        text,
+        role: String((asset as any).visualRole || asset.category || "free"),
+        priority: String((asset as any).priority || "medium"),
+        instruction: asset.notes || ""
+      }
+    ]);
+    setSuccess("Bloque de texto agregado al brief.");
+  }
+
+  async function saveBlockAsAsset(block: TextBlock) {
+    if (!client?.id) return alert("Selecciona un cliente antes de guardar el bloque como asset.");
+    if (!block.text.trim()) return alert("Escribe texto antes de guardarlo como asset.");
+
+    setSavingTextAssetId(block.id);
+    setError("");
+    setSuccess("");
+    try {
+      await saveClientTextAsset(client.id, client.name, {
+        name: `${roles.find((role) => role.id === block.role)?.label || "Texto"}: ${block.text.slice(0, 42)}`,
+        role: block.role,
+        priority: block.priority,
+        text: block.text.trim(),
+        instruction: block.instruction.trim()
+      });
+      const rows = await listClientAssets(client.id);
+      setAssets([...rows].sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured)));
+      setSuccess("Bloque guardado como asset de texto.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo guardar el bloque como asset.");
+    } finally {
+      setSavingTextAssetId("");
+    }
   }
 
   function updateBlock(id: string, patch: Partial<TextBlock>) {
@@ -558,9 +638,17 @@ export default function BustItNowPage() {
                             className="min-h-20 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none focus:border-zinc-950"
                             placeholder="Texto exacto que debe aparecer"
                           />
-                          <div className="mt-3 grid gap-3 md:grid-cols-3">
+                          <div className="mt-3 grid gap-3 md:grid-cols-4">
                             <FieldSelect label="Rol visual" value={block.role} onChange={(value) => updateBlock(block.id, { role: value })} options={roles} />
                             <FieldSelect label="Prioridad" value={block.priority} onChange={(value) => updateBlock(block.id, { priority: value })} options={priorities} />
+                            <button
+                              type="button"
+                              onClick={() => saveBlockAsAsset(block)}
+                              disabled={savingTextAssetId === block.id || !block.text.trim()}
+                              className="mt-6 h-11 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+                            >
+                              {savingTextAssetId === block.id ? "Guardando..." : "Guardar asset"}
+                            </button>
                             <button
                               type="button"
                               onClick={() => setTextBlocks(textBlocks.length > 1 ? textBlocks.filter((item) => item.id !== block.id) : [emptyBlock()])}
@@ -585,7 +673,11 @@ export default function BustItNowPage() {
                     <p className="mt-2 text-sm leading-6 text-zinc-600">Sube aquí un producto, platillo o imagen puntual que deba considerarse solo para este brief.</p>
                     <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
                       <label className="mb-3 block text-sm font-medium text-zinc-800">Imagen puntual</label>
-                      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAttachment} className="block w-full text-sm" />
+                      <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">
+                        Seleccionar archivo
+                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAttachment} className="sr-only" />
+                      </label>
+                      <span className="ml-3 align-middle text-sm text-zinc-500">{attachment?.name || "Sin archivo seleccionado"}</span>
 
                       {attachment ? (
                         <div className="mt-4 grid gap-4 md:grid-cols-[180px_1fr]">
@@ -658,26 +750,48 @@ export default function BustItNowPage() {
                   <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Assets del cliente</p>
                     <h2 className="mt-2 text-2xl font-semibold tracking-tight">Elegir para este brief</h2>
+                    <p className="mt-2 text-xs text-zinc-500">Los assets empiezan sin preselección. Los seleccionados se iluminan en verde.</p>
+                    {visualAssetCategories.length ? (
+                      <PillFilter
+                        className="mt-4"
+                        options={[{ id: "all", label: "Todos" }, ...visualAssetCategories.map((category) => ({ id: category, label: category }))]}
+                        value={assetCategoryFilter}
+                        onChange={setAssetCategoryFilter}
+                      />
+                    ) : null}
                     {assets.length === 0 ? (
                       <p className="mt-4 text-sm text-zinc-500">Selecciona cliente para ver assets.</p>
                     ) : (
-                      <div className="mt-5 grid grid-cols-3 gap-2">
-                        {assets.map((asset) => (
-                          <button
-                            type="button"
-                            key={asset.id}
-                            onClick={() => toggle(asset.id || "", selectedAssetIds, setSelectedAssetIds)}
-                            className={`group relative overflow-hidden rounded-2xl border text-left transition ${selectedAssetIds.includes(asset.id || "") ? "border-zinc-950" : "border-zinc-200 hover:border-zinc-500"}`}
-                          >
-                            {isImage(asset) ? (
-                              <img src={asset.fileUrl} alt={asset.name} className="aspect-square w-full object-cover" />
-                            ) : (
-                              <div className="flex aspect-square w-full items-center justify-center bg-zinc-200 text-xs font-semibold text-zinc-600">Archivo</div>
-                            )}
-                            <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-zinc-950 shadow">{selectedAssetIds.includes(asset.id || "") ? "✓" : "+"}</span>
+                      <AssetPicker assets={visibleAssets} selectedAssetIds={selectedAssetIds} onToggle={toggleAsset} />
+                    )}
+                  </section>
+
+                  <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Assets de texto</p>
+                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Bloques guardados</h2>
+                    <p className="mt-2 text-xs text-zinc-500">Filtra por rol visual y da clic para reutilizar un bloque en este brief.</p>
+                    {textAssetRoleOptions.length ? (
+                      <PillFilter
+                        className="mt-4"
+                        options={[{ id: "all", label: "Todos" }, ...textAssetRoleOptions.map((role) => ({ id: role, label: roles.find((item) => item.id === role)?.label || role }))]}
+                        value={textAssetRoleFilter}
+                        onChange={setTextAssetRoleFilter}
+                      />
+                    ) : null}
+                    {visibleTextAssets.length ? (
+                      <div className="mt-5 grid gap-3">
+                        {visibleTextAssets.map((asset) => (
+                          <button key={asset.id} type="button" onClick={() => addTextAssetToBrief(asset)} className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-left transition hover:border-emerald-400 hover:bg-emerald-50">
+                            <div className="flex items-center justify-between gap-3">
+                              <strong className="text-sm text-zinc-950">{asset.name}</strong>
+                              <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">{roles.find((item) => item.id === ((asset as any).visualRole || asset.category))?.label || (asset as any).visualRole || asset.category}</span>
+                            </div>
+                            <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-600">{String((asset as any).text || asset.notes || "")}</p>
                           </button>
                         ))}
                       </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-zinc-500">Aún no hay bloques de texto guardados como assets.</p>
                     )}
                   </section>
 
@@ -793,7 +907,9 @@ export default function BustItNowPage() {
                         </div>
                       </div>
                       {imageUrl ? (
-                        <img src={imageUrl} alt={request.mainMessage} className="aspect-square w-full object-cover" />
+                        <a href={imageUrl} target="_blank" rel="noopener noreferrer" title="Abrir imagen en ventana nueva">
+                          <img src={imageUrl} alt={request.mainMessage} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
+                        </a>
                       ) : (
                         <div className="flex aspect-square w-full items-center justify-center bg-zinc-200 p-6 text-center text-sm font-medium text-zinc-500">Sin imagen generada</div>
                       )}
@@ -851,6 +967,50 @@ function ChipGroup({ values, selected, onToggle }: { values: string[]; selected:
     </div>
   );
 }
+
+function PillFilter({ options, value, onChange, className = "" }: { options: { id: string; label: string }[]; value: string; onChange: (value: string) => void; className?: string }) {
+  return (
+    <div className={`flex flex-wrap gap-2 ${className}`}>
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          onClick={() => onChange(option.id)}
+          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${value === option.id ? "bg-emerald-600 text-white shadow-lg shadow-emerald-200" : "border border-zinc-200 bg-white text-zinc-700 hover:border-emerald-400 hover:text-emerald-700"}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const AssetPicker = memo(function AssetPicker({ assets, selectedAssetIds, onToggle }: { assets: ClientAsset[]; selectedAssetIds: string[]; onToggle: (assetId: string) => void }) {
+  if (!assets.length) return <p className="mt-4 text-sm text-zinc-500">No hay assets para este filtro.</p>;
+
+  return (
+    <div className="mt-5 grid grid-cols-3 gap-2">
+      {assets.map((asset) => {
+        const selected = selectedAssetIds.includes(asset.id || "");
+        return (
+          <button
+            type="button"
+            key={asset.id}
+            onClick={() => onToggle(asset.id || "")}
+            className={`group relative overflow-hidden rounded-2xl border-2 text-left transition ${selected ? "border-emerald-500 ring-4 ring-emerald-200 shadow-lg shadow-emerald-100" : "border-zinc-200 hover:border-emerald-400"}`}
+          >
+            {isImage(asset) ? (
+              <img src={asset.fileUrl} alt={asset.name} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
+            ) : (
+              <div className="flex aspect-square w-full items-center justify-center bg-zinc-200 text-xs font-semibold text-zinc-600">Archivo</div>
+            )}
+            <span className={`absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold shadow ${selected ? "bg-emerald-500 text-white" : "bg-white text-zinc-950"}`}>{selected ? "✓" : "+"}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+});
 
 function Info({ title, text }: { title: string; text: string }) {
   return (
