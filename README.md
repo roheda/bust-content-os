@@ -116,3 +116,15 @@ Se restauró el bloque visual:
 - Quitar referencia puntual
 
 Además esa referencia puntual se guarda también en `requestAttachments` del request.
+
+
+## v5 — Fix deploy + historial feed
+
+Se corrigió el error de build en `app/dashboard/generador/page.tsx` reescribiendo el JSX completo y bien cerrado.
+
+Cambios:
+- Se quitó "Historial de briefs recientes" del tab Generador / Brief.
+- El historial vive solo en el tab Historial.
+- El tab Historial ahora es un feed tipo Instagram.
+- Cada card muestra imagen generada si existe en `generatedImages`.
+- Se conserva el punto 4: Referencia específica de esta pieza.

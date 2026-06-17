@@ -659,3 +659,8 @@ export async function saveGeneratedImageRecord(item: {
     updatedAt: serverTimestamp()
   });
 }
+
+export async function listGeneratedImageRecords() {
+  const snap = await getDocs(collection(db, "generatedImages"));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+}

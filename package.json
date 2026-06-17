@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "2.1.0-bustitnow-request-flow",
+  "version": "2.1.3-fixed-generator-feed",
   "private": true,
   "scripts": {
     "dev": "next dev",
