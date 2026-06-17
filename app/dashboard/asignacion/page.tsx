@@ -9,7 +9,7 @@ import {
   getOperationalStatus,
   hasMaterial,
   isImageFile,
-  listBrands,
+  listUniqueBrands,
   listRequests,
   priorities,
   updateRequest,
@@ -33,7 +33,7 @@ export default function AssignmentPage(){
   const [deleteModal,setDeleteModal]=useState(false);
   const [deleteConfirm,setDeleteConfirm]=useState("");
 
-  async function load(){setItems(await listRequests());setBrands(await listBrands())}
+  async function load(){setItems(await listRequests());setBrands(await listUniqueBrands())}
   useEffect(()=>{load()},[]);
 
   const filtered=useMemo(()=>items.filter(item=>{

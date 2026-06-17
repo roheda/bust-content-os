@@ -13,7 +13,7 @@ import {
   getRequestDate,
   hasMaterial,
   isImageFile,
-  listBrands,
+  listUniqueBrands,
   listPlannerDrafts, deletePlannerDraft,
   listRequestBatches,
   listRequests,
@@ -49,7 +49,7 @@ export default function CreatorPage(){
 
   async function load(){
     const [loadedBrands, loadedRequests, loadedDrafts, loadedBatches] = await Promise.all([
-      listBrands(),
+      listUniqueBrands(),
       listRequests(),
       listPlannerDrafts(),
       listRequestBatches()

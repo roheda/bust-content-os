@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { Brand, ContentRequest, Production, listBrands, listProductions, listRequests } from "@/lib/data";
+import { Brand, ContentRequest, Production, listUniqueBrands, listProductions, listRequests } from "@/lib/data";
 
 type PersonMetric = {
   name: string;
@@ -24,7 +24,7 @@ export default function ReportsPage(){
   const [to,setTo]=useState("");
 
   async function load(){
-    const [reqs,cls,prods] = await Promise.all([listRequests(),listBrands(),listProductions()]);
+    const [reqs,cls,prods] = await Promise.all([listRequests(),listUniqueBrands(),listProductions()]);
     setRequests(reqs);
     setBrands(cls);
     setProductions(prods);

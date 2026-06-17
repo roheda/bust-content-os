@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
-import { Brand, listBrands, saveBrand } from "@/lib/data";
+import { Brand, listUniqueBrands, saveBrand } from "@/lib/data";
 
 export default function ClientsPage(){
   const [clients,setClients]=useState<Brand[]>([]);
@@ -14,7 +14,7 @@ export default function ClientsPage(){
 
   async function load(){
     setLoading(true);
-    const rows = await listBrands();
+    const rows = await listUniqueBrands();
     setClients(rows.filter(c=>(c.status||"active")!=="deleted").sort((a,b)=>a.name.localeCompare(b.name,"es")));
     setLoading(false);
   }

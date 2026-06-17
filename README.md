@@ -56,3 +56,16 @@ Usa las mismas colecciones de Firebase:
 - generationRequests
 - contentRequests
 - systemFeedback
+
+
+## Patch 2.0.1 — Dedupe de clientes por nombre
+
+Se agregó `dedupeBrandsByName()` y `listUniqueBrands()` en `lib/data.ts`.
+
+Ahora el Creador de Solicitudes y módulos operativos usan `listUniqueBrands()` para:
+- ocultar clientes con `status: "deleted"`,
+- evitar duplicados por nombre,
+- conservar el cliente más completo cuando hay dos documentos con el mismo nombre.
+
+Esto corrige casos como:
+- Acerofertas duplicado después de migración.

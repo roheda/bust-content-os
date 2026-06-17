@@ -3,7 +3,7 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
-import { Brand, ClientAsset, ContentRequest, GenerationRequest, listBrands, listClientAssets, listGenerationRequests, listRequests, saveGenerationRequest, updateGenerationRequest } from "@/lib/data";
+import { Brand, ClientAsset, ContentRequest, GenerationRequest, listUniqueBrands, listClientAssets, listGenerationRequests, listRequests, saveGenerationRequest, updateGenerationRequest } from "@/lib/data";
 
 type TextBlock = { id:string; text:string; role:string; priority:string; instruction:string; locked:boolean };
 type RequestAttachment = { file: File; preview: string; name: string; role: string; notes: string };
@@ -108,7 +108,7 @@ export default function BustItNowPage(){
   const [clientFilter,setClientFilter]=useState("all");
 
   async function load(){
-    const [c,r,h]=await Promise.all([listBrands(),listRequests(),listGenerationRequests()]);
+    const [c,r,h]=await Promise.all([listUniqueBrands(),listRequests(),listGenerationRequests()]);
     setClients(c.filter(x=>(x.status||"active")!=="deleted").sort((a,b)=>a.name.localeCompare(b.name,"es")));
     setRequests(r.filter(x=>x.status!=="eliminada"));
     setHistory(h);

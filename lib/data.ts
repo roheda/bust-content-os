@@ -571,3 +571,66 @@ export async function listGenerationRequests() {
   const snap = await getDocs(collection(db, "generationRequests"));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as GenerationRequest));
 }
+
+
+function normalizeClientNameForDedupe(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function clientCompletenessScore(client: Brand) {
+  let score = 0;
+  const fields = [
+    "brandBrain",
+    "brandNotes",
+    "industry",
+    "tone",
+    "visualStyle",
+    "contentPillars",
+    "services",
+    "sharedSystems",
+    "website",
+    "instagram",
+    "contactName"
+  ];
+
+  for (const field of fields) {
+    const value = (client as any)[field];
+    if (Array.isArray(value) && value.length) score += 2;
+    else if (value && typeof value === "object" && Object.keys(value).length) score += 5;
+    else if (String(value || "").trim()) score += 2;
+  }
+
+  if ((client.status || "active") !== "deleted") score += 10;
+  if ((client as any).migratedFrom === "bust-it-now") score += 1;
+
+  return score;
+}
+
+export function dedupeBrandsByName(brands: Brand[]) {
+  const map = new Map<string, Brand>();
+
+  for (const brand of brands) {
+    if ((brand.status || "active") === "deleted") continue;
+
+    const key = normalizeClientNameForDedupe(brand.name || "");
+    if (!key) continue;
+
+    const current = map.get(key);
+    if (!current || clientCompletenessScore(brand) > clientCompletenessScore(current)) {
+      map.set(key, brand);
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => (a.name || "").localeCompare(b.name || "", "es"));
+}
+
+
+export async function listUniqueBrands() {
+  const brands = await listBrands();
+  return dedupeBrandsByName(brands);
+}

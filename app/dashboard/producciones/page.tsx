@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { Brand, ContentRequest, Production, ReferenceFile, isImageFile, listBrands, listProductions, listRequests, saveProduction, updateProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
+import { Brand, ContentRequest, Production, ReferenceFile, isImageFile, listUniqueBrands, listProductions, listRequests, saveProduction, updateProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
 
 const empty: Production = {
   title: "",
@@ -52,7 +52,7 @@ export default function ProductionsPage(){
   const [prodSearch,setProdSearch]=useState("");
 
   async function load(){
-    setBrands(await listBrands());
+    setBrands(await listUniqueBrands());
     setRequests((await listRequests()).filter(x=>x.status!=="eliminada"));
     setProductions(await listProductions());
   }
