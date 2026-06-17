@@ -12,24 +12,46 @@ import {
   updateGenerationRequest
 } from "@/lib/data";
 
+type LogoOverlayXY = {
+  enabled: boolean;
+  assetId?: string;
+  assetName?: string;
+  fileUrl?: string;
+  logoKind?: string;
+  xPercent: number;
+  yPercent: number;
+  widthPercent: number;
+};
+
+type GeneratedLocalImage = {
+  id: string;
+  base64: string;
+  finalBase64?: string;
+  logoOverlayApplied?: boolean;
+};
+
 const models = [
   { id: "gemini-3-pro-image", label: "Gemini Pro Imagen · profesional · aprox $2.50 MXN/img" },
   { id: "gemini-3.1-flash-image", label: "Gemini 3.1 Flash Imagen · balanceado · aprox $1.90 MXN/img" },
   { id: "gemini-2.5-flash-image", label: "Gemini 2.5 Flash Imagen · rápido · aprox $1.20 MXN/img" }
 ];
 
-const logoPositions = [
-  { id: "top-left", label: "Arriba izquierda" },
-  { id: "top-right", label: "Arriba derecha" },
-  { id: "bottom-left", label: "Abajo izquierda" },
-  { id: "bottom-right", label: "Abajo derecha" },
-  { id: "bottom-center", label: "Centro inferior" }
+const logoKinds = [
+  { id: "logotipo", label: "Logotipo horizontal" },
+  { id: "imagotipo", label: "Imagotipo" },
+  { id: "isotipo", label: "Isotipo / símbolo" },
+  { id: "monograma", label: "Monograma" },
+  { id: "logo-blanco", label: "Logo blanco" },
+  { id: "logo-color", label: "Logo a color" }
 ];
 
-const logoSizes = [
-  { id: "small", label: "Chico" },
-  { id: "medium", label: "Mediano" },
-  { id: "large", label: "Grande" }
+const logoPresets = [
+  { id: "bottom-right", label: "Inferior derecha", xPercent: 86, yPercent: 88, widthPercent: 20 },
+  { id: "bottom-left", label: "Inferior izquierda", xPercent: 14, yPercent: 88, widthPercent: 20 },
+  { id: "bottom-center", label: "Centro inferior", xPercent: 50, yPercent: 88, widthPercent: 22 },
+  { id: "top-right", label: "Superior derecha", xPercent: 86, yPercent: 12, widthPercent: 18 },
+  { id: "top-left", label: "Superior izquierda", xPercent: 14, yPercent: 12, widthPercent: 18 },
+  { id: "center", label: "Centro", xPercent: 50, yPercent: 50, widthPercent: 26 }
 ];
 
 function isImage(asset: ClientAsset) {
@@ -39,7 +61,21 @@ function isImage(asset: ClientAsset) {
 
 function isLogo(asset: ClientAsset) {
   const value = `${asset.type} ${asset.category} ${(asset.tags || []).join(" ")} ${asset.name}`.toLowerCase();
-  return isImage(asset) && (value.includes("logo") || value.includes("logotipo"));
+  return isImage(asset) && (
+    value.includes("logo") ||
+    value.includes("logotipo") ||
+    value.includes("imagotipo") ||
+    value.includes("isotipo") ||
+    value.includes("monograma")
+  );
+}
+
+function dataUrlFromBase64(base64: string) {
+  return base64.startsWith("data:image/") ? base64 : `data:image/png;base64,${base64}`;
+}
+
+function cleanBase64(value: string) {
+  return value.includes(",") ? value.split(",").pop() || "" : value;
 }
 
 function formatStatus(status?: string) {
@@ -47,10 +83,6 @@ function formatStatus(status?: string) {
   if (status === "generating") return "generating";
   if (status === "error") return "error";
   return status || "brief_ready";
-}
-
-function dataUrlFromBase64(base64: string) {
-  return `data:image/png;base64,${base64}`;
 }
 
 export default function GenerationRequestPage() {
@@ -62,29 +94,59 @@ export default function GenerationRequestPage() {
   const [variantCount, setVariantCount] = useState(1);
   const [useReferences, setUseReferences] = useState(true);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
-  const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  const [generatedImages, setGeneratedImages] = useState<GeneratedLocalImage[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isApplyingLogo, setIsApplyingLogo] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const [logoOverlayEnabled, setLogoOverlayEnabled] = useState(false);
-  const [selectedLogoAssetId, setSelectedLogoAssetId] = useState("");
-  const [logoPosition, setLogoPosition] = useState("bottom-right");
-  const [logoSize, setLogoSize] = useState("medium");
+  const [logoOverlay, setLogoOverlay] = useState<LogoOverlayXY>({
+    enabled: false,
+    assetId: "",
+    assetName: "",
+    fileUrl: "",
+    logoKind: "logotipo",
+    xPercent: 86,
+    yPercent: 88,
+    widthPercent: 20
+  });
 
   async function load() {
     const found = await getGenerationRequest(requestId);
     setRequest(found);
+
     if (found?.clientId) {
       const clientAssets = await listClientAssets(found.clientId);
       setAssets(clientAssets);
-      const selected = found.selectedAssetIds?.length ? found.selectedAssetIds : clientAssets.filter((asset) => asset.isFeatured && !isLogo(asset)).map((asset) => asset.id || "");
+
+      const selected = found.selectedAssetIds?.length
+        ? found.selectedAssetIds
+        : clientAssets.filter((asset) => asset.isFeatured && !isLogo(asset)).map((asset) => asset.id || "");
+
       setSelectedAssetIds(selected.filter(Boolean));
-      const logo = clientAssets.find(isLogo);
-      if (logo) setSelectedLogoAssetId(logo.id || "");
+
+      const existingLogoOverlay = (found as any).logoOverlay || {};
+      const logos = clientAssets.filter(isLogo);
+      const firstLogo = existingLogoOverlay.assetId
+        ? clientAssets.find((asset) => asset.id === existingLogoOverlay.assetId)
+        : logos[0];
+
+      setLogoOverlay({
+        enabled: existingLogoOverlay.enabled === true,
+        assetId: firstLogo?.id || "",
+        assetName: firstLogo?.name || "",
+        fileUrl: firstLogo?.fileUrl || "",
+        logoKind: existingLogoOverlay.logoKind || inferLogoKind(firstLogo),
+        xPercent: Number(existingLogoOverlay.xPercent ?? 86),
+        yPercent: Number(existingLogoOverlay.yPercent ?? 88),
+        widthPercent: Number(existingLogoOverlay.widthPercent ?? 20)
+      });
     }
-    if (found?.executedModel && models.some((model) => model.id === found.executedModel)) setSelectedModel(found.executedModel);
+
+    if (found?.executedModel && models.some((model) => model.id === found.executedModel)) {
+      setSelectedModel(found.executedModel);
+    }
   }
 
   useEffect(() => { load(); }, [requestId]);
@@ -95,7 +157,41 @@ export default function GenerationRequestPage() {
   );
   const visualReferences = useReferences ? selectedAssets.filter(isImage) : [];
   const logoAssets = assets.filter(isLogo);
-  const selectedLogo = assets.find((asset) => asset.id === selectedLogoAssetId);
+  const selectedLogo = assets.find((asset) => asset.id === logoOverlay.assetId);
+
+  function inferLogoKind(asset?: ClientAsset) {
+    const value = `${asset?.name || ""} ${asset?.type || ""} ${asset?.category || ""} ${(asset?.tags || []).join(" ")}`.toLowerCase();
+    if (value.includes("imagotipo")) return "imagotipo";
+    if (value.includes("isotipo")) return "isotipo";
+    if (value.includes("monograma")) return "monograma";
+    if (value.includes("blanco")) return "logo-blanco";
+    if (value.includes("color")) return "logo-color";
+    return "logotipo";
+  }
+
+  function updateLogoOverlay(patch: Partial<LogoOverlayXY>) {
+    setLogoOverlay((current) => ({ ...current, ...patch }));
+  }
+
+  function handleSelectLogo(assetId: string) {
+    const asset = assets.find((item) => item.id === assetId);
+    updateLogoOverlay({
+      assetId,
+      assetName: asset?.name || "",
+      fileUrl: asset?.fileUrl || "",
+      logoKind: inferLogoKind(asset)
+    });
+  }
+
+  function applyPreset(presetId: string) {
+    const preset = logoPresets.find((item) => item.id === presetId);
+    if (!preset) return;
+    updateLogoOverlay({
+      xPercent: preset.xPercent,
+      yPercent: preset.yPercent,
+      widthPercent: preset.widthPercent
+    });
+  }
 
   function toggleAsset(id: string) {
     setSelectedAssetIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -109,20 +205,18 @@ export default function GenerationRequestPage() {
     setIsGenerating(true);
 
     try {
+      const nextLogoOverlay = {
+        ...logoOverlay,
+        enabled: logoOverlay.enabled && Boolean(logoOverlay.fileUrl)
+      };
+
       await updateGenerationRequest(requestId, {
         status: "generating",
         executedModel: selectedModel,
         selectedAssetIds,
         selectedAssetsSnapshot: selectedAssets,
-        logoOverlay: {
-          enabled: logoOverlayEnabled,
-          assetId: selectedLogoAssetId,
-          assetName: selectedLogo?.name,
-          fileUrl: selectedLogo?.fileUrl,
-          position: logoPosition,
-          size: logoSize
-        }
-      });
+        logoOverlay: nextLogoOverlay
+      } as any);
 
       const response = await fetch("/api/generate-image", {
         method: "POST",
@@ -132,14 +226,20 @@ export default function GenerationRequestPage() {
           format: request.format,
           model: selectedModel,
           variantCount,
-          referenceImages: visualReferences.map((asset) => ({ url: asset.fileUrl, name: asset.name }))
+          referenceImages: visualReferences.map((asset) => ({ url: asset.fileUrl, name: asset.name })),
+          logoOverlay: nextLogoOverlay
         })
       });
 
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "No se pudo generar imagen.");
 
-      const images = payload.imagesBase64 || [];
+      const images = (payload.imagesBase64 || []).map((image: string, index: number) => ({
+        id: `${Date.now()}-${index}`,
+        base64: cleanBase64(image),
+        logoOverlayApplied: false
+      }));
+
       setGeneratedImages(images);
 
       for (let index = 0; index < images.length; index++) {
@@ -147,7 +247,7 @@ export default function GenerationRequestPage() {
           requestId,
           clientId: request.clientId,
           clientName: request.clientName,
-          imageDataUrl: dataUrlFromBase64(images[index]),
+          imageDataUrl: dataUrlFromBase64(images[index].base64),
           model: payload.executedModel || selectedModel,
           variantIndex: index + 1,
           logoOverlayApplied: false,
@@ -159,177 +259,277 @@ export default function GenerationRequestPage() {
         status: "completed",
         executedModel: payload.executedModel || selectedModel,
         generationMode: payload.generationMode || "gemini"
-      });
+      } as any);
 
       setSuccess("Imagen generada correctamente.");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al generar.");
-      await updateGenerationRequest(requestId, { status: "error" });
+      await updateGenerationRequest(requestId, { status: "error" } as any);
     } finally {
       setIsGenerating(false);
     }
   }
 
-  async function applyLogoOverlay() {
-    if (!generatedImages[selectedImageIndex]) return alert("Primero genera una imagen.");
-    if (!selectedLogo) return alert("Selecciona un logo.");
-    setLogoOverlayEnabled(true);
-    setSuccess("Logo overlay activado en la vista previa. El siguiente paso será quemarlo dentro del PNG con Sharp.");
+  async function applyLogoToSelectedImage() {
+    const image = generatedImages[selectedImageIndex];
+    if (!image) return alert("Primero genera una imagen.");
+    if (!logoOverlay.fileUrl) return alert("Selecciona un logotipo / imagotipo / isotipo.");
+
+    setIsApplyingLogo(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await fetch("/api/apply-logo-overlay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64: image.base64,
+          logoOverlay: {
+            ...logoOverlay,
+            enabled: true
+          }
+        })
+      });
+
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "No se pudo aplicar el logo.");
+
+      setGeneratedImages((current) =>
+        current.map((item, index) =>
+          index === selectedImageIndex
+            ? {
+                ...item,
+                finalBase64: cleanBase64(payload.imageBase64),
+                logoOverlayApplied: true
+              }
+            : item
+        )
+      );
+
+      setSuccess("Logo aplicado al PNG final. Ya puedes descargar la versión con logo.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al aplicar logo.");
+    } finally {
+      setIsApplyingLogo(false);
+    }
   }
 
   if (!request) {
-    return <AppShell active="BUST It Now">
-      <main className="min-h-screen bg-zinc-100 p-8 text-zinc-950">
-        <section className="rounded-[2rem] border border-zinc-200 bg-white p-8 shadow-sm">
-          <p>Cargando request...</p>
-        </section>
-      </main>
-    </AppShell>;
+    return (
+      <AppShell active="BUST It Now">
+        <main className="min-h-screen bg-zinc-100 p-8 text-zinc-950">
+          <section className="rounded-[2rem] border border-zinc-200 bg-white p-8 shadow-sm">
+            <p>Cargando request...</p>
+          </section>
+        </main>
+      </AppShell>
+    );
   }
 
-  return <AppShell active="BUST It Now">
-    <main className="min-h-screen bg-zinc-100 text-zinc-950">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
-        <header className="rounded-b-[2rem] bg-zinc-950 p-6 text-white shadow-xl shadow-zinc-300/60 sm:p-8">
-          <Link href="/dashboard/generador" className="mb-4 inline-flex text-sm font-medium text-zinc-300 transition hover:text-white">← Volver al generador</Link>
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-zinc-400">REQUEST DE GENERACIÓN</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{request.clientName}</h1>
-          <p className="mt-5 text-sm text-zinc-300">Estado actual: {formatStatus(request.status)}</p>
-        </header>
+  return (
+    <AppShell active="BUST It Now">
+      <main className="min-h-screen bg-zinc-100 text-zinc-950">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
+          <header className="rounded-b-[2rem] bg-zinc-950 p-6 text-white shadow-xl shadow-zinc-300/60 sm:p-8">
+            <Link href="/dashboard/generador" className="mb-4 inline-flex text-sm font-medium text-zinc-300 transition hover:text-white">← Volver al generador</Link>
+            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-zinc-400">REQUEST DE GENERACIÓN</p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{request.clientName}</h1>
+            <p className="mt-5 text-sm text-zinc-300">Estado actual: {formatStatus(request.status)}</p>
+          </header>
 
-        <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-          <article className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Resumen del brief</p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight">Datos del request</h2>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <InfoBox label="Objetivo" value={request.goal} />
-              <InfoBox label="Formato" value={request.format} />
-              <InfoBox label="Tipo" value={request.contentType} />
-              <InfoBox label="Modelo actual" value={models.find((model) => model.id === selectedModel)?.label || selectedModel} />
-            </div>
-
-            <div className="mt-6 rounded-3xl border border-zinc-200 bg-zinc-50 p-5 text-sm leading-6 text-zinc-700">
-              <strong className="text-zinc-950">Mensaje principal</strong>
-              <p className="mt-1">{request.mainMessage || "-"}</p>
-
-              <strong className="mt-5 block text-zinc-950">Copy</strong>
-              {(request.textBlocks || []).length ? <div className="mt-1 space-y-1">
-                {(request.textBlocks as any[]).map((block, index) => <p key={index}>{block.role || "Texto"}: {block.text}</p>)}
-              </div> : <p className="mt-1">-</p>}
-
-              <strong className="mt-5 block text-zinc-950">Dirección visual</strong>
-              <p>Emociones: {(request.selectedEmotions || []).join(", ") || "-"}</p>
-              <p>Elementos: {(request.selectedVisualElements || []).join(", ") || "-"}</p>
-            </div>
-
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <p className="mr-auto text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Prompt final</p>
-              <button type="button" onClick={() => navigator.clipboard.writeText(request.generatedPrompt || "")} className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold transition hover:bg-zinc-50">📋 Copiar prompt</button>
-              <a download={`${request.clientName}-prompt.txt`} href={`data:text/plain;charset=utf-8,${encodeURIComponent(request.generatedPrompt || "")}`} className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold transition hover:bg-zinc-50">⬇️ Descargar .txt</a>
-            </div>
-
-            <pre className="mt-5 max-h-[430px] overflow-auto whitespace-pre-wrap rounded-3xl border border-zinc-200 bg-white p-5 text-xs leading-5 text-zinc-700">{request.generatedPrompt || "Este request no tiene prompt final guardado."}</pre>
-          </article>
-
-          <aside className="space-y-6">
+          <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
             <article className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Acción</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight">Generar variantes</h2>
-              <p className="mt-3 text-sm leading-6 text-zinc-600">Puedes reutilizar este mismo brief y cambiar el motor antes de generar nuevas variantes.</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Resumen del brief</p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight">Datos del request</h2>
 
-              <label className="mt-6 block text-sm font-medium text-zinc-800">Modelo para esta generación</label>
-              <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-zinc-950 bg-white px-4 text-sm outline-none">
-                {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-              </select>
-
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                {[1,2,4].map((count) => <button key={count} type="button" onClick={() => setVariantCount(count)} className={`h-12 rounded-2xl border px-4 text-sm font-semibold transition ${variantCount===count ? "border-zinc-950 bg-zinc-950 text-white" : "border-zinc-200 bg-white text-zinc-950 hover:bg-zinc-50"}`}>{count === 1 ? "1 imagen" : `${count} variantes`}</button>)}
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <InfoBox label="Objetivo" value={request.goal} />
+                <InfoBox label="Formato" value={request.format} />
+                <InfoBox label="Tipo" value={request.contentType} />
+                <InfoBox label="Modelo actual" value={models.find((model) => model.id === selectedModel)?.label || selectedModel} />
               </div>
 
-              <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <strong className="text-sm text-zinc-950">Usar referencias visuales reales</strong>
-                    <p className="mt-1 text-sm leading-5 text-zinc-600">{visualReferences.length} referencia(s) de imagen disponibles para apoyar la generación.</p>
+              <div className="mt-6 rounded-3xl border border-zinc-200 bg-zinc-50 p-5 text-sm leading-6 text-zinc-700">
+                <strong className="text-zinc-950">Mensaje principal</strong>
+                <p className="mt-1">{request.mainMessage || "-"}</p>
+
+                <strong className="mt-5 block text-zinc-950">Copy</strong>
+                {(request.textBlocks || []).length ? (
+                  <div className="mt-1 space-y-1">
+                    {(request.textBlocks as any[]).map((block, index) => <p key={index}>{block.role || "Texto"}: {block.text}</p>)}
                   </div>
-                  <button type="button" onClick={() => setUseReferences(!useReferences)} className={`rounded-full px-5 py-2 text-sm font-semibold ${useReferences ? "bg-zinc-950 text-white" : "bg-white text-zinc-700 border border-zinc-200"}`}>{useReferences ? "Activo" : "Inactivo"}</button>
+                ) : <p className="mt-1">-</p>}
+
+                <strong className="mt-5 block text-zinc-950">Dirección visual</strong>
+                <p>Emociones: {(request.selectedEmotions || []).join(", ") || "-"}</p>
+                <p>Elementos: {(request.selectedVisualElements || []).join(", ") || "-"}</p>
+              </div>
+
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                <p className="mr-auto text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Prompt final</p>
+                <button type="button" onClick={() => navigator.clipboard.writeText(request.generatedPrompt || "")} className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold transition hover:bg-zinc-50">📋 Copiar prompt</button>
+                <a download={`${request.clientName}-prompt.txt`} href={`data:text/plain;charset=utf-8,${encodeURIComponent(request.generatedPrompt || "")}`} className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold transition hover:bg-zinc-50">⬇️ Descargar .txt</a>
+              </div>
+
+              <pre className="mt-5 max-h-[430px] overflow-auto whitespace-pre-wrap rounded-3xl border border-zinc-200 bg-white p-5 text-xs leading-5 text-zinc-700">{request.generatedPrompt || "Este request no tiene prompt final guardado."}</pre>
+            </article>
+
+            <aside className="space-y-6">
+              <article className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Acción</p>
+                <h2 className="mt-3 text-2xl font-semibold tracking-tight">Generar variantes</h2>
+                <p className="mt-3 text-sm leading-6 text-zinc-600">Puedes reutilizar este mismo brief y cambiar el motor antes de generar nuevas variantes.</p>
+
+                <label className="mt-6 block text-sm font-medium text-zinc-800">Modelo para esta generación</label>
+                <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-zinc-950 bg-white px-4 text-sm outline-none">
+                  {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                </select>
+
+                <div className="mt-4 grid grid-cols-3 gap-3">
+                  {[1, 2, 4].map((count) => (
+                    <button key={count} type="button" onClick={() => setVariantCount(count)} className={`h-12 rounded-2xl border px-4 text-sm font-semibold transition ${variantCount === count ? "border-zinc-950 bg-zinc-950 text-white" : "border-zinc-200 bg-white text-zinc-950 hover:bg-zinc-50"}`}>
+                      {count === 1 ? "1 imagen" : `${count} variantes`}
+                    </button>
+                  ))}
                 </div>
 
-                {assets.length ? <div className="mt-4 space-y-3">
-                  {assets.filter(isImage).map((asset) => <button type="button" key={asset.id} onClick={() => toggleAsset(asset.id || "")} className={`flex w-full items-center gap-3 rounded-3xl border p-3 text-left transition ${selectedAssetIds.includes(asset.id || "") ? "border-zinc-950 bg-white" : "border-zinc-200 bg-white/70 hover:border-zinc-400"}`}>
-                    <img src={asset.fileUrl} alt={asset.name} className="h-14 w-14 rounded-2xl object-cover" />
-                    <span><strong className="block text-xs text-zinc-950">{asset.name}</strong><span className="text-xs text-zinc-500">{asset.type} · {asset.category || "Sin categoría"}</span></span>
-                  </button>)}
-                </div> : null}
-              </div>
+                <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <strong className="text-sm text-zinc-950">Usar referencias visuales reales</strong>
+                      <p className="mt-1 text-sm leading-5 text-zinc-600">{visualReferences.length} referencia(s) de imagen disponibles para apoyar la generación.</p>
+                    </div>
+                    <button type="button" onClick={() => setUseReferences(!useReferences)} className={`rounded-full px-5 py-2 text-sm font-semibold ${useReferences ? "bg-zinc-950 text-white" : "bg-white text-zinc-700 border border-zinc-200"}`}>{useReferences ? "Activo" : "Inactivo"}</button>
+                  </div>
 
-              <button type="button" onClick={generateImages} disabled={isGenerating} className="mt-5 h-14 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{isGenerating ? "Generando imagen..." : "Generar imagen"}</button>
+                  {assets.length ? (
+                    <div className="mt-4 space-y-3">
+                      {assets.filter(isImage).filter((asset) => !isLogo(asset)).map((asset) => (
+                        <button type="button" key={asset.id} onClick={() => toggleAsset(asset.id || "")} className={`flex w-full items-center gap-3 rounded-3xl border p-3 text-left transition ${selectedAssetIds.includes(asset.id || "") ? "border-zinc-950 bg-white" : "border-zinc-200 bg-white/70 hover:border-zinc-400"}`}>
+                          <img src={asset.fileUrl} alt={asset.name} className="h-14 w-14 rounded-2xl object-cover" />
+                          <span><strong className="block text-xs text-zinc-950">{asset.name}</strong><span className="text-xs text-zinc-500">{asset.type} · {asset.category || "Sin categoría"}</span></span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
 
-              {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
-              {success ? <div className="mt-5 rounded-3xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-medium text-green-700">{success}</div> : null}
-            </article>
+                <button type="button" onClick={generateImages} disabled={isGenerating} className="mt-5 h-14 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{isGenerating ? "Generando imagen..." : "Generar imagen"}</button>
 
-            <article className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Logo posterior</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight">Insertar logo después</h2>
-              <p className="mt-3 text-sm leading-6 text-zinc-600">Activa el overlay después de generar para ver el logo sobre la imagen seleccionada.</p>
+                {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
+                {success ? <div className="mt-5 rounded-3xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-medium text-green-700">{success}</div> : null}
+              </article>
 
-              <div className="mt-5 grid gap-3">
-                <select value={selectedLogoAssetId} onChange={(event) => setSelectedLogoAssetId(event.target.value)} className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 text-sm outline-none focus:border-zinc-950">
-                  <option value="">Selecciona logo</option>
-                  {logoAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
-                </select>
-                <select value={logoPosition} onChange={(event) => setLogoPosition(event.target.value)} className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 text-sm outline-none focus:border-zinc-950">
-                  {logoPositions.map((position) => <option key={position.id} value={position.id}>{position.label}</option>)}
-                </select>
-                <select value={logoSize} onChange={(event) => setLogoSize(event.target.value)} className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 text-sm outline-none focus:border-zinc-950">
-                  {logoSizes.map((size) => <option key={size.id} value={size.id}>{size.label}</option>)}
-                </select>
-                <button type="button" onClick={applyLogoOverlay} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50">Aplicar logo a vista previa</button>
-              </div>
-            </article>
+              <article className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Logo posterior</p>
+                    <h2 className="mt-3 text-2xl font-semibold tracking-tight">Sistema X/Y de logo</h2>
+                    <p className="mt-3 text-sm leading-6 text-zinc-600">Aplica logotipo, imagotipo o isotipo como capa real sobre el PNG generado.</p>
+                  </div>
+                  <button type="button" onClick={() => updateLogoOverlay({ enabled: !logoOverlay.enabled })} className={`rounded-full px-5 py-2 text-sm font-semibold ${logoOverlay.enabled ? "bg-zinc-950 text-white" : "border border-zinc-200 bg-white text-zinc-700"}`}>{logoOverlay.enabled ? "Activo" : "Inactivo"}</button>
+                </div>
 
-            <article className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Resultados</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight">Imágenes generadas</h2>
-              {generatedImages.length === 0 ? <p className="mt-4 text-sm text-zinc-600">Aún no hay imágenes generadas para este request.</p> : <div className="mt-5 grid gap-4">
-                {generatedImages.map((image, index) => <article key={index} className={`rounded-3xl border p-3 ${selectedImageIndex===index ? "border-zinc-950" : "border-zinc-200"}`}>
-                  <button type="button" onClick={() => setSelectedImageIndex(index)} className="relative block w-full overflow-hidden rounded-2xl bg-zinc-100">
-                    <img src={dataUrlFromBase64(image)} alt={`Generada ${index+1}`} className="w-full rounded-2xl" />
-                    {logoOverlayEnabled && selectedLogo?.fileUrl && selectedImageIndex===index ? <img src={selectedLogo.fileUrl} alt="Logo overlay" className={`absolute ${logoPositionClass(logoPosition)} ${logoSizeClass(logoSize)} object-contain drop-shadow-lg`} /> : null}
-                  </button>
-                  <a download={`${request.clientName}-variante-${index+1}.png`} href={dataUrlFromBase64(image)} className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-2xl bg-zinc-950 px-4 text-sm font-semibold text-white">Descargar</a>
-                </article>)}
-              </div>}
-            </article>
-          </aside>
-        </section>
+                <div className="mt-5 grid gap-3">
+                  <select value={logoOverlay.logoKind} onChange={(event) => updateLogoOverlay({ logoKind: event.target.value })} className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 text-sm outline-none focus:border-zinc-950">
+                    {logoKinds.map((kind) => <option key={kind.id} value={kind.id}>{kind.label}</option>)}
+                  </select>
+
+                  <select value={logoOverlay.assetId} onChange={(event) => handleSelectLogo(event.target.value)} className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 text-sm outline-none focus:border-zinc-950">
+                    <option value="">Selecciona logotipo / imagotipo / isotipo</option>
+                    {logoAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+                  </select>
+
+                  <select onChange={(event) => applyPreset(event.target.value)} className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 text-sm outline-none focus:border-zinc-950" defaultValue="">
+                    <option value="" disabled>Preset rápido de posición</option>
+                    {logoPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                  </select>
+                </div>
+
+                {selectedLogo?.fileUrl ? (
+                  <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Logo seleccionado</p>
+                    <img src={selectedLogo.fileUrl} alt={selectedLogo.name} className="mt-3 max-h-20 rounded-2xl object-contain" />
+                  </div>
+                ) : null}
+
+                <div className="mt-5 grid gap-5">
+                  <RangeControl label="X horizontal" value={logoOverlay.xPercent} min={0} max={100} suffix="%" onChange={(value) => updateLogoOverlay({ xPercent: value })} />
+                  <RangeControl label="Y vertical" value={logoOverlay.yPercent} min={0} max={100} suffix="%" onChange={(value) => updateLogoOverlay({ yPercent: value })} />
+                  <RangeControl label="Ancho del logo" value={logoOverlay.widthPercent} min={6} max={60} suffix="%" onChange={(value) => updateLogoOverlay({ widthPercent: value })} />
+                </div>
+
+                <button type="button" onClick={applyLogoToSelectedImage} disabled={isApplyingLogo} className="mt-5 h-12 w-full rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50 disabled:bg-zinc-100">{isApplyingLogo ? "Aplicando logo..." : "Aplicar logo al PNG final"}</button>
+              </article>
+
+              <article className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Resultados</p>
+                <h2 className="mt-3 text-2xl font-semibold tracking-tight">Imágenes generadas</h2>
+                {generatedImages.length === 0 ? (
+                  <p className="mt-4 text-sm text-zinc-600">Aún no hay imágenes generadas para este request.</p>
+                ) : (
+                  <div className="mt-5 grid gap-4">
+                    {generatedImages.map((image, index) => {
+                      const visibleImage = image.finalBase64 || image.base64;
+                      const downloadName = image.logoOverlayApplied
+                        ? `${request.clientName}-variante-${index + 1}-con-logo.png`
+                        : `${request.clientName}-variante-${index + 1}.png`;
+
+                      return (
+                        <article key={image.id} className={`rounded-3xl border p-3 ${selectedImageIndex === index ? "border-zinc-950" : "border-zinc-200"}`}>
+                          <button type="button" onClick={() => setSelectedImageIndex(index)} className="relative block w-full overflow-hidden rounded-2xl bg-zinc-100">
+                            <img src={dataUrlFromBase64(visibleImage)} alt={`Generada ${index + 1}`} className="w-full rounded-2xl" />
+                            {logoOverlay.enabled && selectedLogo?.fileUrl && selectedImageIndex === index && !image.logoOverlayApplied ? (
+                              <img
+                                src={selectedLogo.fileUrl}
+                                alt="Logo overlay preview"
+                                className="absolute object-contain drop-shadow-lg"
+                                style={{
+                                  left: `${logoOverlay.xPercent}%`,
+                                  top: `${logoOverlay.yPercent}%`,
+                                  width: `${logoOverlay.widthPercent}%`,
+                                  transform: "translate(-50%, -50%)"
+                                }}
+                              />
+                            ) : null}
+                            {image.logoOverlayApplied ? (
+                              <span className="absolute bottom-3 left-3 rounded-full bg-zinc-950 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-white">Logo aplicado</span>
+                            ) : null}
+                          </button>
+                          <a download={downloadName} href={dataUrlFromBase64(visibleImage)} className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-2xl bg-zinc-950 px-4 text-sm font-semibold text-white">Descargar</a>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </article>
+            </aside>
+          </section>
+        </div>
+      </main>
+    </AppShell>
+  );
+}
+
+function RangeControl({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix: string; onChange: (value: number) => void }) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <label className="text-sm font-medium text-zinc-800">{label}</label>
+        <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700">{value}{suffix}</span>
       </div>
-    </main>
-  </AppShell>;
-}
-
-function toggleAssetFactory() { return null; }
-
-function logoPositionClass(position: string) {
-  if (position === "top-left") return "left-5 top-5";
-  if (position === "top-right") return "right-5 top-5";
-  if (position === "bottom-left") return "bottom-5 left-5";
-  if (position === "bottom-center") return "bottom-5 left-1/2 -translate-x-1/2";
-  return "bottom-5 right-5";
-}
-
-function logoSizeClass(size: string) {
-  if (size === "small") return "h-10 w-20";
-  if (size === "large") return "h-20 w-40";
-  return "h-14 w-28";
+      <input type="range" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} className="w-full accent-zinc-950" />
+    </div>
+  );
 }
 
 function InfoBox({ label, value }: { label: string; value?: string }) {
-  return <div className="rounded-3xl bg-zinc-50 p-4">
-    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-    <p className="mt-2 text-sm text-zinc-950">{value || "-"}</p>
-  </div>;
+  return (
+    <div className="rounded-3xl bg-zinc-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
+      <p className="mt-2 text-sm text-zinc-950">{value || "-"}</p>
+    </div>
+  );
 }

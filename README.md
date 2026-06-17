@@ -165,3 +165,19 @@ getDoc
 ```
 
 para que compile `getGenerationRequest()`.
+
+
+## v6 — Logo overlay X/Y igual a BUST It Now
+
+Se integró el sistema real de logo posterior:
+
+- Dependencia `sharp`.
+- Ruta `/api/apply-logo-overlay`.
+- Overlay server-side sobre PNG final.
+- Controles X/Y en porcentaje.
+- Control de ancho del logo en porcentaje.
+- Presets de posición.
+- Selección de tipo de logo: logotipo, imagotipo, isotipo, monograma, blanco o color.
+- Descarga de imagen final con logo aplicado.
+
+El sistema usa `xPercent`, `yPercent` y `widthPercent`, igual que la lógica original de BUST It Now.

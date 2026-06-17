@@ -1,34 +1,132 @@
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
-type Body = {
-  imageBase64?: string;
-  logoUrl?: string;
-  position?: string;
-  size?: string;
+type LogoOverlayInput = {
+  enabled?: boolean;
+  fileUrl?: string;
+  assetName?: string;
+  xPercent?: number;
+  yPercent?: number;
+  widthPercent?: number;
 };
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Error desconocido al aplicar logo.";
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function base64ToBuffer(value: string) {
+  const clean = value.includes(",") ? value.split(",").pop() || "" : value;
+  return Buffer.from(clean, "base64");
+}
+
+async function fetchImageBuffer(url: string, label: string) {
+  if (url.startsWith("data:image/")) {
+    return base64ToBuffer(url);
+  }
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`No pudimos descargar ${label}.`);
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
+async function applyLogoOverlayToImage({
+  imageUrl,
+  imageBase64,
+  logoOverlay,
+}: {
+  imageUrl?: string;
+  imageBase64?: string;
+  logoOverlay: LogoOverlayInput;
+}) {
+  if (!logoOverlay.enabled || !logoOverlay.fileUrl) {
+    throw new Error("Selecciona un logo para aplicar sobre la imagen.");
+  }
+
+  const baseBuffer = imageBase64
+    ? base64ToBuffer(imageBase64)
+    : await fetchImageBuffer(imageUrl || "", "la imagen generada");
+
+  const baseMetadata = await sharp(baseBuffer).metadata();
+  const baseWidth = baseMetadata.width || 1024;
+  const baseHeight = baseMetadata.height || 1024;
+
+  const logoBuffer = await fetchImageBuffer(logoOverlay.fileUrl, "el logo oficial");
+  const widthPercent = clampNumber(logoOverlay.widthPercent, 6, 60, 20);
+  const xPercent = clampNumber(logoOverlay.xPercent, 0, 100, 50);
+  const yPercent = clampNumber(logoOverlay.yPercent, 0, 100, 88);
+  const targetLogoWidth = Math.round(baseWidth * (widthPercent / 100));
+
+  const resizedLogoBuffer = await sharp(logoBuffer)
+    .ensureAlpha()
+    .resize({ width: targetLogoWidth, withoutEnlargement: true })
+    .png()
+    .toBuffer();
+
+  const logoMetadata = await sharp(resizedLogoBuffer).metadata();
+  const logoWidth = logoMetadata.width || targetLogoWidth;
+  const logoHeight = logoMetadata.height || Math.round(targetLogoWidth * 0.4);
+
+  const centerX = Math.round(baseWidth * (xPercent / 100));
+  const centerY = Math.round(baseHeight * (yPercent / 100));
+  const left = Math.min(baseWidth - logoWidth, Math.max(0, centerX - Math.round(logoWidth / 2)));
+  const top = Math.min(baseHeight - logoHeight, Math.max(0, centerY - Math.round(logoHeight / 2)));
+
+  const compositedBuffer = await sharp(baseBuffer)
+    .composite([{ input: resizedLogoBuffer, left, top }])
+    .png()
+    .toBuffer();
+
+  return compositedBuffer.toString("base64");
+}
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as Body;
+    const body = await request.json();
+    const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl : "";
+    const imageBase64 = typeof body.imageBase64 === "string" ? body.imageBase64 : "";
+    const logoOverlay = body.logoOverlay && typeof body.logoOverlay === "object"
+      ? (body.logoOverlay as LogoOverlayInput)
+      : null;
 
-    if (!body.imageBase64) {
-      return NextResponse.json({ error: "Falta imageBase64." }, { status: 400 });
+    if (!imageUrl && !imageBase64) {
+      return NextResponse.json({ error: "Falta la imagen generada." }, { status: 400 });
     }
 
-    // Nota: esta ruta queda preparada para aplicar overlay server-side con Sharp.
-    // En esta versión devolvemos la imagen base y el cliente muestra overlay visual.
-    // Para quemar el logo dentro del PNG, instalar sharp y procesar aquí.
+    if (!logoOverlay?.enabled || !logoOverlay.fileUrl) {
+      return NextResponse.json({ error: "Selecciona un logo para aplicar." }, { status: 400 });
+    }
+
+    const imageBase64Result = await applyLogoOverlayToImage({
+      imageUrl,
+      imageBase64,
+      logoOverlay,
+    });
+
     return NextResponse.json({
-      imageBase64: body.imageBase64,
-      logoOverlayApplied: false,
-      message: "Overlay preview activo. Para quemar el logo en el PNG, activar Sharp en esta ruta."
+      imageBase64: imageBase64Result,
+      logoOverlayApplied: true,
     });
   } catch (error) {
+    const errorMessage = getErrorMessage(error);
+    console.error("apply-logo-overlay error", error);
+
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "No se pudo aplicar el logo." },
-      { status: 500 }
+      { error: errorMessage || "Error al aplicar el logo." },
+      { status: 500 },
     );
   }
 }
