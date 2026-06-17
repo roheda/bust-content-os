@@ -140,3 +140,15 @@ Object literal may only specify known properties, and 'requestAttachments' does 
 
 Cambio aplicado:
 - `GenerationRequest` ahora incluye `requestAttachments?: any[]`.
+
+
+## v5.2 — Fix getDoc import
+
+Se corrigió el error de deploy:
+
+```txt
+Cannot find name 'getDoc'. Did you mean 'getDocs'?
+```
+
+Cambio:
+- Se agregó `getDoc` al import de `firebase/firestore` en `lib/data.ts`.
