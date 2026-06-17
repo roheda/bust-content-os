@@ -558,3 +558,43 @@ textarea{min-height:82px}
 .history-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .history-card{border:1px solid var(--line);border-radius:20px;background:#fff;padding:14px;display:grid;gap:10px}
 @media(max-width:1100px){.brandbrain-layout,.asset-grid,.history-grid{grid-template-columns:1fr}}
+
+/* Fix BUST v8: botones/links oscuros siempre legibles */
+a.bg-zinc-950,
+button.bg-zinc-950,
+.bg-zinc-950,
+a.bg-zinc-900,
+button.bg-zinc-900,
+.bg-zinc-900,
+a.bg-black,
+button.bg-black,
+.bg-black,
+a[class*="bg-zinc-950"],
+button[class*="bg-zinc-950"],
+a[class*="bg-black"],
+button[class*="bg-black"]{
+  color:#ffffff!important;
+}
+
+a.bg-zinc-950 *,
+button.bg-zinc-950 *,
+.bg-zinc-950 *,
+a.bg-black *,
+button.bg-black *,
+.bg-black *{
+  color:#ffffff!important;
+}
+
+/* Los botones oscuros tipo link deben verse como acciones, no como pastillas vacías */
+a.bg-zinc-950,
+a.bg-black,
+button.bg-zinc-950,
+button.bg-black{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-height:2.5rem;
+  opacity:1!important;
+  visibility:visible!important;
+  -webkit-text-fill-color:#ffffff!important;
+}
