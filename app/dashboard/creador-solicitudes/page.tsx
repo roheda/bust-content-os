@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import {
   Brand,
+  ClientOperationalOverride,
   ContentRequest,
+  OperationalContentRule,
   PlannerDraft,
   RequestBatch,
   ReferenceFile,
@@ -13,14 +15,19 @@ import {
   getRequestDate,
   hasMaterial,
   isImageFile,
+  estimateRequestCost,
+  getDeliveryRisk,
   listUniqueBrands,
   listPlannerDrafts, deletePlannerDraft,
+  listClientOperationalOverrides,
+  listOperationalContentRules,
   listRequestBatches,
   listRequests,
   objectives,
   savePlannerDraft,
   saveRequestBatch,
   updatePlannerDraft,
+  suggestOperationalDueDate,
   uploadReferenceFiles,
   validateCreatorItem
 } from "@/lib/data";
@@ -30,6 +37,8 @@ export default function CreatorPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [drafts,setDrafts]=useState<PlannerDraft[]>([]);
   const [batches,setBatches]=useState<RequestBatch[]>([]);
+  const [costRules,setCostRules]=useState<OperationalContentRule[]>([]);
+  const [clientOverrides,setClientOverrides]=useState<ClientOperationalOverride[]>([]);
   const [currentDraftId,setCurrentDraftId]=useState("");
   const [draftName,setDraftName]=useState("");
   const [batchDueDate,setBatchDueDate]=useState("");
@@ -48,16 +57,20 @@ export default function CreatorPage(){
   const [must,setMust]=useState("CTA claro, alineado al tono de marca y sin contenido de relleno.");
 
   async function load(){
-    const [loadedBrands, loadedRequests, loadedDrafts, loadedBatches] = await Promise.all([
+    const [loadedBrands, loadedRequests, loadedDrafts, loadedBatches, loadedRules, loadedOverrides] = await Promise.all([
       listUniqueBrands(),
       listRequests(),
       listPlannerDrafts(),
-      listRequestBatches()
+      listRequestBatches(),
+      listOperationalContentRules(),
+      listClientOperationalOverrides()
     ]);
     setBrands(loadedBrands);
     setRequests(loadedRequests);
     setDrafts(loadedDrafts);
     setBatches(loadedBatches);
+    setCostRules(loadedRules);
+    setClientOverrides(loadedOverrides);
     if(!clientId && loadedBrands[0]?.id)setClientId(loadedBrands[0].id);
   }
 
@@ -69,6 +82,17 @@ export default function CreatorPage(){
     const saved = client?.id ? requests.filter(x=>x.clientId===client.id) : requests;
     return [...saved, ...items].filter(x=>getRequestDate(x));
   },[client?.id, requests, items]);
+
+  const operationalSummary = useMemo(()=>{
+    const costs = items.map(item=>estimateRequestCost(item,costRules,clientOverrides));
+    const totalCost = costs.reduce((sum,row)=>sum+row.totalCost,0);
+    const totalHours = costs.reduce((sum,row)=>sum+row.editingHours,0);
+    const riskCount = items.filter(item=>{
+      const cost = estimateRequestCost(item,costRules,clientOverrides);
+      return getDeliveryRisk(item.publishDate,cost.deliveryDays).tone === "bad";
+    }).length;
+    return {totalCost,totalHours,riskCount};
+  },[items,costRules,clientOverrides]);
 
   function split(v:string){return v.split(",").map(x=>x.trim()).filter(Boolean)}
   function addDays(date:string, days:number){
@@ -86,7 +110,7 @@ export default function CreatorPage(){
       number: items.length + 1,
       status: req.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
       batchDueDate,
-      dueDate: req.dueDate || batchDueDate,
+      dueDate: req.dueDate || suggestOperationalDueDate(req.publishDate, estimateRequestCost({...req,clientId: client?.id || ""}, costRules, clientOverrides).deliveryDays) || batchDueDate,
       source
     };
   }
@@ -187,7 +211,12 @@ export default function CreatorPage(){
 
   function updateItem(index:number,k:keyof ContentRequest,v:any){
     const next=[...items];
-    next[index]={...next[index],[k]:v};
+    const updated = {...next[index],[k]:v};
+    if(k==="contentType" || k==="publishDate" || k==="requiresProduction"){
+      const cost = estimateRequestCost(updated,costRules,clientOverrides);
+      updated.dueDate = suggestOperationalDueDate(updated.publishDate,cost.deliveryDays) || updated.dueDate;
+    }
+    next[index]=updated;
     if(k==="requiresProduction"){
       next[index].status = v ? "pendiente_produccion" : "lista_asignacion";
     }
@@ -275,7 +304,7 @@ export default function CreatorPage(){
     </div>
 
     <section className="grid kpis">
-      {[["Cliente",client?.name||"Sin cliente"],["En lote",String(items.length)],["Solicitudes existentes",String(existing)],["Borradores",String(drafts.length)],["Estado",busy?"Guardando":"Listo"],["Límite lote",batchDueDate||"Sin fecha"]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Cliente",client?.name||"Sin cliente"],["En lote",String(items.length)],["Costo estimado",money(operationalSummary.totalCost)],["Horas edición",`${operationalSummary.totalHours} h`],["Riesgo tiempo",String(operationalSummary.riskCount)],["Límite lote",batchDueDate||"Sin fecha"]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
     <div className="batch-bar">
@@ -290,6 +319,13 @@ export default function CreatorPage(){
       <button className="btn blue" onClick={saveDraft}>Guardar borrador</button>
       <button className="btn dark" onClick={publishBatch}>Aprobar lote y enviar a Asignación</button>
       <button className="btn red" onClick={newDraft}>Nuevo</button>
+    </div>
+
+    <div className={`operational-alert ${operationalSummary.riskCount>0?"risk":"ok"}`}>
+      {operationalSummary.riskCount>0
+        ? `${operationalSummary.riskCount} solicitud(es) tienen una fecha demasiado cercana para el tiempo estándar configurado.`
+        : "Las solicitudes del lote cumplen los tiempos configurados."}
+      <span> Configura costos y tiempos en Configuración → Configuración operativa.</span>
     </div>
 
     <section className="grid two-col">
@@ -334,6 +370,7 @@ export default function CreatorPage(){
                     <div className="field"><label>Fecha publicación</label><input type="date" value={item.publishDate} onChange={e=>updateItem(index,"publishDate",e.target.value)}/></div>
                     <div className="field"><label>Idea creativa</label><textarea value={item.creativeIdea} onChange={e=>updateItem(index,"creativeIdea",e.target.value)}/></div>
                     <div className="field"><label>Copy In</label><textarea value={item.copyIn} onChange={e=>updateItem(index,"copyIn",e.target.value)}/></div>
+                    <OperationalEstimate item={item} rules={costRules} overrides={clientOverrides}/>
                     {error?<span className="pill red">{error}</span>:<span className="pill green">Lista para enviar</span>}
                   </td>
                   <td>
@@ -446,4 +483,19 @@ function CalendarPanel({items}:{items:ContentRequest[]}){
   const entries=Object.entries(groups);
   if(!entries.length)return <p className="mini">Sin fechas.</p>;
   return <div className="calendar-panel">{entries.map(([month,days])=><div className="month-card" key={month}><div className="month-title">{month}</div><div className="days">{Array.from(new Set(days)).sort((a,b)=>Number(a)-Number(b)).map(day=><span className="day-dot" key={day}>{day}</span>)}</div></div>)}</div>
+}
+
+function OperationalEstimate({item,rules,overrides}:{item:ContentRequest;rules:OperationalContentRule[];overrides:ClientOperationalOverride[]}){
+  const cost = estimateRequestCost(item,rules,overrides);
+  const risk = getDeliveryRisk(item.publishDate,cost.deliveryDays);
+  const dueDate = suggestOperationalDueDate(item.publishDate,cost.deliveryDays);
+  return <div className={`operational-card ${risk.tone}`}>
+    <strong>{money(cost.totalCost)}</strong>
+    <span>{cost.editingHours} h edición · {cost.deliveryDays} días mínimos</span>
+    <span>{risk.label}{dueDate ? ` · Entrega interna sugerida: ${dueDate}` : ""}</span>
+  </div>;
+}
+
+function money(value:number){
+  return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(Number(value||0));
 }

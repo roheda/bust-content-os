@@ -598,3 +598,21 @@ button.bg-black{
   visibility:visible!important;
   -webkit-text-fill-color:#ffffff!important;
 }
+
+.config-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.config-actions .btn{min-width:110px}
+.config-list{margin:12px 0 0;padding-left:20px;color:var(--muted);line-height:1.6}
+.config-table td:last-child{display:flex;gap:8px;flex-wrap:wrap}
+.operational-alert{border:1px solid var(--line);border-radius:18px;background:#fff;padding:14px 16px;margin:14px 0;font-weight:900;color:#111827}
+.operational-alert span{display:block;margin-top:4px;font-weight:700;color:var(--muted);font-size:12px}
+.operational-alert.ok{border-color:#bbf7d0;background:#f0fdf4;color:#166534}
+.operational-alert.risk{border-color:#fed7aa;background:#fff7ed;color:#9a3412}
+.operational-card{display:grid;gap:3px;border:1px solid var(--line);border-radius:14px;padding:10px;background:#f9fafb;margin:10px 0}
+.operational-card strong{font-size:16px}
+.operational-card span{font-size:12px;color:var(--muted);font-weight:800}
+.operational-card.good{background:#f0fdf4;border-color:#bbf7d0}
+.operational-card.mid{background:#fff7ed;border-color:#fed7aa}
+.operational-card.bad{background:#fff1f2;border-color:#fecaca}
+.operational-card.good strong,.operational-card.good span{color:#166534}
+.operational-card.mid strong,.operational-card.mid span{color:#9a3412}
+.operational-card.bad strong,.operational-card.bad span{color:#991b1b}

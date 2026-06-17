@@ -10,7 +10,8 @@ const items = [
   ["Tareas", "/dashboard/tareas"],
   ["BUST It Now", "/dashboard/generador"],
   ["Aprobaciones", "/dashboard/aprobaciones"],
-  ["Reportes", "/dashboard/reportes"]
+  ["Reportes", "/dashboard/reportes"],
+  ["Configuración", "/dashboard/configuracion"]
 ];
 
 export default function AppShell({

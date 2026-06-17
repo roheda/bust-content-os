@@ -1,7 +1,19 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { Brand, ContentRequest, Production, listUniqueBrands, listProductions, listRequests } from "@/lib/data";
+import {
+  Brand,
+  ClientOperationalOverride,
+  ContentRequest,
+  OperationalContentRule,
+  Production,
+  estimateRequestCost,
+  listClientOperationalOverrides,
+  listOperationalContentRules,
+  listUniqueBrands,
+  listProductions,
+  listRequests
+} from "@/lib/data";
 
 type PersonMetric = {
   name: string;
@@ -17,6 +29,8 @@ export default function ReportsPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [brands,setBrands]=useState<Brand[]>([]);
   const [productions,setProductions]=useState<Production[]>([]);
+  const [costRules,setCostRules]=useState<OperationalContentRule[]>([]);
+  const [clientOverrides,setClientOverrides]=useState<ClientOperationalOverride[]>([]);
   const [clientFilter,setClientFilter]=useState("all");
   const [areaFilter,setAreaFilter]=useState("all");
   const [personFilter,setPersonFilter]=useState("all");
@@ -24,10 +38,18 @@ export default function ReportsPage(){
   const [to,setTo]=useState("");
 
   async function load(){
-    const [reqs,cls,prods] = await Promise.all([listRequests(),listUniqueBrands(),listProductions()]);
+    const [reqs,cls,prods,rules,overrides] = await Promise.all([
+      listRequests(),
+      listUniqueBrands(),
+      listProductions(),
+      listOperationalContentRules(),
+      listClientOperationalOverrides()
+    ]);
     setRequests(reqs);
     setBrands(cls);
     setProductions(prods);
+    setCostRules(rules);
+    setClientOverrides(overrides);
   }
 
   useEffect(()=>{load()},[]);
@@ -56,8 +78,11 @@ export default function ReportsPage(){
   }),[productions,clientFilter,personFilter,from,to]);
 
   const totals = useMemo(()=>calculateTotals(filtered, filteredProductions),[filtered,filteredProductions]);
+  const financials = useMemo(()=>calculateFinancials(filtered, costRules, clientOverrides),[filtered,costRules,clientOverrides]);
   const byPerson = useMemo(()=>calculatePeople(filtered),[filtered]);
   const byClient = useMemo(()=>countBy(filtered,x=>x.clientName||"Sin cliente"),[filtered]);
+  const byClientCost = useMemo(()=>costBy(filtered, costRules, clientOverrides, x=>x.clientName||"Sin cliente"),[filtered,costRules,clientOverrides]);
+  const byContentCost = useMemo(()=>costBy(filtered, costRules, clientOverrides, x=>x.contentType||"Sin tipo"),[filtered,costRules,clientOverrides]);
   const byArea = useMemo(()=>countBy(filtered,x=>x.assignedArea||x.suggestedArea||"Sin área"),[filtered]);
   const byStatus = useMemo(()=>countBy(filtered,x=>statusLabel(x.status||"sin_estado")),[filtered]);
   const rejectionReasons = useMemo(()=>countBy(filtered.filter(x=>x.approvalStatus==="rechazada"),x=>x.approvalRejectionReason||"Sin motivo"),[filtered]);
@@ -74,22 +99,30 @@ export default function ReportsPage(){
   }
 
   function exportReport(){
-    const headers = ["Cliente","Lote","Tipo","Área","Responsable","Estado","Fecha operativa","Fecha publicación","Vencida","Approval","Motivo rechazo","Link final","Copy Out"];
-    const rows = filtered.map(x=>[
-      x.clientName||"",
-      x.batchName||"",
-      x.contentType||"",
-      x.assignedArea||x.suggestedArea||"",
-      x.assignedTo||"",
-      statusLabel(x.status||""),
-      getTaskDate(x),
-      x.publishDate||"",
-      isOverdue(x) ? "Sí" : "No",
-      x.approvalStatus||"",
-      x.approvalRejectionReason||"",
-      x.finalPostLink||"",
-      x.copyOut||""
-    ]);
+    const headers = ["Cliente","Lote","Tipo","Área","Responsable","Estado","Fecha operativa","Fecha publicación","Vencida","Costo interno","Costo producción","Costo total","Horas edición","Días mínimos","Approval","Motivo rechazo","Link final","Copy Out"];
+    const rows = filtered.map(x=>{
+      const cost = estimateRequestCost(x,costRules,clientOverrides);
+      return [
+        x.clientName||"",
+        x.batchName||"",
+        x.contentType||"",
+        x.assignedArea||x.suggestedArea||"",
+        x.assignedTo||"",
+        statusLabel(x.status||""),
+        getTaskDate(x),
+        x.publishDate||"",
+        isOverdue(x) ? "Sí" : "No",
+        cost.internalCost,
+        cost.productionCost,
+        cost.totalCost,
+        cost.editingHours,
+        cost.deliveryDays,
+        x.approvalStatus||"",
+        x.approvalRejectionReason||"",
+        x.finalPostLink||"",
+        x.copyOut||""
+      ];
+    });
     const csv = [headers,...rows].map(row=>row.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob = new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
     const url = URL.createObjectURL(blob);
@@ -141,6 +174,10 @@ export default function ReportsPage(){
       <Metric title="Rebotadas" value={totals.rejected} helper={`${totals.rejectionRate}% de rechazo`} tone={totals.rejectionRate>20?"bad":totals.rejectionRate>8?"mid":"good"}/>
       <Metric title="Sin asignar" value={totals.unassigned} helper="Riesgo de quedarse sin dueño" tone={totals.unassigned>0?"mid":"good"}/>
       <Metric title="Producciones" value={filteredProductions.length} helper={`${totals.productionsWithoutMaterial} sin material`} tone={totals.productionsWithoutMaterial>0?"mid":"good"}/>
+      <Metric title="Costo interno" value={money(financials.totalCost)} helper={`${money(financials.avgCost)} promedio por pieza`} tone={financials.totalCost>0?"mid":undefined}/>
+      <Metric title="Costo producción" value={money(financials.productionCost)} helper="Solo piezas que requieren producción"/>
+      <Metric title="Horas edición" value={`${financials.editingHours} h`} helper={`${financials.riskCount} piezas con tiempo justo`} tone={financials.riskCount>0?"mid":"good"}/>
+      <Metric title="Días prom. entrega" value={`${financials.avgDeliveryDays}`} helper="Según configuración operativa"/>
     </section>
 
     <section className="report-section">
@@ -163,6 +200,17 @@ export default function ReportsPage(){
       <div className="report-section">
         <h3>Carga por área</h3>
         <BarList data={byArea}/>
+      </div>
+    </section>
+
+    <section className="grid two-col">
+      <div className="report-section">
+        <h3>Costeo por cliente</h3>
+        <MoneyBarList data={byClientCost} empty="Sin costos configurados"/>
+      </div>
+      <div className="report-section">
+        <h3>Costeo por tipo de contenido</h3>
+        <MoneyBarList data={byContentCost} empty="Sin costos configurados"/>
       </div>
     </section>
 
@@ -229,12 +277,14 @@ export default function ReportsPage(){
         <Insight title="Dónde poner atención" items={[
           totals.overdue>0 ? `${totals.overdue} tareas vencidas requieren seguimiento.` : "No hay tareas vencidas relevantes.",
           totals.unassigned>0 ? `${totals.unassigned} tareas están sin responsable.` : "La carga tiene responsable asignado.",
-          totals.productionsWithoutMaterial>0 ? `${totals.productionsWithoutMaterial} producciones siguen sin material entregado.` : "Producciones sin bloqueo de material."
+          totals.productionsWithoutMaterial>0 ? `${totals.productionsWithoutMaterial} producciones siguen sin material entregado.` : "Producciones sin bloqueo de material.",
+          financials.riskCount>0 ? `${financials.riskCount} piezas tienen fecha de publicación demasiado cercana para su tiempo configurado.` : "Las fechas cumplen los tiempos mínimos configurados."
         ]}/>
         <Insight title="Calidad y aprobación" items={[
           totals.rejected>0 ? `${totals.rejected} piezas han sido rebotadas.` : "Sin piezas rebotadas en el filtro.",
           totals.copyOutPending>0 ? `${totals.copyOutPending} piezas aprobadas siguen pendientes de Copy Out.` : "Sin cuello de botella en Copy Out.",
-          `${totals.finished} piezas están finalizadas y listas como historial.`
+          `${totals.finished} piezas están finalizadas y listas como historial.`,
+          `Costo interno estimado del filtro: ${money(financials.totalCost)}.`
         ]}/>
       </div>
     </section>
@@ -410,4 +460,47 @@ function Insight({title,items}:{title:string;items:string[]}){
     <h4>{title}</h4>
     {items.map((item,index)=><p key={index} style={{margin:"8px 0"}}>• {item}</p>)}
   </div>;
+}
+
+function calculateFinancials(items:ContentRequest[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[]){
+  const costs = items.map(item=>({item,...estimateRequestCost(item,rules,overrides)}));
+  const totalCost = costs.reduce((sum,row)=>sum+row.totalCost,0);
+  const productionCost = costs.reduce((sum,row)=>sum+row.productionCost,0);
+  const editingHours = costs.reduce((sum,row)=>sum+row.editingHours,0);
+  const avgCost = items.length ? Math.round(totalCost/items.length) : 0;
+  const avgDeliveryDays = items.length ? Math.round(costs.reduce((sum,row)=>sum+row.deliveryDays,0)/items.length) : 0;
+  const today = new Date(new Date().toISOString().slice(0,10)+"T00:00:00").getTime();
+  const riskCount = costs.filter(row=>{
+    if(!row.item.publishDate)return false;
+    const publish = new Date(row.item.publishDate+"T00:00:00").getTime();
+    if(!publish)return false;
+    const diff = Math.ceil((publish-today)/(1000*60*60*24));
+    return diff < row.deliveryDays;
+  }).length;
+  return {totalCost,productionCost,editingHours,avgCost,avgDeliveryDays,riskCount};
+}
+
+function costBy(items:ContentRequest[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[], fn:(item:ContentRequest)=>string){
+  const map:Record<string,number> = {};
+  items.forEach(item=>{
+    const key = fn(item) || "Sin dato";
+    map[key] = (map[key]||0) + estimateRequestCost(item,rules,overrides).totalCost;
+  });
+  return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,12);
+}
+
+function MoneyBarList({data,empty="Sin datos"}:{data:{label:string;value:number}[];empty?:string}){
+  const max = Math.max(...data.map(x=>x.value),1);
+  if(!data.length)return <p className="mini">{empty}</p>;
+  return <div className="bar-list">
+    {data.map(row=><div className="bar-row" key={row.label}>
+      <div className="bar-label">{row.label}</div>
+      <div className="bar-track"><div className="bar-fill" style={{width:`${Math.max(5,(row.value/max)*100)}%`}}/></div>
+      <div className="bar-value">{money(row.value)}</div>
+    </div>)}
+  </div>;
+}
+
+function money(value:number){
+  return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(Number(value||0));
 }

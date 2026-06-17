@@ -258,6 +258,105 @@ export type Production = {
   status: string;
 };
 
+export type OperationalContentRule = {
+  id?: string;
+  contentType: string;
+  label: string;
+  area: string;
+  internalCost: number;
+  productionCost: number;
+  editingHours: number;
+  deliveryDays: number;
+  bufferHours: number;
+  requiresProductionDefault: boolean;
+  active: boolean;
+  notes?: string;
+};
+
+export type ClientOperationalOverride = {
+  id?: string;
+  clientId: string;
+  clientName: string;
+  contentType: string;
+  internalCost?: number;
+  productionCost?: number;
+  editingHours?: number;
+  deliveryDays?: number;
+  bufferHours?: number;
+  notes?: string;
+  active: boolean;
+};
+
+export const defaultOperationalRules: OperationalContentRule[] = [
+  { contentType: "Reel", label: "Post Reel", area: "Audiovisual", internalCost: 1500, productionCost: 0, editingHours: 6, deliveryDays: 4, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Edición corta vertical con copy y entrega para redes." },
+  { contentType: "TikTok", label: "TikTok / Short", area: "Audiovisual", internalCost: 1300, productionCost: 0, editingHours: 5, deliveryDays: 3, bufferHours: 6, requiresProductionDefault: false, active: true, notes: "Pieza vertical rápida con ritmo dinámico." },
+  { contentType: "Carrusel", label: "Carrusel", area: "Diseño", internalCost: 1200, productionCost: 0, editingHours: 4, deliveryDays: 3, bufferHours: 6, requiresProductionDefault: false, active: true, notes: "Diseño multipágina con copy in listo." },
+  { contentType: "Post", label: "Post estático", area: "Diseño", internalCost: 750, productionCost: 0, editingHours: 2, deliveryDays: 2, bufferHours: 4, requiresProductionDefault: false, active: true, notes: "Diseño simple de feed." },
+  { contentType: "Story", label: "Story", area: "Diseño", internalCost: 450, productionCost: 0, editingHours: 1, deliveryDays: 1, bufferHours: 2, requiresProductionDefault: false, active: true, notes: "Story con adaptación rápida." },
+  { contentType: "Foto", label: "Foto / selección", area: "Audiovisual", internalCost: 650, productionCost: 0, editingHours: 2, deliveryDays: 2, bufferHours: 4, requiresProductionDefault: false, active: true, notes: "Edición, selección o adaptación de foto." },
+  { contentType: "Diseño", label: "Diseño especial", area: "Diseño", internalCost: 1500, productionCost: 0, editingHours: 5, deliveryDays: 4, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Pieza gráfica con mayor carga visual." },
+  { contentType: "Blog", label: "Blog / artículo", area: "Copy", internalCost: 1800, productionCost: 0, editingHours: 5, deliveryDays: 5, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Copy largo con estructura editorial." },
+  { contentType: "Producción", label: "Producción base", area: "Audiovisual", internalCost: 0, productionCost: 4000, editingHours: 0, deliveryDays: 7, bufferHours: 24, requiresProductionDefault: true, active: true, notes: "Costo base de producción interna o coordinación." }
+];
+
+export function mergeOperationalRule(
+  contentType: string,
+  rules: OperationalContentRule[] = [],
+  overrides: ClientOperationalOverride[] = [],
+  clientId?: string
+) {
+  const base = rules.find(rule => rule.active !== false && rule.contentType === contentType)
+    || defaultOperationalRules.find(rule => rule.contentType === contentType)
+    || defaultOperationalRules[0];
+  const override = overrides.find(item => item.active !== false && item.clientId === clientId && item.contentType === contentType);
+  return {
+    ...base,
+    internalCost: override?.internalCost ?? base.internalCost,
+    productionCost: override?.productionCost ?? base.productionCost,
+    editingHours: override?.editingHours ?? base.editingHours,
+    deliveryDays: override?.deliveryDays ?? base.deliveryDays,
+    bufferHours: override?.bufferHours ?? base.bufferHours,
+    notes: override?.notes || base.notes
+  };
+}
+
+export function estimateRequestCost(
+  item: Partial<ContentRequest>,
+  rules: OperationalContentRule[] = [],
+  overrides: ClientOperationalOverride[] = []
+) {
+  const rule = mergeOperationalRule(item.contentType || "Post", rules, overrides, item.clientId);
+  const productionCost = item.requiresProduction ? rule.productionCost : 0;
+  return {
+    rule,
+    internalCost: Number(rule.internalCost || 0),
+    productionCost: Number(productionCost || 0),
+    totalCost: Number(rule.internalCost || 0) + Number(productionCost || 0),
+    editingHours: Number(rule.editingHours || 0),
+    deliveryDays: Number(rule.deliveryDays || 0),
+    bufferHours: Number(rule.bufferHours || 0)
+  };
+}
+
+export function suggestOperationalDueDate(publishDate: string, deliveryDays: number) {
+  if (!publishDate) return "";
+  const d = new Date(publishDate + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return "";
+  d.setDate(d.getDate() - Math.max(0, Number(deliveryDays || 0)));
+  return d.toISOString().slice(0, 10);
+}
+
+export function getDeliveryRisk(publishDate: string, deliveryDays: number) {
+  if (!publishDate) return { tone: "mid" as const, label: "Sin fecha de publicación" };
+  const today = new Date();
+  const publish = new Date(publishDate + "T00:00:00");
+  const diffDays = Math.ceil((publish.getTime() - new Date(today.toISOString().slice(0,10) + "T00:00:00").getTime()) / (1000 * 60 * 60 * 24));
+  if (Number.isNaN(diffDays)) return { tone: "mid" as const, label: "Fecha inválida" };
+  if (diffDays < deliveryDays) return { tone: "bad" as const, label: `Riesgo: requiere ${deliveryDays} días y quedan ${Math.max(0, diffDays)}` };
+  if (diffDays <= deliveryDays + 1) return { tone: "mid" as const, label: "Tiempo justo" };
+  return { tone: "good" as const, label: "Tiempo viable" };
+}
+
 export const emptyRequest: ContentRequest = {
   clientId: "",
   clientName: "",
@@ -489,6 +588,64 @@ export async function updateProduction(id: string, data: Partial<Production>) {
     ...data,
     updatedAt: serverTimestamp()
   });
+}
+
+export async function listOperationalContentRules() {
+  const snap = await getDocs(collection(db, "operationalContentRules"));
+  const custom = snap.docs.map((d) => ({ id: d.id, ...d.data() } as OperationalContentRule));
+  const customTypes = new Set(custom.map(rule => rule.contentType));
+  return [
+    ...custom,
+    ...defaultOperationalRules.filter(rule => !customTypes.has(rule.contentType))
+  ].sort((a, b) => (a.contentType || "").localeCompare(b.contentType || "", "es"));
+}
+
+export async function saveOperationalContentRule(item: OperationalContentRule) {
+  return addDoc(collection(db, "operationalContentRules"), {
+    ...item,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function updateOperationalContentRule(id: string, data: Partial<OperationalContentRule>) {
+  return updateDoc(doc(db, "operationalContentRules", id), {
+    ...data,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteOperationalContentRule(id: string) {
+  return deleteDoc(doc(db, "operationalContentRules", id));
+}
+
+export async function listClientOperationalOverrides() {
+  const snap = await getDocs(collection(db, "clientOperationalOverrides"));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ClientOperationalOverride));
+}
+
+
+function omitUndefined<T extends Record<string, any>>(value: T) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
+}
+
+export async function saveClientOperationalOverride(item: ClientOperationalOverride) {
+  return addDoc(collection(db, "clientOperationalOverrides"), {
+    ...omitUndefined(item),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function updateClientOperationalOverride(id: string, data: Partial<ClientOperationalOverride>) {
+  return updateDoc(doc(db, "clientOperationalOverrides", id), {
+    ...omitUndefined(data),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteClientOperationalOverride(id: string) {
+  return deleteDoc(doc(db, "clientOperationalOverrides", id));
 }
 
 
