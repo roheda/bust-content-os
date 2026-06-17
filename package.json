@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "2.1.3-fixed-generator-feed",
+  "version": "2.1.4-fix-generationrequest-attachments-type",
   "private": true,
   "scripts": {
     "dev": "next dev",

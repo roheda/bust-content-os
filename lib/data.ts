@@ -125,6 +125,7 @@ export type GenerationRequest = {
   selectedAssetIds: string[];
   selectedAssetsSnapshot: ClientAsset[];
   brandBrainSnapshot?: BrandBrain;
+  requestAttachments?: any[];
   logoOverlay?: any;
   generatedPrompt?: string;
   executedModel?: string;

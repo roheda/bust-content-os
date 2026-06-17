@@ -128,3 +128,15 @@ Cambios:
 - El tab Historial ahora es un feed tipo Instagram.
 - Cada card muestra imagen generada si existe en `generatedImages`.
 - Se conserva el punto 4: Referencia específica de esta pieza.
+
+
+## v5.1 — Fix TypeScript GenerationRequest
+
+Se corrigió el error de deploy:
+
+```txt
+Object literal may only specify known properties, and 'requestAttachments' does not exist in type 'GenerationRequest'
+```
+
+Cambio aplicado:
+- `GenerationRequest` ahora incluye `requestAttachments?: any[]`.
