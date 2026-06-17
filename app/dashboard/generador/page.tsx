@@ -238,15 +238,23 @@ export default function BustItNowPage() {
         const relatedRequest = history.find((request) => request.id === image.requestId);
         return {
           image,
-          request: relatedRequest || {
+          request: (relatedRequest || {
             id: image.requestId,
             clientId: image.clientId,
             clientName: image.clientName,
             mainMessage: `Variante ${image.variantIndex || ""}`.trim(),
             format: "",
+            goal: "",
             contentType: "",
-            status: image.status || "generated"
-          },
+            selectedEmotions: [],
+            selectedVisualElements: [],
+            specificInstructions: "",
+            textBlocks: [],
+            selectedAssetIds: [],
+            selectedAssetsSnapshot: [],
+            status: image.status || "generated",
+            executedModel: image.executedModel || ""
+          }) as GenerationRequest,
           imageUrl: getGeneratedImageUrl({ ...image, imageDataUrl: image.finalImageDataUrl || image.imageDataUrl })
         };
       })
