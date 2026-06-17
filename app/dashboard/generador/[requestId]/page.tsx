@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import {
+  Brand,
   ClientAsset,
   GenerationRequest,
+  calculateClientBillingBalance,
   getGenerationRequest,
   listClientAssets,
   listGeneratedImageRecords,
+  listUniqueBrands,
   saveGeneratedImageRecord,
   updateGeneratedImageRecord,
   updateGenerationRequest
@@ -110,6 +113,8 @@ export default function GenerationRequestPage() {
 
   const [request, setRequest] = useState<GenerationRequest | null>(null);
   const [assets, setAssets] = useState<ClientAsset[]>([]);
+  const [client, setClient] = useState<Brand | null>(null);
+  const [allGeneratedRecords, setAllGeneratedRecords] = useState<any[]>([]);
   const [selectedModel, setSelectedModel] = useState("gemini-3-pro-image");
   const [variantCount, setVariantCount] = useState(1);
   const [useReferences, setUseReferences] = useState(true);
@@ -138,7 +143,9 @@ export default function GenerationRequestPage() {
     const found = await getGenerationRequest(requestId);
     setRequest(found);
 
-    const generatedRecords = await listGeneratedImageRecords();
+    const [generatedRecords, brands] = await Promise.all([listGeneratedImageRecords(), listUniqueBrands()]);
+    setAllGeneratedRecords(generatedRecords);
+    setClient(brands.find((brand) => brand.id === found?.clientId) || null);
     const previousImages = generatedRecords
       .filter((record) => record.requestId === requestId)
       .sort((a, b) => Number(a.variantIndex || 0) - Number(b.variantIndex || 0))
@@ -207,6 +214,14 @@ export default function GenerationRequestPage() {
     .filter((attachment: any) => attachment.url), [request]);
   const logoAssets = assets.filter(isLogo);
   const selectedLogo = assets.find((asset) => asset.id === logoOverlay.assetId);
+  const billingMonth = new Date().toISOString().slice(0, 7);
+  const aiBillingBalance = useMemo(() => client ? calculateClientBillingBalance({
+    client,
+    month: billingMonth,
+    requests: [],
+    productions: [],
+    generatedImages: allGeneratedRecords
+  }) : null, [client, billingMonth, allGeneratedRecords]);
 
   function inferLogoKind(asset?: ClientAsset) {
     const value = `${asset?.name || ""} ${asset?.type || ""} ${asset?.category || ""} ${(asset?.tags || []).join(" ")}`.toLowerCase();
@@ -249,6 +264,19 @@ export default function GenerationRequestPage() {
 
   async function generateImages() {
     if (!request) return;
+    if (aiBillingBalance && aiBillingBalance.includedAiGenerations > 0) {
+      const projected = aiBillingBalance.aiGenerations + variantCount;
+      const exceeds = projected > aiBillingBalance.includedAiGenerations;
+      if (exceeds && !aiBillingBalance.onDemandEnabled) {
+        setError(`Este cliente tiene límite de ${aiBillingBalance.includedAiGenerations} generaciones IA al mes. Ya lleva ${aiBillingBalance.aiGenerations}. Activa cobro bajo demanda o aumenta el límite en Clientes.`);
+        return;
+      }
+      if (exceeds && aiBillingBalance.onDemandEnabled) {
+        const extra = projected - aiBillingBalance.includedAiGenerations;
+        const charge = extra * aiBillingBalance.extraAiGenerationRate;
+        setSuccess(`Esta generación supera el incluido mensual. Se registrará como consumo bajo demanda estimado: ${money(charge)}.`);
+      }
+    }
     setError("");
     setSuccess("");
     setGeneratedImages([]);
@@ -523,6 +551,14 @@ export default function GenerationRequestPage() {
                   ) : null}
                 </div>
 
+                {aiBillingBalance ? (
+                  <div className={`mt-5 rounded-3xl border p-4 text-sm ${aiBillingBalance.includedAiGenerations && aiBillingBalance.aiGenerations + variantCount > aiBillingBalance.includedAiGenerations ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+                    <strong>Consumo IA del mes</strong>
+                    <p className="mt-1">{aiBillingBalance.aiGenerations}/{aiBillingBalance.includedAiGenerations || "sin límite"} generaciones usadas en {billingMonth}. Esta acción suma {variantCount}.</p>
+                    {aiBillingBalance.includedAiGenerations && aiBillingBalance.aiGenerations + variantCount > aiBillingBalance.includedAiGenerations ? <p className="mt-1">Excedente estimado bajo demanda: {money(Math.max(0, aiBillingBalance.aiGenerations + variantCount - aiBillingBalance.includedAiGenerations) * aiBillingBalance.extraAiGenerationRate)}.</p> : null}
+                  </div>
+                ) : null}
+
                 <button type="button" onClick={generateImages} disabled={isGenerating} className="mt-5 h-14 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{isGenerating ? "Generando imagen..." : "Generar imagen"}</button>
 
                 {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
@@ -680,6 +716,10 @@ export default function GenerationRequestPage() {
       ) : null}
     </AppShell>
   );
+}
+
+function money(value:number){
+  return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(Number(value||0));
 }
 
 function PillFilter({ options, value, onChange, className = "" }: { options: { id: string; label: string }[]; value: string; onChange: (value: string) => void; className?: string }) {

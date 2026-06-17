@@ -134,6 +134,47 @@ export type GenerationRequest = {
   status: string;
 };
 
+export type ClientBillingConfig = {
+  monthlyRetainer?: number;
+  includedFinalizedContents?: number;
+  includedProductions?: number;
+  includedProductionBudget?: number;
+  includedAiGenerations?: number;
+  onDemandEnabled?: boolean;
+  extraContentRate?: number;
+  extraProductionRate?: number;
+  extraAiGenerationRate?: number;
+  billingNotes?: string;
+};
+
+export type ClientBillingBalance = {
+  clientId: string;
+  clientName: string;
+  month: string;
+  monthlyRetainer: number;
+  finalizedContents: number;
+  includedFinalizedContents: number;
+  billableExtraContents: number;
+  extraContentRate: number;
+  extraContentCharge: number;
+  productions: number;
+  includedProductions: number;
+  billableExtraProductions: number;
+  extraProductionRate: number;
+  extraProductionCharge: number;
+  productionCostConsumed: number;
+  includedProductionBudget: number;
+  billableProductionBudgetOverage: number;
+  aiGenerations: number;
+  includedAiGenerations: number;
+  billableExtraAiGenerations: number;
+  extraAiGenerationRate: number;
+  extraAiCharge: number;
+  onDemandEnabled: boolean;
+  estimatedInvoiceTotal: number;
+  consumedValue: number;
+};
+
 export type Brand = {
   id?: string;
   name: string;
@@ -157,6 +198,7 @@ export type Brand = {
   instagram?: string;
   location?: string;
   packageName?: string;
+  billingConfig?: ClientBillingConfig;
   services?: string[];
   brandPersonality?: string;
   visualStyle?: string;
@@ -754,6 +796,103 @@ export async function listGenerationRequests() {
 }
 
 
+
+export const defaultClientBillingConfig: Required<ClientBillingConfig> = {
+  monthlyRetainer: 0,
+  includedFinalizedContents: 0,
+  includedProductions: 0,
+  includedProductionBudget: 0,
+  includedAiGenerations: 0,
+  onDemandEnabled: true,
+  extraContentRate: 0,
+  extraProductionRate: 0,
+  extraAiGenerationRate: 0,
+  billingNotes: ""
+};
+
+export function getClientBillingConfig(client?: Partial<Brand> | null): Required<ClientBillingConfig> {
+  return {
+    ...defaultClientBillingConfig,
+    ...(client?.billingConfig || {})
+  };
+}
+
+export function getRecordMonth(value: any): string {
+  if (!value) return "";
+  if (typeof value === "string") return value.slice(0, 7);
+  if (value?.toDate) return value.toDate().toISOString().slice(0, 7);
+  if (typeof value?.seconds === "number") return new Date(value.seconds * 1000).toISOString().slice(0, 7);
+  try {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 7);
+  } catch {
+    return "";
+  }
+}
+
+export function getRequestOperationalMonth(item: Partial<ContentRequest>) {
+  return (item.publishDate || item.dueDate || item.batchDueDate || "").slice(0, 7);
+}
+
+export function calculateClientBillingBalance(args: {
+  client: Brand;
+  month: string;
+  requests: ContentRequest[];
+  productions?: Production[];
+  generatedImages?: any[];
+  rules?: OperationalContentRule[];
+  overrides?: ClientOperationalOverride[];
+}): ClientBillingBalance {
+  const { client, month, requests, productions = [], generatedImages = [], rules = [], overrides = [] } = args;
+  const config = getClientBillingConfig(client);
+  const clientRequests = requests.filter((item) => item.clientId === client.id && (!month || getRequestOperationalMonth(item) === month));
+  const finalized = clientRequests.filter((item) => item.status === "finalizada");
+  const productionRequests = clientRequests.filter((item) => item.requiresProduction || item.productionId);
+  const clientProductions = productions.filter((item) => item.clientId === client.id && (!month || (item.scheduledDate || "").slice(0, 7) === month));
+  const productionCount = Math.max(productionRequests.length, clientProductions.length);
+  const productionCostConsumed = productionRequests.reduce((sum, item) => sum + estimateRequestCost(item, rules, overrides).productionCost, 0);
+  const aiGenerations = generatedImages.filter((item) => item.clientId === client.id && (!month || getRecordMonth(item.generatedAt || item.createdAt || item.updatedAt) === month)).length;
+
+  const billableExtraContents = Math.max(0, finalized.length - Number(config.includedFinalizedContents || 0));
+  const billableExtraProductions = Math.max(0, productionCount - Number(config.includedProductions || 0));
+  const billableProductionBudgetOverage = Math.max(0, productionCostConsumed - Number(config.includedProductionBudget || 0));
+  const billableExtraAiGenerations = Math.max(0, aiGenerations - Number(config.includedAiGenerations || 0));
+
+  const extraContentCharge = billableExtraContents * Number(config.extraContentRate || 0);
+  const extraProductionCharge = billableExtraProductions * Number(config.extraProductionRate || 0) + billableProductionBudgetOverage;
+  const extraAiCharge = billableExtraAiGenerations * Number(config.extraAiGenerationRate || 0);
+  const estimatedInvoiceTotal = Number(config.monthlyRetainer || 0) + (config.onDemandEnabled ? extraContentCharge + extraProductionCharge + extraAiCharge : 0);
+  const consumedValue = finalized.reduce((sum, item) => sum + estimateRequestCost(item, rules, overrides).totalCost, 0) + productionCostConsumed + aiGenerations * Number(config.extraAiGenerationRate || 0);
+
+  return {
+    clientId: client.id || "",
+    clientName: client.name || "Sin cliente",
+    month,
+    monthlyRetainer: Number(config.monthlyRetainer || 0),
+    finalizedContents: finalized.length,
+    includedFinalizedContents: Number(config.includedFinalizedContents || 0),
+    billableExtraContents,
+    extraContentRate: Number(config.extraContentRate || 0),
+    extraContentCharge,
+    productions: productionCount,
+    includedProductions: Number(config.includedProductions || 0),
+    billableExtraProductions,
+    extraProductionRate: Number(config.extraProductionRate || 0),
+    extraProductionCharge,
+    productionCostConsumed,
+    includedProductionBudget: Number(config.includedProductionBudget || 0),
+    billableProductionBudgetOverage,
+    aiGenerations,
+    includedAiGenerations: Number(config.includedAiGenerations || 0),
+    billableExtraAiGenerations,
+    extraAiGenerationRate: Number(config.extraAiGenerationRate || 0),
+    extraAiCharge,
+    onDemandEnabled: Boolean(config.onDemandEnabled),
+    estimatedInvoiceTotal,
+    consumedValue
+  };
+}
+
 function normalizeClientNameForDedupe(value = "") {
   return String(value)
     .normalize("NFD")
@@ -836,8 +975,10 @@ export async function saveGeneratedImageRecord(item: {
   finalImageDataUrl?: string;
   logoOverlay?: any;
   status?: string;
+  generatedAt?: string;
 }) {
   return addDoc(collection(db, "generatedImages"), {
+    generatedAt: item.generatedAt || new Date().toISOString(),
     ...item,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()

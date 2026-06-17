@@ -7,8 +7,10 @@ import {
   ContentRequest,
   OperationalContentRule,
   Production,
+  calculateClientBillingBalance,
   estimateRequestCost,
   listClientOperationalOverrides,
+  listGeneratedImageRecords,
   listOperationalContentRules,
   listUniqueBrands,
   listProductions,
@@ -29,6 +31,7 @@ export default function ReportsPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [brands,setBrands]=useState<Brand[]>([]);
   const [productions,setProductions]=useState<Production[]>([]);
+  const [generatedRecords,setGeneratedRecords]=useState<any[]>([]);
   const [costRules,setCostRules]=useState<OperationalContentRule[]>([]);
   const [clientOverrides,setClientOverrides]=useState<ClientOperationalOverride[]>([]);
   const [clientFilter,setClientFilter]=useState("all");
@@ -36,18 +39,21 @@ export default function ReportsPage(){
   const [personFilter,setPersonFilter]=useState("all");
   const [from,setFrom]=useState("");
   const [to,setTo]=useState("");
+  const [billingMonth,setBillingMonth]=useState(new Date().toISOString().slice(0,7));
 
   async function load(){
-    const [reqs,cls,prods,rules,overrides] = await Promise.all([
+    const [reqs,cls,prods,generated,rules,overrides] = await Promise.all([
       listRequests(),
       listUniqueBrands(),
       listProductions(),
+      listGeneratedImageRecords(),
       listOperationalContentRules(),
       listClientOperationalOverrides()
     ]);
     setRequests(reqs);
     setBrands(cls);
     setProductions(prods);
+    setGeneratedRecords(generated);
     setCostRules(rules);
     setClientOverrides(overrides);
   }
@@ -83,6 +89,18 @@ export default function ReportsPage(){
   const byClient = useMemo(()=>countBy(filtered,x=>x.clientName||"Sin cliente"),[filtered]);
   const byClientCost = useMemo(()=>costBy(filtered, costRules, clientOverrides, x=>x.clientName||"Sin cliente"),[filtered,costRules,clientOverrides]);
   const byContentCost = useMemo(()=>costBy(filtered, costRules, clientOverrides, x=>x.contentType||"Sin tipo"),[filtered,costRules,clientOverrides]);
+  const billingBalances = useMemo(()=>brands
+    .filter(client=>clientFilter==="all" || client.id===clientFilter)
+    .map(client=>calculateClientBillingBalance({client, month: billingMonth, requests, productions, generatedImages: generatedRecords, rules: costRules, overrides: clientOverrides}))
+    .filter(row=>row.monthlyRetainer || row.finalizedContents || row.productions || row.aiGenerations || row.estimatedInvoiceTotal)
+    .sort((a,b)=>b.estimatedInvoiceTotal-a.estimatedInvoiceTotal),[brands,clientFilter,billingMonth,requests,productions,generatedRecords,costRules,clientOverrides]);
+  const billingTotals = useMemo(()=>billingBalances.reduce((acc,row)=>({
+    retainer: acc.retainer + row.monthlyRetainer,
+    invoice: acc.invoice + row.estimatedInvoiceTotal,
+    extras: acc.extras + row.extraContentCharge + row.extraProductionCharge + row.extraAiCharge,
+    contents: acc.contents + row.finalizedContents,
+    ai: acc.ai + row.aiGenerations
+  }),{retainer:0,invoice:0,extras:0,contents:0,ai:0}),[billingBalances]);
   const byArea = useMemo(()=>countBy(filtered,x=>x.assignedArea||x.suggestedArea||"Sin área"),[filtered]);
   const byStatus = useMemo(()=>countBy(filtered,x=>statusLabel(x.status||"sin_estado")),[filtered]);
   const rejectionReasons = useMemo(()=>countBy(filtered.filter(x=>x.approvalStatus==="rechazada"),x=>x.approvalRejectionReason||"Sin motivo"),[filtered]);
@@ -133,6 +151,40 @@ export default function ReportsPage(){
     URL.revokeObjectURL(url);
   }
 
+  function exportBillingBalance(){
+    const headers = ["Cliente","Mes","Iguala mensual","Contenidos finalizados","Contenidos incluidos","Contenidos extra","Cargo extra contenidos","Producciones","Producciones incluidas","Producciones extra","Cargo extra producciones","Bolsa producción incluida","Costo producción consumido","Excedente bolsa producción","Generaciones IA","IA incluida","IA extra","Cargo extra IA","Cobro bajo demanda","Total estimado factura"];
+    const rows = billingBalances.map(row=>[
+      row.clientName,
+      row.month,
+      row.monthlyRetainer,
+      row.finalizedContents,
+      row.includedFinalizedContents,
+      row.billableExtraContents,
+      row.extraContentCharge,
+      row.productions,
+      row.includedProductions,
+      row.billableExtraProductions,
+      row.extraProductionCharge,
+      row.includedProductionBudget,
+      row.productionCostConsumed,
+      row.billableProductionBudgetOverage,
+      row.aiGenerations,
+      row.includedAiGenerations,
+      row.billableExtraAiGenerations,
+      row.extraAiCharge,
+      row.onDemandEnabled ? "Sí" : "No",
+      row.estimatedInvoiceTotal
+    ]);
+    const csv = [headers,...rows].map(row=>row.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url;
+    a.download=`balance-facturacion-${billingMonth}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return <AppShell active="Reportes">
     <section className="hero">
       <div>
@@ -140,7 +192,7 @@ export default function ReportsPage(){
         <h1>Reportes</h1>
         <p>Radar operativo para entender carga, velocidad, cuellos de botella, calidad, cumplimiento y rendimiento del equipo.</p>
       </div>
-      <button className="btn blue" onClick={exportReport}>Exportar reporte CSV</button>
+      <div className="config-actions"><button className="btn" onClick={exportBillingBalance}>Balance facturación CSV</button><button className="btn blue" onClick={exportReport}>Exportar reporte CSV</button></div>
     </section>
 
     <div className="report-filters">
@@ -161,6 +213,7 @@ export default function ReportsPage(){
       </select>
       <input type="date" value={from} onChange={e=>setFrom(e.target.value)}/>
       <input type="date" value={to} onChange={e=>setTo(e.target.value)}/>
+      <input type="month" value={billingMonth} onChange={e=>setBillingMonth(e.target.value)} title="Mes para balance de facturación"/>
       <button className="btn" onClick={clearFilters}>Limpiar</button>
       <button className="btn" onClick={load}>Actualizar</button>
     </div>
@@ -178,8 +231,34 @@ export default function ReportsPage(){
       <Metric title="Costo producción" value={money(financials.productionCost)} helper="Solo piezas que requieren producción"/>
       <Metric title="Horas edición" value={`${financials.editingHours} h`} helper={`${financials.riskCount} piezas con tiempo justo`} tone={financials.riskCount>0?"mid":"good"}/>
       <Metric title="Días prom. entrega" value={`${financials.avgDeliveryDays}`} helper="Según configuración operativa"/>
+      <Metric title="Facturación estimada" value={money(billingTotals.invoice)} helper={`${money(billingTotals.extras)} bajo demanda`}/>
+      <Metric title="Generaciones IA" value={billingTotals.ai} helper={`Mes ${billingMonth}`}/>
     </section>
 
+
+    <section className="report-section">
+      <div className="flex" style={{justifyContent:"space-between",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+        <div>
+          <h3>Balance para facturación</h3>
+          <p className="mini">Compara lo incluido por cliente contra lo consumido en el mes seleccionado. Usa contenidos finalizados, producciones y generaciones IA de BUST It Now.</p>
+        </div>
+        <button className="btn" onClick={exportBillingBalance}>Exportar balance CSV</button>
+      </div>
+      <div className="table-wrap" style={{marginTop:16}}>
+        <table className="table config-table">
+          <thead><tr><th>Cliente</th><th>Contenidos</th><th>Producciones</th><th>Generaciones IA</th><th>Extras</th><th>Total facturación</th></tr></thead>
+          <tbody>{billingBalances.map(row=><tr key={`${row.clientId}-${row.month}`}>
+            <td><strong>{row.clientName}</strong><br/><span className="mini">{row.month} · Iguala {money(row.monthlyRetainer)} · Bajo demanda {row.onDemandEnabled?"activo":"inactivo"}</span></td>
+            <td>{row.finalizedContents}/{row.includedFinalizedContents}<br/><span className="mini">Extra: {row.billableExtraContents}</span></td>
+            <td>{row.productions}/{row.includedProductions}<br/><span className="mini">Bolsa: {money(row.productionCostConsumed)}/{money(row.includedProductionBudget)}</span></td>
+            <td>{row.aiGenerations}/{row.includedAiGenerations}<br/><span className="mini">Extra: {row.billableExtraAiGenerations}</span></td>
+            <td>{money(row.extraContentCharge + row.extraProductionCharge + row.extraAiCharge)}</td>
+            <td><strong>{money(row.estimatedInvoiceTotal)}</strong></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      {!billingBalances.length && <p className="mini" style={{marginTop:12}}>No hay consumo o configuración comercial para el mes seleccionado.</p>}
+    </section>
     <section className="report-section">
       <h3>Embudo operativo</h3>
       <div className="funnel">

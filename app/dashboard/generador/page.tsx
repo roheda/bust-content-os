@@ -5,6 +5,7 @@ import AppShell from "@/components/AppShell";
 import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
 import {
   Brand,
+  calculateClientBillingBalance,
   ClientAsset,
   ContentRequest,
   GenerationRequest,
@@ -234,6 +235,8 @@ export default function BustItNowPage() {
   }, [clientId]);
 
   const client = clients.find((item) => item.id === clientId);
+  const billingMonth = new Date().toISOString().slice(0, 7);
+  const aiBillingBalance = useMemo(() => client ? calculateClientBillingBalance({ client, month: billingMonth, requests: [], productions: [], generatedImages: generatedRecords }) : null, [client, billingMonth, generatedRecords]);
   const selectedAssets = useMemo(() => assets.filter((asset) => selectedAssetIds.includes(asset.id || "")), [assets, selectedAssetIds]);
   const logoAssets = useMemo(() => assets.filter(isLogo), [assets]);
   const visualAssetCategories = useMemo(() => {
@@ -477,6 +480,13 @@ export default function BustItNowPage() {
   }
 
   async function generate() {
+    if (aiBillingBalance && aiBillingBalance.includedAiGenerations > 0) {
+      const projected = aiBillingBalance.aiGenerations + variantCount;
+      if (projected > aiBillingBalance.includedAiGenerations && !aiBillingBalance.onDemandEnabled) {
+        setError(`Este cliente tiene límite de ${aiBillingBalance.includedAiGenerations} generaciones IA al mes. Ya lleva ${aiBillingBalance.aiGenerations}. Ajusta el límite o activa cobro bajo demanda en Clientes.`);
+        return;
+      }
+    }
     setError("");
     setSuccess("");
     setGeneratedImages([]);
@@ -584,6 +594,7 @@ export default function BustItNowPage() {
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">Cliente</p>
                         <p className="mt-2 text-lg font-semibold text-zinc-950">{client.name}</p>
                         <p className="mt-1 text-sm text-zinc-600">{client.industry || "Sin categoría"}</p>
+                        {aiBillingBalance ? <p className="mt-3 rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-zinc-700">IA mes: {aiBillingBalance.aiGenerations}/{aiBillingBalance.includedAiGenerations || "sin límite"} · Bajo demanda {aiBillingBalance.onDemandEnabled ? "activo" : "inactivo"}</p> : null}
                       </div>
                     ) : null}
                   </section>

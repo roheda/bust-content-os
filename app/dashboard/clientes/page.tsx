@@ -36,6 +36,7 @@ export default function ClientsPage(){
       month:new Date().toISOString().slice(0,7),
       brandNotes:"",
       brandBrain:{brandDescription:"",tone:"",colors:[],typography:"",visualStyle:[],dos:[],donts:[],recommendedModels:[]},
+      billingConfig:{monthlyRetainer:0,includedFinalizedContents:0,includedProductions:0,includedProductionBudget:0,includedAiGenerations:0,onDemandEnabled:true,extraContentRate:0,extraProductionRate:0,extraAiGenerationRate:0,billingNotes:""},
       services:["Content OS","BUST It Now"],
       sharedSystems:["BUST Content OS","BUST It Now"]
     });
