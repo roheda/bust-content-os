@@ -69,3 +69,50 @@ Ahora el Creador de Solicitudes y módulos operativos usan `listUniqueBrands()` 
 
 Esto corrige casos como:
 - Acerofertas duplicado después de migración.
+
+
+## v3 — Request original de generación
+
+Se agregó la ruta:
+
+```txt
+/dashboard/generador/[requestId]
+```
+
+Esta pantalla replica el flujo mostrado en BUST It Now original:
+
+- resumen del brief,
+- prompt final,
+- copiar prompt,
+- descargar prompt,
+- selector exclusivo Gemini:
+  - Gemini Pro Imagen,
+  - Gemini 3.1 Flash Imagen,
+  - Gemini 2.5 Flash Imagen,
+- 1, 2 o 4 variantes,
+- activar/desactivar referencias visuales reales,
+- generar imagen,
+- resultados,
+- insertar logo después como overlay de vista previa.
+
+También queda preparada la API:
+
+```txt
+/api/apply-logo-overlay
+```
+
+Por ahora el overlay posterior funciona en vista previa. Para quemar el logo dentro del PNG final, se debe activar procesamiento server-side con Sharp.
+
+
+## v4 — Punto 4 restaurado en el brief
+
+Se restauró el bloque visual:
+
+- **4. Referencia específica de esta pieza**
+- Imagen puntual
+- Nombre del archivo
+- Rol de la imagen
+- Instrucción sobre este archivo
+- Quitar referencia puntual
+
+Además esa referencia puntual se guarda también en `requestAttachments` del request.

@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "2.0.1-bustitnow-real-ui-dedupe-clients",
+  "version": "2.1.0-bustitnow-request-flow",
   "private": true,
   "scripts": {
     "dev": "next dev",

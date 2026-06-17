@@ -60,6 +60,7 @@ const attachmentRoles = [
   { id:"producto-principal", label:"Producto principal" },
   { id:"platillo-principal", label:"Platillo principal" },
   { id:"referencia-visual", label:"Referencia visual" },
+  { id:"persona-principal", label:"Persona principal" },
   { id:"fondo-ambiente", label:"Fondo / ambiente" },
   { id:"promocion", label:"Promoción" }
 ];
@@ -170,6 +171,7 @@ export default function BustItNowPage(){
       mainMessage:mainMessage.trim(),format,goal,contentType,
       selectedEmotions,selectedVisualElements,specificInstructions:specificInstructions.trim(),
       textBlocks:cleanBlocks(),selectedAssetIds,selectedAssetsSnapshot:selectedAssets,
+      requestAttachments: attachment ? [{name:attachment.name,role:attachment.role,notes:attachment.notes,fileUrl:attachment.preview,mimeType:attachment.file.type}] : [],
       brandBrainSnapshot:client.brandBrain,logoOverlay:{enabled:logoOverlayEnabled,assetId:selectedLogoAssetId,position:logoPosition,size:logoSize},
       generatedPrompt:built,executedModel:selectedModel,status
     });
@@ -258,10 +260,37 @@ export default function BustItNowPage(){
                 <textarea value={specificInstructions} onChange={(e)=>setSpecificInstructions(e.target.value)} className="mt-5 min-h-24 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-zinc-950 focus:bg-white" placeholder="Instrucciones específicas"/>
               </div>
 
-              <div className="border-t border-zinc-200 pt-6"><p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">5. Referencia puntual</p>
-                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAttachment} className="mt-4 block w-full text-sm"/>
-                {attachment ? <div className="mt-4 rounded-3xl border border-zinc-200 bg-zinc-50 p-4"><img src={attachment.preview} alt={attachment.name} className="h-44 w-full rounded-2xl object-cover"/><div className="mt-3 grid gap-3 md:grid-cols-2"><input value={attachment.name} onChange={(e)=>setAttachment({...attachment,name:e.target.value})} className="h-11 rounded-2xl border border-zinc-200 bg-white px-3 text-sm"/><FieldSelect label="Rol" value={attachment.role} onChange={(v)=>setAttachment({...attachment,role:v})} options={attachmentRoles}/></div><textarea value={attachment.notes} onChange={(e)=>setAttachment({...attachment,notes:e.target.value})} className="mt-3 min-h-20 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm" placeholder="Notas de uso"/></div> : null}
+              <div className="border-t border-zinc-200 pt-6">
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">4. Referencia específica de esta pieza</p>
+                <p className="mt-2 text-sm leading-6 text-zinc-600">Sube aquí un producto, platillo o imagen puntual que deba considerarse solo para este brief. Viaja como referencia prioritaria al request.</p>
+                <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
+                  <label className="mb-3 block text-sm font-medium text-zinc-800">Imagen puntual</label>
+                  <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAttachment} className="block w-full text-sm"/>
+                  {attachment ? <div className="mt-4 grid gap-4 md:grid-cols-[180px_1fr]">
+                    <div>{attachment.preview ? <img src={attachment.preview} alt={attachment.name} className="h-44 w-full rounded-2xl object-cover"/> : null}</div>
+                    <div className="grid gap-3">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-zinc-800">Nombre del archivo</label>
+                          <input value={attachment.name} onChange={(e)=>setAttachment({...attachment,name:e.target.value})} className="h-11 rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950" placeholder="Ej. Hamburguesa doble"/>
+                        </div>
+                        <FieldSelect label="Rol de la imagen" value={attachment.role} onChange={(v)=>setAttachment({...attachment,role:v})} options={attachmentRoles}/>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-zinc-800">Instrucción sobre este archivo</label>
+                        <textarea value={attachment.notes} onChange={(e)=>setAttachment({...attachment,notes:e.target.value})} className="min-h-24 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm outline-none focus:border-zinc-950" placeholder="Ej. usar este producto como protagonista, respetar su forma y hacerlo el elemento principal del diseño"/>
+                      </div>
+                      <button type="button" onClick={()=>setAttachment(null)} className="h-11 rounded-2xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 transition hover:bg-red-50">Quitar referencia puntual</button>
+                    </div>
+                  </div> : <div className="mt-4 rounded-2xl border border-dashed border-zinc-300 bg-white px-4 py-6 text-center text-sm text-zinc-500">Aún no hay imagen puntual seleccionada para esta pieza.</div>}
+                </div>
               </div>
+
+              <div className="border-t border-zinc-200 pt-6"><p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">5. Dirección visual</p>
+                <ChipGroup values={emotions} selected={selectedEmotions} onToggle={(v)=>toggle(v,selectedEmotions,setSelectedEmotions)} />
+                <ChipGroup values={visualElements} selected={selectedVisualElements} onToggle={(v)=>toggle(v,selectedVisualElements,setSelectedVisualElements)} />
+                <textarea value={specificInstructions} onChange={(e)=>setSpecificInstructions(e.target.value)} className="mt-5 min-h-24 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-zinc-950 focus:bg-white" placeholder="Instrucciones puntuales"/>
+              </div></div>
             </div>
 
             <aside className="space-y-6">
@@ -285,7 +314,7 @@ export default function BustItNowPage(){
 
         {tab==="tareas"?<section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8"><h2 className="text-2xl font-semibold tracking-tight">Solicitudes enviadas desde Tareas</h2><select value={clientFilter} onChange={(e)=>setClientFilter(e.target.value)} className="mt-5 h-11 rounded-2xl border border-zinc-200 bg-white px-3 text-sm"><option value="all">Todos los clientes</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select><div className="mt-5 grid gap-4 md:grid-cols-2">{sentTasks.map(task=><article key={task.id} className="rounded-3xl border border-zinc-200 bg-zinc-50 p-5"><strong>{task.clientName} · {task.contentType}</strong><p className="mt-2 text-sm text-zinc-600">Lote: {task.batchName||"Sin lote"} · Estado: {task.generatorStatus}</p><p className="mt-3 text-sm leading-6 text-zinc-700">{task.creativeIdea}</p><button type="button" onClick={()=>loadTask(task)} className="mt-4 rounded-2xl bg-zinc-950 px-4 py-2 text-sm font-semibold text-white">Abrir en generador</button></article>)}</div>{!sentTasks.length?<p className="mt-5 text-sm text-zinc-500">No hay solicitudes enviadas desde Tareas.</p>:null}</section>:null}
 
-        {tab==="historial"?<section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8"><h2 className="text-2xl font-semibold tracking-tight">Historial</h2><div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredHistory.map(item=><article key={item.id} className="rounded-3xl border border-zinc-200 bg-zinc-50 p-5"><span className="rounded-full bg-zinc-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">{formatStatus(item.status)}</span><strong className="mt-4 block">{item.clientName}</strong><p className="mt-2 text-sm text-zinc-600">{item.mainMessage}</p><button type="button" onClick={()=>{setClientId(item.clientId);setMainMessage(item.mainMessage);setFormat(item.format);setGoal(item.goal);setContentType(item.contentType);setTextBlocks((item.textBlocks as any)||[emptyBlock()]);setSelectedEmotions(item.selectedEmotions||[]);setSelectedVisualElements(item.selectedVisualElements||[]);setSpecificInstructions(item.specificInstructions||"");setPrompt(item.generatedPrompt||"");setTab("brief");}} className="mt-4 rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold">Reusar / editar</button></article>)}</div></section>:null}
+        {tab==="historial"?<section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8"><h2 className="text-2xl font-semibold tracking-tight">Historial</h2><div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredHistory.map(item=><article key={item.id} className="rounded-3xl border border-zinc-200 bg-zinc-50 p-5"><span className="rounded-full bg-zinc-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">{formatStatus(item.status)}</span><strong className="mt-4 block">{item.clientName}</strong><p className="mt-2 text-sm text-zinc-600">{item.mainMessage}</p><button type="button" onClick={()=>{setClientId(item.clientId);setMainMessage(item.mainMessage);setFormat(item.format);setGoal(item.goal);setContentType(item.contentType);setTextBlocks((item.textBlocks as any)||[emptyBlock()]);setSelectedEmotions(item.selectedEmotions||[]);setSelectedVisualElements(item.selectedVisualElements||[]);setSpecificInstructions(item.specificInstructions||"");setPrompt(item.generatedPrompt||"");setTab("brief");}} className="mt-4 rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold">Reusar / editar</button>{item.id?<Link href={`/dashboard/generador/${item.id}`} className="mt-2 inline-flex rounded-2xl bg-zinc-950 px-4 py-2 text-sm font-semibold text-white">Abrir request original</Link>:null}</article>)}</div></section>:null}
 
         {tab==="mapa"?<section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8"><h2 className="text-2xl font-semibold tracking-tight">Integración real</h2><div className="mt-5 grid gap-4 md:grid-cols-4"><Info title="clients.brandBrain" text="Memoria de marca real."/><Info title="clientAssets" text="Assets con metadata múltiple."/><Info title="generationRequests" text="Briefs, historial y prompts."/><Info title="contentRequests" text="Solicitudes desde Tareas."/></div></section>:null}
       </div>

@@ -634,3 +634,28 @@ export async function listUniqueBrands() {
   const brands = await listBrands();
   return dedupeBrandsByName(brands);
 }
+
+export async function getGenerationRequest(id: string) {
+  const snap = await getDoc(doc(db, "generationRequests", id));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as GenerationRequest;
+}
+
+export async function saveGeneratedImageRecord(item: {
+  requestId: string;
+  clientId: string;
+  clientName: string;
+  imageDataUrl?: string;
+  imageUrl?: string;
+  storagePath?: string;
+  model?: string;
+  variantIndex?: number;
+  logoOverlayApplied?: boolean;
+  status?: string;
+}) {
+  return addDoc(collection(db, "generatedImages"), {
+    ...item,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
