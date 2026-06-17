@@ -246,7 +246,7 @@ export function buildGenerationPrompt(data: BuildPromptInput) {
         const attachmentName = attachment.name || "Specific attachment for this piece";
         const attachmentRole = attachment.role || "specific reference";
         const attachmentNotes = sanitizeAttachmentNotes(attachment.notes);
-        return `${index + 1}. ${attachmentName} (${attachmentRole}). This exact attached image is part of the brief and must be considered as a direct visual reference. Instruction: ${attachmentNotes || "Follow this attachment closely according to its role."}`;
+        return `${index + 1}. ${attachmentName} (${attachmentRole}). Instruction: ${attachmentNotes}`;
       }).join("\n")
     : "No specific request attachments.";
 
@@ -292,7 +292,7 @@ VISUAL / EMOTIONAL DIRECTION
 - Extra instructions: ${data.specificInstructions || "None"}
 
 SPECIFIC ATTACHMENTS FOR THIS PIECE
-Use the attached image files as direct references for this exact brief. If the attachment role is product, dish, person, promotion, background, or visual reference, preserve the relevant subject, proportions, colors, and context as much as the generation model allows. Do not ignore these attachments when the brief is reused. Do not copy protected marks, watermarks, or source-image text directly.
+Use attachments only as visual references for mood, context, product, or atmosphere. Do not copy protected marks, watermarks, or source-image text directly.
 ${requestAttachmentsText}
 
 POST-GENERATION LOGO OVERLAY
