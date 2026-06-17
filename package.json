@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "2.1.5-fix-getdoc-import",
+  "version": "2.1.6-fix-firestore-imports",
   "private": true,
   "scripts": {
     "dev": "next dev",

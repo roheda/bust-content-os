@@ -152,3 +152,16 @@ Cannot find name 'getDoc'. Did you mean 'getDocs'?
 
 Cambio:
 - Se agregó `getDoc` al import de `firebase/firestore` en `lib/data.ts`.
+
+
+## v5.3 — Fix definitivo Firestore imports
+
+Se corrigió nuevamente el import de `firebase/firestore` de forma robusta.
+
+El bloque ahora incluye explícitamente:
+
+```ts
+getDoc
+```
+
+para que compile `getGenerationRequest()`.
