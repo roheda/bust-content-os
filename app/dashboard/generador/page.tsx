@@ -236,26 +236,17 @@ export default function BustItNowPage() {
       .filter((image) => clientFilter === "all" || image.clientId === clientFilter)
       .map((image) => {
         const relatedRequest = history.find((request) => request.id === image.requestId);
-        const fallbackRequest: GenerationRequest = {
-          id: image.requestId,
-          clientId: image.clientId || "",
-          clientName: image.clientName || "Cliente",
-          mainMessage: `Variante ${image.variantIndex || ""}`.trim(),
-          format: "",
-          goal: "",
-          contentType: "",
-          selectedEmotions: [],
-          selectedVisualElements: [],
-          specificInstructions: "",
-          textBlocks: [],
-          selectedAssetIds: [],
-          selectedAssetsSnapshot: [],
-          status: image.status || "generated"
-        };
-
         return {
           image,
-          request: relatedRequest || fallbackRequest,
+          request: relatedRequest || {
+            id: image.requestId,
+            clientId: image.clientId,
+            clientName: image.clientName,
+            mainMessage: `Variante ${image.variantIndex || ""}`.trim(),
+            format: "",
+            contentType: "",
+            status: image.status || "generated"
+          },
           imageUrl: getGeneratedImageUrl({ ...image, imageDataUrl: image.finalImageDataUrl || image.imageDataUrl })
         };
       })
@@ -685,7 +676,7 @@ export default function BustItNowPage() {
                   <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Acciones</p>
                     <div className="mt-5 grid gap-3">
-                      <button type="button" onClick={buildPrompt} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50">Construir prompt</button>
+                      <button type="button" onClick={() => buildPrompt()} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50">Construir prompt</button>
                       <button type="button" onClick={() => saveBriefOnly()} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">Guardar brief de generación</button>
                     </div>
                     {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
