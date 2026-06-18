@@ -34,6 +34,171 @@ export const requestStates = [
 export const areas = ["Diseño", "Audiovisual", "Copy", "Mixto"];
 export const priorities = ["Baja", "Media", "Alta", "Urgente"];
 
+
+
+export type PermissionAction = "view" | "create" | "edit" | "delete" | "approve" | "assign" | "billing" | "generate" | "configure";
+
+export type PermissionMatrix = Record<string, Partial<Record<PermissionAction, boolean>>>;
+
+export type PlatformModule = {
+  key: string;
+  label: string;
+  route: string;
+  description: string;
+  sensitive?: boolean;
+};
+
+export type PlatformUser = {
+  id?: string;
+  name: string;
+  email: string;
+  roleKey: string;
+  roleLabel: string;
+  status: "active" | "inactive";
+  isMaster?: boolean;
+  department?: string;
+  jobTitle?: string;
+  phone?: string;
+  scope: "all_clients" | "assigned_clients";
+  clientIds: string[];
+  permissions: PermissionMatrix;
+  canBypassClientLimits?: boolean;
+  canManageBilling?: boolean;
+  notes?: string;
+};
+
+export const permissionActions: { key: PermissionAction; label: string; description: string }[] = [
+  { key: "view", label: "Ver", description: "Puede entrar al módulo y consultar información." },
+  { key: "create", label: "Crear", description: "Puede crear registros o solicitudes." },
+  { key: "edit", label: "Editar", description: "Puede modificar registros existentes." },
+  { key: "delete", label: "Eliminar", description: "Puede eliminar o archivar registros." },
+  { key: "approve", label: "Aprobar", description: "Puede aprobar piezas, entregables o movimientos." },
+  { key: "assign", label: "Asignar", description: "Puede asignar tareas, responsables o carga de trabajo." },
+  { key: "billing", label: "Facturación", description: "Puede ver costos, balances y datos para facturación." },
+  { key: "generate", label: "Generar IA", description: "Puede generar en BUST It Now." },
+  { key: "configure", label: "Configurar", description: "Puede cambiar reglas, permisos o parámetros del sistema." }
+];
+
+export const platformModules: PlatformModule[] = [
+  { key: "dashboard", label: "Dashboard", route: "/dashboard", description: "Resumen general de la operación." },
+  { key: "clientes", label: "Clientes", route: "/dashboard/clientes", description: "Alta, edición, Brand Brain, assets y configuración de clientes." },
+  { key: "creador", label: "Creador de Solicitudes", route: "/dashboard/creador-solicitudes", description: "Crear lotes de contenidos y validar tiempos/materiales." },
+  { key: "asignacion", label: "Asignación", route: "/dashboard/asignacion", description: "Distribuir piezas por persona, área y prioridad." },
+  { key: "producciones", label: "Producciones", route: "/dashboard/producciones", description: "Programar y administrar producciones." },
+  { key: "tareas", label: "Tareas", route: "/dashboard/tareas", description: "Operación diaria y avance de entregables." },
+  { key: "generador", label: "BUST It Now", route: "/dashboard/generador", description: "Generación de imágenes, briefs y consumo IA." },
+  { key: "aprobaciones", label: "Aprobaciones", route: "/dashboard/aprobaciones", description: "Revisión, aprobación y rechazos." },
+  { key: "reportes", label: "Reportes", route: "/dashboard/reportes", description: "Reportes operativos, costos y balance de facturación.", sensitive: true },
+  { key: "configuracion", label: "Configuración", route: "/dashboard/configuracion", description: "Costos, tiempos y reglas operativas.", sensitive: true },
+  { key: "usuarios", label: "Usuarios", route: "/dashboard/usuarios", description: "Usuarios, permisos, clientes visibles y roles.", sensitive: true }
+];
+
+export const roleTemplates = [
+  { key: "master", label: "Master", description: "Control total del sistema, usuarios, facturación, configuración y generación." },
+  { key: "admin", label: "Administrador", description: "Opera todo el sistema excepto eliminar usuarios master." },
+  { key: "direccion", label: "Dirección", description: "Visión completa, reportes, facturación y aprobaciones." },
+  { key: "kam", label: "KAM / Cuenta", description: "Clientes asignados, solicitudes, aprobaciones y seguimiento." },
+  { key: "estrategia", label: "Estrategia", description: "Planeación, briefs, solicitudes y revisión de contenido." },
+  { key: "creativo", label: "Creativo / Copy", description: "Crea y edita solicitudes, copies y briefs." },
+  { key: "diseno", label: "Diseño", description: "Ve y actualiza tareas de diseño y BUST It Now." },
+  { key: "audiovisual", label: "Audiovisual", description: "Ve producciones, tareas y entregables audiovisuales." },
+  { key: "cliente", label: "Cliente", description: "Acceso limitado a revisión/aprobación de su marca." }
+];
+
+const fullActions: PermissionAction[] = ["view","create","edit","delete","approve","assign","billing","generate","configure"];
+
+function matrixFor(modules: string[], actions: PermissionAction[]): PermissionMatrix {
+  const matrix: PermissionMatrix = {};
+  modules.forEach((moduleKey) => {
+    matrix[moduleKey] = {};
+    actions.forEach((action) => matrix[moduleKey][action] = true);
+  });
+  return matrix;
+}
+
+function mergeMatrices(...items: PermissionMatrix[]) {
+  const merged: PermissionMatrix = {};
+  items.forEach((matrix) => {
+    Object.entries(matrix || {}).forEach(([moduleKey, actions]) => {
+      merged[moduleKey] = { ...(merged[moduleKey] || {}), ...(actions || {}) };
+    });
+  });
+  return merged;
+}
+
+export function getRoleTemplatePermissions(roleKey: string): PermissionMatrix {
+  const everyModule = platformModules.map((m) => m.key);
+  if (roleKey === "master") return matrixFor(everyModule, fullActions);
+  if (roleKey === "admin") return mergeMatrices(
+    matrixFor(everyModule, ["view","create","edit","approve","assign","generate"]),
+    matrixFor(["reportes"], ["billing"]),
+    matrixFor(["configuracion"], ["configure"]),
+    matrixFor(["usuarios"], ["configure"])
+  );
+  if (roleKey === "direccion") return mergeMatrices(
+    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones","reportes"], ["view"]),
+    matrixFor(["aprobaciones"], ["approve"]),
+    matrixFor(["reportes"], ["billing"]),
+    matrixFor(["generador"], ["generate"])
+  );
+  if (roleKey === "kam") return mergeMatrices(
+    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones"], ["view"]),
+    matrixFor(["creador","generador"], ["create","edit","generate"]),
+    matrixFor(["aprobaciones"], ["approve"])
+  );
+  if (roleKey === "estrategia") return mergeMatrices(
+    matrixFor(["dashboard","clientes","creador","tareas","generador","aprobaciones"], ["view"]),
+    matrixFor(["creador","generador"], ["create","edit","generate"])
+  );
+  if (roleKey === "creativo") return mergeMatrices(
+    matrixFor(["dashboard","creador","tareas","generador"], ["view"]),
+    matrixFor(["creador","tareas","generador"], ["edit","generate"])
+  );
+  if (roleKey === "diseno") return mergeMatrices(
+    matrixFor(["dashboard","tareas","generador","aprobaciones"], ["view"]),
+    matrixFor(["tareas","generador"], ["edit","generate"])
+  );
+  if (roleKey === "audiovisual") return mergeMatrices(
+    matrixFor(["dashboard","producciones","tareas","aprobaciones"], ["view"]),
+    matrixFor(["producciones","tareas"], ["edit"])
+  );
+  if (roleKey === "cliente") return mergeMatrices(
+    matrixFor(["dashboard","aprobaciones"], ["view"]),
+    matrixFor(["aprobaciones"], ["approve"])
+  );
+  return matrixFor(["dashboard"], ["view"]);
+}
+
+export function canUser(user: Partial<PlatformUser> | null | undefined, moduleKey: string, action: PermissionAction = "view") {
+  if (!user) return true;
+  if (user.isMaster || user.roleKey === "master") return true;
+  return Boolean(user.permissions?.[moduleKey]?.[action]);
+}
+
+export function canAccessClient(user: Partial<PlatformUser> | null | undefined, clientId?: string) {
+  if (!user || user.isMaster || user.scope !== "assigned_clients") return true;
+  if (!clientId) return false;
+  return (user.clientIds || []).includes(clientId);
+}
+
+export const emptyPlatformUser: PlatformUser = {
+  name: "",
+  email: "",
+  roleKey: "kam",
+  roleLabel: "KAM / Cuenta",
+  status: "active",
+  isMaster: false,
+  department: "Operación",
+  jobTitle: "",
+  phone: "",
+  scope: "assigned_clients",
+  clientIds: [],
+  permissions: getRoleTemplatePermissions("kam"),
+  canBypassClientLimits: false,
+  canManageBilling: false,
+  notes: ""
+};
+
 export type BustItNowJob = {
   id?: string;
   clientId: string;
@@ -690,6 +855,40 @@ export async function deleteClientOperationalOverride(id: string) {
   return deleteDoc(doc(db, "clientOperationalOverrides", id));
 }
 
+
+
+export async function listUsers() {
+  const snap = await getDocs(collection(db, "platformUsers"));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PlatformUser));
+}
+
+export async function saveUser(item: PlatformUser) {
+  return addDoc(collection(db, "platformUsers"), {
+    ...omitUndefined(item),
+    email: (item.email || "").trim().toLowerCase(),
+    clientIds: item.scope === "all_clients" ? [] : (item.clientIds || []),
+    permissions: item.isMaster ? getRoleTemplatePermissions("master") : (item.permissions || getRoleTemplatePermissions(item.roleKey)),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function updateUser(id: string, data: Partial<PlatformUser>) {
+  const payload: Partial<PlatformUser> = {
+    ...data,
+    email: data.email ? data.email.trim().toLowerCase() : data.email,
+    clientIds: data.scope === "all_clients" ? [] : data.clientIds,
+    permissions: data.isMaster ? getRoleTemplatePermissions("master") : data.permissions
+  };
+  return updateDoc(doc(db, "platformUsers", id), {
+    ...omitUndefined(payload),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteUser(id: string) {
+  return deleteDoc(doc(db, "platformUsers", id));
+}
 
 export async function saveFeedback(item: FeedbackItem) {
   return addDoc(collection(db, "systemFeedback"), {

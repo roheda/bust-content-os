@@ -7,7 +7,8 @@ const modules = [
   ["Producciones", "Agrupa solicitudes y crea briefs de producción.", "/dashboard/producciones"],
   ["Tareas", "Panel operativo por fecha, persona, estado y vencimiento.", "/dashboard/tareas"],
   ["Clientes", "Base de marca y paquetes.", "/dashboard/clientes"],
-  ["Reportes", "Métricas de avance, carga, calidad y bloqueos.", "/dashboard/reportes"]
+  ["Reportes", "Métricas de avance, carga, calidad y bloqueos.", "/dashboard/reportes"],
+  ["Usuarios", "Roles, permisos, clientes asignados y usuario master.", "/dashboard/usuarios"]
 ];
 
 export default function DashboardPage(){

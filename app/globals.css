@@ -616,3 +616,16 @@ button.bg-black{
 .operational-card.good strong,.operational-card.good span{color:#166534}
 .operational-card.mid strong,.operational-card.mid span{color:#9a3412}
 .operational-card.bad strong,.operational-card.bad span{color:#991b1b}
+
+.sidebar-user-select{margin-top:10px;width:100%;border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:#fff;color:#111827;font-size:12px;font-weight:800}
+.user-admin-grid{grid-template-columns:1.45fr .75fr}
+.client-chip-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.chip-btn{border:1px solid var(--line);background:#fff;color:#374151;border-radius:999px;padding:9px 12px;font-weight:900;cursor:pointer}
+.chip-btn.selected{background:#dcfce7;border-color:#22c55e;color:#166534;box-shadow:0 0 0 3px rgba(34,197,94,.14)}
+.permission-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#fff;margin-top:10px}
+.permission-table{margin-top:0;min-width:920px}
+.permission-table th,.permission-table td{text-align:center}
+.permission-table th:first-child,.permission-table td:first-child{text-align:left;min-width:260px;position:sticky;left:0;background:#fff;z-index:1}
+.perm-toggle{border:1px solid var(--line);border-radius:999px;background:#f9fafb;color:#667085;font-weight:900;font-size:12px;padding:7px 10px;cursor:pointer;min-width:44px}
+.perm-toggle.on{background:#dcfce7;border-color:#22c55e;color:#166534;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+@media(max-width:1000px){.user-admin-grid{grid-template-columns:1fr}.permission-table th:first-child,.permission-table td:first-child{position:static}}

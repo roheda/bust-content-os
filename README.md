@@ -181,3 +181,16 @@ Se integró el sistema real de logo posterior:
 - Descarga de imagen final con logo aplicado.
 
 El sistema usa `xPercent`, `yPercent` y `widthPercent`, igual que la lógica original de BUST It Now.
+
+## v11 · Usuarios y permisos
+
+Se agregó el módulo `/dashboard/usuarios` para administrar usuarios de plataforma:
+
+- Usuario Master con acceso total.
+- Roles base: Administrador, Dirección, KAM, Estrategia, Creativo/Copy, Diseño, Audiovisual y Cliente.
+- Matriz configurable por módulo y acción: ver, crear, editar, eliminar, aprobar, asignar, facturación, generar IA y configurar.
+- Alcance por cliente: todos los clientes o solo clientes asignados.
+- Permisos especiales para saltar límites de IA y ver facturación/costos.
+- Selector de usuario operativo en login y sidebar.
+
+Nota: esta versión deja lista la configuración funcional en Firestore. Para seguridad real por contraseña, el siguiente paso es conectar `platformUsers` con Firebase Auth y reglas de Firestore.
