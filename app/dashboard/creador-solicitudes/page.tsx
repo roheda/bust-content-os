@@ -411,12 +411,20 @@ export default function CreatorPage(){
           <h3>Lote actual</h3>
           {!items.length ? <div className="empty">Todavía no hay solicitudes.</div> :
           <div className="table-wrap">
-            <table className="table">
+            <table className="table creator-request-table">
               <thead><tr><th>Solicitud</th><th>Producción / Material</th><th>Referencias</th><th>Acciones</th></tr></thead>
               <tbody>{items.map((item,index)=>{
                 const error = validateCreatorItem(item);
-                return <tr key={index}>
+                return <tr key={index} className="creator-request-row">
                   <td>
+                    <div className="request-number-bar">
+                      <span>Solicitud {index + 1}</span>
+                      <strong>de {items.length}</strong>
+                    </div>
+                    <div className="request-card-title">
+                      <strong>{item.topic || item.contentType || "Nueva solicitud"}</strong>
+                      <span>{item.contentType || "Sin tipo"} · {item.objective || "Sin objetivo"}</span>
+                    </div>
                     <div className="field"><label>Tipo</label><select value={item.contentType} onChange={e=>updateItem(index,"contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div>
                     <div className="field"><label>Objetivo</label><select value={item.objective} onChange={e=>updateItem(index,"objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
                     <div className="field"><label>Área sugerida</label><select value={item.suggestedArea} onChange={e=>updateItem(index,"suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
