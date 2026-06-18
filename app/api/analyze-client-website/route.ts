@@ -123,8 +123,7 @@ async function callOpenAI(prompt: string) {
     body: JSON.stringify({
       model,
       input: prompt,
-      max_output_tokens: 3000,
-      temperature: 0.25
+      max_output_tokens: 3000
     })
   });
 
