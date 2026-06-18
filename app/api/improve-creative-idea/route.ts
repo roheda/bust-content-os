@@ -31,6 +31,8 @@ function buildSafeFallbackIdea(input: {
   cta: string;
   marketContext: string;
   successfulContext: string;
+  buyerPersonaName: string;
+  buyerPersonaContext: string;
 }) {
   const piece = input.contentType || "pieza de contenido";
   const client = input.clientName || "el cliente";
@@ -41,8 +43,9 @@ function buildSafeFallbackIdea(input: {
   const keyMessage = input.keyMessage ? ` Debe reforzar como mensaje central: ${input.keyMessage}.` : "";
   const cta = input.cta ? ` Cerrar con una invitación clara a ${input.cta.toLowerCase()}.` : " Cerrar con una invitación sencilla a pedir más información o avanzar al siguiente paso.";
   const learning = input.successfulContext ? " Usar como referencia el historial de contenidos finalizados del cliente para mantener continuidad con lo que ya funcionó, sin copiar ideas anteriores." : "";
+  const persona = input.buyerPersonaContext ? ` Enfocar la idea considerando este buyer persona: ${input.buyerPersonaContext}.` : "";
 
-  return `Crear un ${piece}${format}${platforms} para ${client}, tomando como base esta idea: ${input.creativeIdea}.${market}${learning} La pieza debe iniciar con un momento natural y fácil de entender que introduzca la situación desde la experiencia de una persona real, evitando que se sienta como un anuncio rígido. En el desarrollo, mostrar los elementos más importantes de la idea con acciones concretas, cambios de plano y detalles visuales que ayuden a que el equipo de producción o edición sepa exactamente qué capturar. El tono debe sentirse estratégico, cercano y profesional, con criterio de content manager senior para que la pieza conecte con la audiencia real del cliente.${objective}${keyMessage} ${cta}`.replace(/\s+/g, " ").trim();
+  return `Crear un ${piece}${format}${platforms} para ${client}, tomando como base esta idea: ${input.creativeIdea}.${market}${learning}${persona} La pieza debe iniciar con un momento natural y fácil de entender que introduzca la situación desde la experiencia de una persona real, evitando que se sienta como un anuncio rígido. En el desarrollo, mostrar los elementos más importantes de la idea con acciones concretas, cambios de plano y detalles visuales que ayuden a que el equipo de producción o edición sepa exactamente qué capturar. El tono debe sentirse estratégico, cercano y profesional, con criterio de content manager senior para que la pieza conecte con la audiencia real del cliente.${objective}${keyMessage} ${cta}`.replace(/\s+/g, " ").trim();
 }
 
 async function callOpenAI(prompt: string) {
@@ -142,6 +145,8 @@ export async function POST(req: Request) {
     const clientContext = normalizeText(body.clientContext);
     const successfulContext = normalizeText(body.successfulContext);
     const marketContext = normalizeText(body.marketContext);
+    const buyerPersonaName = normalizeText(body.buyerPersonaName);
+    const buyerPersonaContext = normalizeText(body.buyerPersonaContext);
     const contentType = normalizeText(body.contentType);
     const objective = normalizeText(body.objective);
     const platforms = Array.isArray(body.platforms) ? body.platforms.join(", ") : normalizeText(body.platforms);
@@ -175,6 +180,7 @@ Objetivo del botón:
 - Sí convertir la idea base en una instrucción clara, accionable y útil para producción, diseño o audiovisual.
 - Sí analizar el contexto del cliente, su alcance geográfico, región, ciudad y oferta para que la idea se sienta realista para su mercado.
 - Sí revisar el historial de solicitudes finalizadas del cliente para inferir qué tipo de enfoque, tono o estructura ya se ha usado/funcionado, sin repetirlo literalmente.
+- Sí adaptar la idea al buyer persona elegido; si dice sin enfoque particular, usar el contexto general sin forzar segmentación.
 
 ${outputRules}
 
@@ -198,6 +204,9 @@ Contexto estratégico del cliente: ${clientContext || "Sin contexto adicional"}
 Contexto de alcance/mercado: ${marketContext || "Sin alcance o región definida"}
 Historial resumido de solicitudes finalizadas del cliente: ${successfulContext || "Sin historial finalizado disponible"}
 
+Buyer persona elegido: ${buyerPersonaName || "Sin enfoque particular"}
+Contexto del buyer persona: ${buyerPersonaContext || "Sin enfoque particular"}
+
 Datos de la solicitud actual:
 Tipo de pieza: ${contentType || "Sin tipo"}
 Objetivo: ${objective || "Sin objetivo"}
@@ -216,7 +225,7 @@ Idea creativa actual: ${creativeIdea}`;
     }
 
     if (result.finishReason === "MAX_TOKENS" || looksTooWeakOrIncomplete(improved)) {
-      improved = buildSafeFallbackIdea({ clientName, contentType, platforms, visualFormat, creativeIdea, objective, keyMessage, cta, marketContext, successfulContext });
+      improved = buildSafeFallbackIdea({ clientName, contentType, platforms, visualFormat, creativeIdea, objective, keyMessage, cta, marketContext, successfulContext, buyerPersonaName, buyerPersonaContext });
     }
 
     return NextResponse.json({ creativeIdea: improved || creativeIdea });

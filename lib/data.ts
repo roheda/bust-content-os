@@ -370,6 +370,16 @@ export type ClientBillingBalance = {
   consumedValue: number;
 };
 
+export type ClientBuyerPersona = {
+  id?: string;
+  name: string;
+  description: string;
+  pains?: string;
+  desires?: string;
+  contentAngles?: string;
+  priority?: number;
+};
+
 export type Brand = {
   id?: string;
   name: string;
@@ -392,6 +402,14 @@ export type Brand = {
   website?: string;
   instagram?: string;
   location?: string;
+  buyerPersonas?: ClientBuyerPersona[];
+  valueProposition?: string;
+  contentAngles?: string[];
+  customerPainPoints?: string[];
+  websiteAnalysisAt?: string;
+  websiteAnalysisSource?: string;
+  analysisNotes?: string;
+  recommendedPlatforms?: string[];
   marketScope?: string;
   marketRegion?: string;
   primaryCity?: string;
@@ -419,6 +437,9 @@ export type ContentRequest = {
   platforms?: string[];
   visualFormat?: string;
   feedPlacement?: string;
+  buyerPersonaId?: string;
+  buyerPersonaName?: string;
+  buyerPersonaSnapshot?: ClientBuyerPersona | null;
   topic: string;
   creativeIdea: string;
   referenceLinks: string;
@@ -615,6 +636,9 @@ export const emptyRequest: ContentRequest = {
   platforms: [],
   visualFormat: "",
   feedPlacement: "",
+  buyerPersonaId: "",
+  buyerPersonaName: "Sin enfoque particular",
+  buyerPersonaSnapshot: null,
   topic: "",
   creativeIdea: "",
   referenceLinks: "",
@@ -1195,6 +1219,10 @@ function clientCompletenessScore(client: Brand) {
     "services",
     "sharedSystems",
     "website",
+    "buyerPersonas",
+    "valueProposition",
+    "contentAngles",
+    "customerPainPoints",
     "instagram",
     "contactName"
   ];

@@ -4,6 +4,7 @@ import AppShell from "@/components/AppShell";
 import {
   Brand,
   ClientOperationalOverride,
+  ClientBuyerPersona,
   ContentRequest,
   OperationalContentRule,
   PlannerDraft,
@@ -126,6 +127,10 @@ export default function CreatorPage(){
       client.brandPersonality && `Personalidad: ${client.brandPersonality}`,
       client.visualStyle && `Estilo visual operativo: ${client.visualStyle}`,
       client.contentPillars && `Pilares de contenido: ${client.contentPillars}`,
+      client.valueProposition && `Propuesta de valor: ${client.valueProposition}`,
+      (client.contentAngles||[]).length ? `Ángulos de contenido recomendados: ${(client.contentAngles||[]).join(", ")}` : "",
+      (client.customerPainPoints||[]).length ? `Dolores de la audiencia: ${(client.customerPainPoints||[]).join(", ")}` : "",
+      (client.buyerPersonas||[]).length ? `Buyer personas disponibles: ${(client.buyerPersonas||[]).map(p=>p.name).join(", ")}` : "",
       brain.brandDescription && `Descripción de marca: ${brain.brandDescription}`,
       brain.tone && `Tono: ${brain.tone}`,
       brain.typography && `Tipografía: ${brain.typography}`,
@@ -144,7 +149,24 @@ export default function CreatorPage(){
       client.serviceArea && `Zona de servicio/venta: ${client.serviceArea}`,
       client.offerSummary && `Qué ofrece: ${client.offerSummary}`,
       client.localAudienceContext && `Contexto de audiencia local: ${client.localAudienceContext}`,
-      client.location && `Ubicación registrada: ${client.location}`
+      client.location && `Ubicación registrada: ${client.location}`,
+      client.website && `Sitio web: ${client.website}`
+    ].filter(Boolean).join("\n");
+  }
+
+  function buyerPersonaContext(item?: Partial<ContentRequest>){
+    if(!client)return "";
+    const personas = client.buyerPersonas || [];
+    const selected = personas.find(p=>p.id && p.id===item?.buyerPersonaId) || personas.find(p=>p.name && p.name===item?.buyerPersonaName);
+    if(!selected || !item?.buyerPersonaId){
+      return "Sin enfoque particular. Usar el contexto general de la marca y no forzar la pieza a un buyer persona específico.";
+    }
+    return [
+      `Buyer persona elegido: ${selected.name}`,
+      selected.description && `Descripción: ${selected.description}`,
+      selected.pains && `Dolores: ${selected.pains}`,
+      selected.desires && `Deseos: ${selected.desires}`,
+      selected.contentAngles && `Ángulos recomendados: ${selected.contentAngles}`
     ].filter(Boolean).join("\n");
   }
 
@@ -177,6 +199,8 @@ export default function CreatorPage(){
           clientContext: clientContext(),
           marketContext: marketContext(),
           successfulContext: successfulRequestsContext(),
+          buyerPersonaName: item.buyerPersonaName || "Sin enfoque particular",
+          buyerPersonaContext: buyerPersonaContext(item),
           contentType:item.contentType,
           objective:item.objective,
           platforms:item.platforms || [],
@@ -263,6 +287,8 @@ export default function CreatorPage(){
       const objective=goalList[i%goalList.length]||"Ventas";
       const topic=themeList[i%themeList.length]||"Tema";
       const suggestedArea = ["Reel","TikTok","Foto"].includes(contentType) ? "Audiovisual" : "Diseño";
+      const personas = client?.buyerPersonas || [];
+      const persona = personas.length ? personas[i % personas.length] : null;
 
       return hydrate({
         ...emptyRequest,
@@ -272,6 +298,9 @@ export default function CreatorPage(){
         platforms: contentType === "TikTok" ? ["TikTok"] : ["Instagram","Facebook"],
         visualFormat: ["Reel","TikTok"].includes(contentType) ? "Vertical 9:16" : contentType === "Carrusel" ? "Carrusel Feed" : "Cuadrado 1:1",
         feedPlacement: contentType === "Carrusel" ? "Carrousel para el Feed" : "Feed",
+        buyerPersonaId: persona?.id || "",
+        buyerPersonaName: persona?.name || "Sin enfoque particular",
+        buyerPersonaSnapshot: persona || null,
         suggestedArea,
         creativeIdea:`Idea creativa para ${topic} con enfoque en ${objective}.`,
         keyMessage:must,
@@ -303,6 +332,17 @@ export default function CreatorPage(){
     if(k==="requiresProduction"){
       next[index].status = v ? "pendiente_produccion" : "lista_asignacion";
     }
+    setItems(next);
+  }
+
+  function updateItemPersona(index:number, persona?: ClientBuyerPersona){
+    const next=[...items];
+    next[index]={
+      ...next[index],
+      buyerPersonaId: persona?.id || "",
+      buyerPersonaName: persona?.name || "Sin enfoque particular",
+      buyerPersonaSnapshot: persona || null
+    };
     setItems(next);
   }
 
@@ -430,7 +470,7 @@ export default function CreatorPage(){
           <button className="btn blue" onClick={generateAI}>Agregar propuestas IA</button>
 
           <h3 style={{marginTop:28}}>Manual</h3>
-          <RequestForm request={manual} onChange={setManualField} onUpload={uploadToManual} onPreview={setPreview} onImprove={()=>improveCreativeIdea("manual")} improving={improvingKey==="manual"} onRemove={(kind,index)=> {
+          <RequestForm request={manual} buyerPersonas={client?.buyerPersonas || []} onPersonaChange={(persona)=>setManual({...manual,buyerPersonaId:persona?.id || "",buyerPersonaName:persona?.name || "Sin enfoque particular",buyerPersonaSnapshot:persona || null})} onChange={setManualField} onUpload={uploadToManual} onPreview={setPreview} onImprove={()=>improveCreativeIdea("manual")} improving={improvingKey==="manual"} onRemove={(kind,index)=> {
             if(kind==="reference")setManual({...manual,referenceFiles:manual.referenceFiles.filter((_,i)=>i!==index)});
             else setManual({...manual,materialFiles:manual.materialFiles.filter((_,i)=>i!==index)});
           }}/>
@@ -459,6 +499,7 @@ export default function CreatorPage(){
                     <div className="field"><label>Objetivo</label><select value={item.objective} onChange={e=>updateItem(index,"objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
                     <div className="field"><label>Área sugerida</label><select value={item.suggestedArea} onChange={e=>updateItem(index,"suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
                     <div className="field"><label>Fecha publicación</label><input type="date" value={item.publishDate} onChange={e=>updateItem(index,"publishDate",e.target.value)}/></div>
+                    <BuyerPersonaSelector request={item} buyerPersonas={client?.buyerPersonas || []} onSelect={(persona)=>updateItemPersona(index, persona)}/>
                     <PostInfoSelector request={item} onChange={(k,v)=>updateItem(index,k,v)}/>
                     <CreativeIdeaField value={item.creativeIdea} onChange={(v)=>updateItem(index,"creativeIdea",v)} onImprove={()=>improveCreativeIdea(index)} busy={improvingKey===String(index)}/>
                     <div className="field"><label>Copy In</label><textarea value={item.copyIn} onChange={e=>updateItem(index,"copyIn",e.target.value)}/></div>
@@ -523,12 +564,13 @@ export default function CreatorPage(){
   </AppShell>
 }
 
-function RequestForm({request,onChange,onUpload,onPreview,onImprove,improving,onRemove}:{request:ContentRequest;onChange:(k:keyof ContentRequest,v:any)=>void;onUpload:(kind:"reference"|"material",files:FileList|null)=>void;onPreview:(file:ReferenceFile)=>void;onImprove:()=>void;improving:boolean;onRemove:(kind:"reference"|"material",index:number)=>void;}){
+function RequestForm({request,buyerPersonas,onPersonaChange,onChange,onUpload,onPreview,onImprove,improving,onRemove}:{request:ContentRequest;buyerPersonas:ClientBuyerPersona[];onPersonaChange:(persona?:ClientBuyerPersona)=>void;onChange:(k:keyof ContentRequest,v:any)=>void;onUpload:(kind:"reference"|"material",files:FileList|null)=>void;onPreview:(file:ReferenceFile)=>void;onImprove:()=>void;improving:boolean;onRemove:(kind:"reference"|"material",index:number)=>void;}){
   return <div className="form-grid">
     <div className="field"><label>Tipo</label><select value={request.contentType} onChange={e=>onChange("contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Objetivo</label><select value={request.objective} onChange={e=>onChange("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Área sugerida</label><select value={request.suggestedArea} onChange={e=>onChange("suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Fecha publicación</label><input type="date" value={request.publishDate} onChange={e=>onChange("publishDate",e.target.value)}/></div>
+    <BuyerPersonaSelector request={request} buyerPersonas={buyerPersonas} onSelect={onPersonaChange}/>
     <PostInfoSelector request={request} onChange={onChange}/>
     <CreativeIdeaField value={request.creativeIdea} onChange={(value)=>onChange("creativeIdea",value)} onImprove={onImprove} busy={improving}/>
     <div className="field full"><label>Copy In</label><textarea value={request.copyIn} onChange={e=>onChange("copyIn",e.target.value)}/></div>
@@ -552,6 +594,24 @@ const feedOptions = ["Feed","Carrousel para el Feed","Reel","Story","TikTok"];
 function toggleArrayValue(values:string[]|undefined, value:string){
   const current = values || [];
   return current.includes(value) ? current.filter(x=>x!==value) : [...current,value];
+}
+
+function BuyerPersonaSelector({request,buyerPersonas,onSelect}:{request:ContentRequest;buyerPersonas:ClientBuyerPersona[];onSelect:(persona?:ClientBuyerPersona)=>void;}){
+  function selectPersona(id:string){
+    const persona = buyerPersonas.find(p=>(p.id || p.name)===id);
+    onSelect(persona);
+  }
+  return <div className="persona-selector full">
+    <div className="post-info-title">Buyer persona de esta solicitud</div>
+    <div className="chip-group">
+      <button type="button" className={!request.buyerPersonaId?"chip-btn selected":"chip-btn"} onClick={()=>onSelect(undefined)}>Sin enfoque particular</button>
+      {(buyerPersonas||[]).filter(p=>p.name).map((persona,index)=>{
+        const id = persona.id || persona.name || String(index);
+        return <button type="button" className={request.buyerPersonaId===id || request.buyerPersonaName===persona.name ? "chip-btn selected":"chip-btn"} key={id} onClick={()=>selectPersona(id)}>{persona.name}</button>;
+      })}
+    </div>
+    {request.buyerPersonaId && request.buyerPersonaSnapshot?.description ? <p className="mini persona-help">{request.buyerPersonaSnapshot.description}</p> : <p className="mini persona-help">La IA usará el contexto general de la marca si no eliges un buyer persona.</p>}
+  </div>;
 }
 
 function PostInfoSelector({request,onChange}:{request:ContentRequest;onChange:(k:keyof ContentRequest,v:any)=>void;}){

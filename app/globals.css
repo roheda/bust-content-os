@@ -858,3 +858,9 @@ button:disabled,.btn:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.2
   .creator-request-row td:first-child{border-top:2px solid #d1d5db;border-radius:18px 18px 0 0}
   .creator-request-row td:last-child{border-bottom:2px solid #d1d5db;border-radius:0 0 18px 18px}
 }
+
+.persona-editor-list{display:grid;gap:14px;margin:16px 0}
+.persona-editor-card{border:1px solid rgba(15,23,42,.12);background:#fff;border-radius:22px;padding:16px;box-shadow:0 10px 25px rgba(15,23,42,.04)}
+.persona-selector{border:1px solid rgba(22,163,74,.25);background:linear-gradient(180deg,#f7fff9,#fff);border-radius:18px;padding:12px;margin:4px 0 10px}
+.persona-help{margin-top:8px;color:#166534}
+.btn.small{padding:7px 10px;font-size:11px;border-radius:999px}
