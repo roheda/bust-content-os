@@ -660,13 +660,20 @@ export function hasMaterial(item: Partial<ContentRequest>) {
   return Boolean(item.materialAvailable && (files > 0 || links > 0));
 }
 
+export function canAssignRequest(item: Partial<ContentRequest>) {
+  // Una solicitud solo puede pasar a ejecución si ya tiene insumos reales.
+  // Si requiere producción, no basta con tener producción programada: debe estar marcado material listo
+  // y tener archivos o links de material entregado.
+  return hasMaterial(item);
+}
+
 export function getOperationalStatus(item: ContentRequest) {
   if (item.status === "rebotada") return "rebotada";
   if (item.status === "asignada") return "asignada";
-  if (item.status === "material_listo") return "lista_asignacion";
-  if (item.requiresProduction && hasMaterial(item)) return "lista_asignacion";
+  if (item.status === "material_listo" && hasMaterial(item)) return "lista_asignacion";
+  if (item.requiresProduction && canAssignRequest(item)) return "lista_asignacion";
   if (item.requiresProduction) return item.productionId ? "produccion_programada" : "pendiente_produccion";
-  if (!hasMaterial(item)) return "bloqueada";
+  if (!canAssignRequest(item)) return "bloqueada";
   return item.status || "lista_asignacion";
 }
 

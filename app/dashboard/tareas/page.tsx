@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { ContentRequest, Production, ReferenceFile, TaskComment, isImageFile, listProductions, listRequests, updateRequest } from "@/lib/data";
+import { ContentRequest, PlatformUser, Production, ReferenceFile, TaskComment, isImageFile, listProductions, listRequests, listUsers, organizationTeam, updateRequest } from "@/lib/data";
 
-const people = ["Todos","Ana Diseño","Luis Diseño","Carlos Editor","Mariana Editora","Pedro Video","Mafer KAM","Rodrigo"];
-const areas = ["Todas","Diseño","Audiovisual","Copy","Mixto"];
+const people = ["Todos", ...organizationTeam.map((member)=>member.name)];
+const areas = ["Todas","Diseño","Audiovisual"];
 const commentTargets = ["Content","Key Account","Diseño","Audiovisual","Cliente","Interno"];
 const workStatuses = [
   ["asignada","Asignada"],
@@ -16,6 +16,7 @@ const workStatuses = [
 export default function TasksPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [productions,setProductions]=useState<Production[]>([]);
+  const [users,setUsers]=useState<PlatformUser[]>([]);
   const [view,setView]=useState<"calendario"|"lista"|"persona">("calendario");
   const [calendarMode,setCalendarMode]=useState<"semana"|"mes">("semana");
   const [cursor,setCursor]=useState(new Date());
@@ -26,14 +27,17 @@ export default function TasksPage(){
   const [overdueFilter,setOverdueFilter]=useState("all");
   const [selected,setSelected]=useState<ContentRequest|null>(null);
   const [comment,setComment]=useState("");
+  const [mentionSearch,setMentionSearch]=useState("");
   const [commentTarget,setCommentTarget]=useState("Content");
   const [finalLink,setFinalLink]=useState("");
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
   const [contextPost,setContextPost]=useState<ContentRequest|null>(null);
 
   async function load(){
-    setRequests(await listRequests());
-    setProductions(await listProductions());
+    const [loadedRequests, loadedProductions, loadedUsers] = await Promise.all([listRequests(), listProductions(), listUsers().catch(()=>[])]);
+    setRequests(loadedRequests);
+    setProductions(loadedProductions);
+    setUsers(loadedUsers);
   }
 
   useEffect(()=>{load()},[]);
@@ -42,9 +46,18 @@ export default function TasksPage(){
     if(typeof window === "undefined" || !requests.length) return;
     const taskId = new URLSearchParams(window.location.search).get("task");
     if(!taskId || selected?.id === taskId) return;
-    const found = requests.find((item)=>item.id === taskId);
-    if(found) openTask(found);
+    openTaskById(taskId);
   },[requests, selected?.id]);
+
+  useEffect(()=>{
+    if(typeof window === "undefined") return;
+    const handler = (event: Event) => {
+      const taskId = (event as CustomEvent<string>).detail;
+      if(taskId) openTaskById(taskId);
+    };
+    window.addEventListener("bust-open-task", handler as EventListener);
+    return () => window.removeEventListener("bust-open-task", handler as EventListener);
+  },[requests]);
 
   const filtered = useMemo(()=>requests.filter(x=>{
     const taskStates = ["asignada","en_revision","rebotada","pendiente_aprobacion","finalizada"].includes(x.status || "") && x.status !== "eliminada";
@@ -86,11 +99,39 @@ export default function TasksPage(){
       .sort((a,b)=>b.comment.createdAt.localeCompare(a.comment.createdAt));
   },[requests]);
 
+  const mentionOptions = useMemo(()=>{
+    const fromUsers = users.map((user)=>({name:user.name, role:user.roleLabel || user.roleKey || user.department || "Usuario", token: makeMentionToken(user.name || user.email)}));
+    const fromOrg = organizationTeam.map((member)=>({name:member.name, role:`${member.area} · ${member.role}`, token: makeMentionToken(member.name)}));
+    const areas = ["Content","Key Account","Diseño","Audiovisual","Cliente","Interno"].map((name)=>({name, role:"Área", token: makeMentionToken(name)}));
+    const merged = [...fromUsers,...fromOrg,...areas].filter(item=>item.name && item.token);
+    return Array.from(new Map(merged.map((item)=>[item.token,item])).values()).sort((a,b)=>a.name.localeCompare(b.name,"es"));
+  },[users]);
+
+  const filteredMentionOptions = useMemo(()=>{
+    if(!mentionSearch) return [];
+    const needle = normalizeForMention(mentionSearch);
+    return mentionOptions.filter(option => normalizeForMention(option.name).includes(needle) || normalizeForMention(option.token).includes(needle) || normalizeForMention(option.role).includes(needle)).slice(0,8);
+  },[mentionSearch, mentionOptions]);
+
   const overdueCount = filtered.filter(isOverdue).length;
 
   function openTask(task:ContentRequest){
     setSelected(task);
     setFinalLink(task.finalPostLink || "");
+  }
+
+  function openTaskById(taskId:string){
+    const found = requests.find((item)=>item.id === taskId);
+    if(found) openTask(found);
+  }
+
+  function closeTask(){
+    setSelected(null);
+    setContextPost(null);
+    setPreview(null);
+    if(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("task")){
+      window.history.replaceState(null,"","/dashboard/tareas");
+    }
   }
 
   function move(delta:number){
@@ -119,8 +160,22 @@ export default function TasksPage(){
   }
 
   function extractMentions(value:string){
-    const matches = value.match(/@[\wÁÉÍÓÚáéíóúÑñ.-]+/g) || [];
-    return Array.from(new Set(matches));
+    const matches = value.match(/@[\wÁÉÍÓÚáéíóúÑñ._-]+/g) || [];
+    return Array.from(new Set(matches.map((item)=>item.trim())));
+  }
+
+  function handleCommentChange(value:string){
+    setComment(value);
+    const match = value.match(/(^|\s)@([\wÁÉÍÓÚáéíóúÑñ._-]*)$/);
+    setMentionSearch(match ? match[2] : "");
+  }
+
+  function insertMention(token:string){
+    setComment((current)=>{
+      const next = current.replace(/(^|\s)@[\wÁÉÍÓÚáéíóúÑñ._-]*$/, (match, prefix)=>`${prefix}@${token} `);
+      return next === current ? `${current} @${token} ` : next;
+    });
+    setMentionSearch("");
   }
 
   async function addComment(){
@@ -139,6 +194,7 @@ export default function TasksPage(){
     await updateRequest(selected.id,{comments});
     setSelected({...selected,comments});
     setComment("");
+    setMentionSearch("");
     await load();
   }
 
@@ -267,7 +323,7 @@ export default function TasksPage(){
             <h2 style={{margin:"0 0 4px"}}>{selected.clientName} · {selected.contentType}</h2>
             <p className="mini">Fecha operativa: {getTaskDate(selected)||"Sin fecha"} · Publica: {selected.publishDate||"Sin fecha"} · Lote: {selected.batchName||"Sin lote"}</p>
           </div>
-          <button className="btn red" onClick={()=>setSelected(null)}>Cerrar</button>
+          <button className="btn red" onClick={closeTask}>Cerrar</button>
         </div>
 
         <div className="task-modal-grid">
@@ -339,7 +395,15 @@ export default function TasksPage(){
               </div>
               <div className="field">
                 <label>Comentario</label>
-                <textarea value={comment} onChange={e=>setComment(e.target.value)} placeholder="Escribe una duda. Usa @content, @kam, @mafer, @editor, etc."/>
+                <div className="mention-input-wrap">
+                  <textarea value={comment} onChange={e=>handleCommentChange(e.target.value)} placeholder="Escribe una duda. Usa @ y empieza a escribir una persona o área."/>
+                  {!!filteredMentionOptions.length && <div className="mention-suggestions">
+                    {filteredMentionOptions.map(option=><button type="button" key={option.token} onClick={()=>insertMention(option.token)}>
+                      <strong>@{option.token}</strong>
+                      <span>{option.name} · {option.role}</span>
+                    </button>)}
+                  </div>}
+                </div>
               </div>
               <button className="btn blue" onClick={addComment}>Agregar comentario</button>
 
@@ -399,6 +463,14 @@ export default function TasksPage(){
   </AppShell>
 }
 
+
+function normalizeForMention(value:string){
+  return (value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9._-]+/g, "");
+}
+
+function makeMentionToken(value:string){
+  return normalizeForMention(value).slice(0,40);
+}
 
 function statusLabel(status:string){
   const labels:Record<string,string> = {

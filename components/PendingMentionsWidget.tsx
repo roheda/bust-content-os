@@ -131,8 +131,15 @@ export default function PendingMentionsWidget({ activeUser }: { activeUser: Plat
   }
 
   function goToTask(row: PendingRow) {
-    const id = row.request.id ? `?task=${encodeURIComponent(row.request.id)}` : "";
-    router.push(`/dashboard/tareas${id}`);
+    const requestId = row.request.id || "";
+    if (!requestId) return;
+    const nextUrl = `/dashboard/tareas?task=${encodeURIComponent(requestId)}`;
+    if (typeof window !== "undefined" && window.location.pathname === "/dashboard/tareas") {
+      window.history.pushState(null, "", nextUrl);
+      window.dispatchEvent(new CustomEvent("bust-open-task", { detail: requestId }));
+    } else {
+      router.push(nextUrl);
+    }
     setOpen(false);
   }
 

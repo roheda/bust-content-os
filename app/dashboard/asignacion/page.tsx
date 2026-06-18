@@ -9,6 +9,7 @@ import {
   areas,
   getOperationalStatus,
   hasMaterial,
+  canAssignRequest,
   isImageFile,
   listUniqueBrands,
   listRequests,
@@ -67,6 +68,11 @@ export default function AssignmentPage(){
     return (client==="all"||item.clientId===client) && (area==="all"||item.suggestedArea===area||item.assignedArea===area) && (status==="all"||op===status);
   }).sort((a,b)=>String(sortValue(a,sort.key)).localeCompare(String(sortValue(b,sort.key)),"es",{numeric:true})*(sort.direction==="asc"?1:-1)),[items,client,area,status,sort]);
 
+  const assignableFiltered = useMemo(()=>filtered.filter(canAssignRequest),[filtered]);
+  const selectedItems = useMemo(()=>items.filter(item=>selected.includes(item.id||"")),[items,selected]);
+  const selectedAssignableCount = selectedItems.filter(canAssignRequest).length;
+  const selectedBlockedCount = selectedItems.length - selectedAssignableCount;
+
   function toggle(id:string){setSelected(selected.includes(id)?selected.filter(x=>x!==id):[...selected,id])}
 
   async function update(id:string,data:Partial<ContentRequest>){
@@ -76,12 +82,8 @@ export default function AssignmentPage(){
 
   async function assign(item:ContentRequest){
     if(!item.id)return;
-    if(item.requiresProduction && !item.productionId){
-      alert("Esta solicitud requiere producción. No puede asignarse hasta estar ligada a una producción y tener material entregado.");
-      return;
-    }
-    if(!item.requiresProduction && !hasMaterial(item)){
-      alert("Esta solicitud no requiere producción, pero no tiene material. Debe corregirse desde el Creador de Solicitudes.");
+    if(!canAssignRequest(item)){
+      alert(getAssignBlockReason(item));
       return;
     }
     await update(item.id,{
@@ -95,12 +97,8 @@ export default function AssignmentPage(){
 
   async function assignFromDetail(item:ContentRequest){
     if(!item.id)return;
-    if(item.requiresProduction && !item.productionId){
-      alert("Esta solicitud requiere producción. Primero completa material desde Producciones.");
-      return;
-    }
-    if(!item.requiresProduction && !hasMaterial(item)){
-      alert("Esta solicitud no tiene material. Debe corregirse desde el Creador de Solicitudes.");
+    if(!canAssignRequest(item)){
+      alert(getAssignBlockReason(item));
       return;
     }
     await updateRequest(item.id,{
@@ -121,19 +119,23 @@ export default function AssignmentPage(){
     if(!selected.length)return alert("Selecciona al menos una solicitud.");
     if(!bulkAssignee)return alert("Selecciona una persona para asignar.");
     const selectedItems = items.filter(item=>selected.includes(item.id||""));
-    const blocked = selectedItems.filter(item=>(item.requiresProduction && !item.productionId) || (!item.requiresProduction && !hasMaterial(item)));
-    if(blocked.length)return alert(`${blocked.length} solicitud(es) no están listas para asignar por falta de producción o material.`);
-    await Promise.all(selectedItems.map(item=>updateRequest(item.id!,{
+    const assignable = selectedItems.filter(canAssignRequest);
+    const blocked = selectedItems.filter(item=>!canAssignRequest(item));
+    if(!assignable.length){
+      alert("Ninguna de las solicitudes seleccionadas está lista para asignarse. Las piezas que requieren producción deben tener material listo antes de pasar a diseño/audiovisual.");
+      return;
+    }
+    await Promise.all(assignable.map(item=>updateRequest(item.id!,{
       assignedArea:item.assignedArea||item.suggestedArea,
       assignedTo:bulkAssignee,
       priority:item.priority||"Media",
       dueDate:item.dueDate||item.batchDueDate||item.publishDate,
       status:"asignada"
     })));
-    setSelected([]);
+    setSelected(blocked.map(item=>item.id!).filter(Boolean));
     setBulkAssignee("");
     await load();
-    alert("Solicitudes asignadas");
+    alert(`${assignable.length} solicitud(es) asignadas. ${blocked.length ? `${blocked.length} quedaron pendientes porque falta producción/material.` : "Todas quedaron asignadas."}`);
   }
 
   async function rejectRequests(ids:string[], note:string){
@@ -176,7 +178,7 @@ export default function AssignmentPage(){
     </section>
 
     <section className="grid kpis">
-      {[["Total",String(items.length)],["Filtradas",String(filtered.length)],["Seleccionadas",String(selected.length)],["Pend. producción",String(items.filter(x=>getOperationalStatus(x)==="pendiente_produccion").length)],["Bloqueadas",String(items.filter(x=>getOperationalStatus(x)==="bloqueada").length)],["Asignadas",String(items.filter(x=>x.status==="asignada").length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Total",String(items.length)],["Filtradas",String(filtered.length)],["Seleccionadas",String(selected.length)],["Listas",String(items.filter(canAssignRequest).length)],["Pend. producción",String(items.filter(x=>getOperationalStatus(x)==="pendiente_produccion").length)],["Bloqueadas",String(items.filter(x=>getOperationalStatus(x)==="bloqueada").length)],["Asignadas",String(items.filter(x=>x.status==="asignada").length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
     <div className="toolbar">
@@ -194,7 +196,7 @@ export default function AssignmentPage(){
     </div>
 
     {selected.length>0 && <div className="bulk-actions">
-      <span className="pill">{selected.length} seleccionada(s)</span>
+      <span className="pill">{selected.length} seleccionada(s)</span>{selectedBlockedCount>0 && <span className="pill amber">{selectedBlockedCount} no asignable(s)</span>}{selectedAssignableCount>0 && <span className="pill green">{selectedAssignableCount} lista(s)</span>}
       <select value={bulkAssignee} onChange={e=>setBulkAssignee(e.target.value)}><option value="">Asignar seleccionadas a...</option>{teamOptions.map(name=><option key={name}>{name}</option>)}</select>
       <button className="btn blue" onClick={assignSelected}>Asignar seleccionadas</button>
       <button className="btn" onClick={()=>setRejectModal(true)}>Rebotar seleccionadas</button>
@@ -205,15 +207,16 @@ export default function AssignmentPage(){
       <div className="card">
         <h3>Solicitudes para asignar</h3>
         <div className="table-wrap"><table className="table">
-          <thead><tr><th><input type="checkbox" checked={filtered.length>0 && filtered.every(item=>selected.includes(item.id!))} onChange={e=>setSelected(e.target.checked?filtered.map(item=>item.id!).filter(Boolean):[])}/></th><th><SortButton label="Lote" active={sort.key==="batch"} direction={sort.direction} onClick={()=>toggleSort("batch")}/></th><th><SortButton label="Solicitud" active={sort.key==="request"} direction={sort.direction} onClick={()=>toggleSort("request")}/></th><th><SortButton label="Límite lote" active={sort.key==="dueDate"} direction={sort.direction} onClick={()=>toggleSort("dueDate")}/></th><th><SortButton label="Estado" active={sort.key==="status"} direction={sort.direction} onClick={()=>toggleSort("status")}/></th><th><SortButton label="Área" active={sort.key==="area"} direction={sort.direction} onClick={()=>toggleSort("area")}/></th><th><SortButton label="Asignación" active={sort.key==="assignedTo"} direction={sort.direction} onClick={()=>toggleSort("assignedTo")}/></th><th></th></tr></thead>
+          <thead><tr><th><input type="checkbox" title="Seleccionar solo solicitudes listas para asignar" checked={assignableFiltered.length>0 && assignableFiltered.every(item=>selected.includes(item.id!))} onChange={e=>setSelected(e.target.checked?assignableFiltered.map(item=>item.id!).filter(Boolean):[])}/></th><th><SortButton label="Lote" active={sort.key==="batch"} direction={sort.direction} onClick={()=>toggleSort("batch")}/></th><th><SortButton label="Solicitud" active={sort.key==="request"} direction={sort.direction} onClick={()=>toggleSort("request")}/></th><th><SortButton label="Límite lote" active={sort.key==="dueDate"} direction={sort.direction} onClick={()=>toggleSort("dueDate")}/></th><th><SortButton label="Estado" active={sort.key==="status"} direction={sort.direction} onClick={()=>toggleSort("status")}/></th><th><SortButton label="Área" active={sort.key==="area"} direction={sort.direction} onClick={()=>toggleSort("area")}/></th><th><SortButton label="Asignación" active={sort.key==="assignedTo"} direction={sort.direction} onClick={()=>toggleSort("assignedTo")}/></th><th></th></tr></thead>
           <tbody>{filtered.map(item=>{
             const op=getOperationalStatus(item);
-            return <tr key={item.id}>
-              <td><input type="checkbox" checked={selected.includes(item.id!)} onChange={()=>toggle(item.id!)}/></td>
+            const assignable = canAssignRequest(item);
+            return <tr key={item.id} className={!assignable ? "row-muted" : ""}>
+              <td><input type="checkbox" checked={selected.includes(item.id!)} disabled={!assignable} title={assignable ? "Lista para asignar" : getAssignBlockReason(item)} onChange={()=>toggle(item.id!)}/></td>
               <td><strong>{item.batchName||"Sin lote"}</strong><br/><span className="mini">#{item.number||"--"} de {item.total||"--"}</span></td>
               <td><strong>{item.clientName}</strong><br/><span>{item.contentType} · {item.objective}</span><br/><span className="mini">{item.creativeIdea}</span><br/><span className="mini">Publica: {item.publishDate||"Sin fecha"}</span>{item.rejectionNote && <div className="reject-note">Rebotada: {item.rejectionNote}</div>}</td>
               <td><strong>{item.batchDueDate||item.dueDate||"Sin fecha"}</strong><br/><span className="mini">Entrega operativa</span></td>
-              <td><StatusPill status={op}/></td>
+              <td><StatusPill status={op}/>{!assignable && <p className="mini warn-text">{getAssignBlockReason(item)}</p>}</td>
               <td>{item.suggestedArea}</td>
               <td>
                 <select value={item.assignedArea||item.suggestedArea||"Diseño"} onChange={e=>item.id&&update(item.id,{assignedArea:e.target.value})}>{areas.map(x=><option key={x}>{x}</option>)}</select>
@@ -222,7 +225,7 @@ export default function AssignmentPage(){
                 <br/><br/>
                 <select value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select>
               </td>
-              <td><button className="btn blue" onClick={()=>assign(item)}>Asignar</button><br/><br/><button className="btn" onClick={()=>{setEditing(item);setDetailDraft({assignedArea:item.assignedArea||item.suggestedArea,assignedTo:item.assignedTo||"",priority:item.priority||"Media",internalNotes:item.internalNotes||""})}}>Detalle</button></td>
+              <td><button className="btn blue" disabled={!assignable} title={assignable ? "Asignar" : getAssignBlockReason(item)} onClick={()=>assign(item)}>Asignar</button><br/><br/><button className="btn" onClick={()=>{setEditing(item);setDetailDraft({assignedArea:item.assignedArea||item.suggestedArea,assignedTo:item.assignedTo||"",priority:item.priority||"Media",internalNotes:item.internalNotes||""})}}>Detalle</button></td>
             </tr>
           })}</tbody>
         </table></div>
@@ -464,6 +467,14 @@ function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
   </div>;
 }
 
+
+
+function getAssignBlockReason(item:ContentRequest){
+  if(item.requiresProduction){
+    return "Pendiente de producción: falta marcar material listo o entregar archivos/links.";
+  }
+  return "Bloqueada: falta material base para trabajar.";
+}
 
 function StatusPill({status}:{status:string}){
   if(status==="bloqueada")return <span className="pill red">Bloqueada</span>;
