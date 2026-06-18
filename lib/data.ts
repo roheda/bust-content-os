@@ -5,10 +5,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   orderBy,
   query,
   serverTimestamp,
-  updateDoc
+  updateDoc,
+  where
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "./firebase";
@@ -64,6 +66,11 @@ export type PlatformUser = {
   permissions: PermissionMatrix;
   canBypassClientLimits?: boolean;
   canManageBilling?: boolean;
+  authUid?: string;
+  inviteStatus?: "pending_auth" | "auth_created" | "reset_sent" | "active" | "disabled";
+  authCreatedAt?: unknown;
+  passwordResetSentAt?: unknown;
+  lastLoginAt?: unknown;
   notes?: string;
 };
 
@@ -196,6 +203,8 @@ export const emptyPlatformUser: PlatformUser = {
   permissions: getRoleTemplatePermissions("kam"),
   canBypassClientLimits: false,
   canManageBilling: false,
+  authUid: "",
+  inviteStatus: "pending_auth",
   notes: ""
 };
 
@@ -862,10 +871,37 @@ export async function listUsers() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PlatformUser));
 }
 
+
+export async function findUserByAuth(authUid?: string, email?: string) {
+  const cleanEmail = (email || "").trim().toLowerCase();
+
+  if (authUid) {
+    const byUid = await getDocs(query(collection(db, "platformUsers"), where("authUid", "==", authUid), limit(1)));
+    if (!byUid.empty) return { id: byUid.docs[0].id, ...byUid.docs[0].data() } as PlatformUser;
+  }
+
+  if (cleanEmail) {
+    const byEmail = await getDocs(query(collection(db, "platformUsers"), where("email", "==", cleanEmail), limit(1)));
+    if (!byEmail.empty) return { id: byEmail.docs[0].id, ...byEmail.docs[0].data() } as PlatformUser;
+  }
+
+  return null;
+}
+
+export async function markUserLogin(id: string) {
+  return updateDoc(doc(db, "platformUsers", id), {
+    inviteStatus: "active",
+    lastLoginAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
 export async function saveUser(item: PlatformUser) {
   return addDoc(collection(db, "platformUsers"), {
     ...omitUndefined(item),
     email: (item.email || "").trim().toLowerCase(),
+    inviteStatus: item.inviteStatus || "pending_auth",
+    authUid: item.authUid || "",
     clientIds: item.scope === "all_clients" ? [] : (item.clientIds || []),
     permissions: item.isMaster ? getRoleTemplatePermissions("master") : (item.permissions || getRoleTemplatePermissions(item.roleKey)),
     createdAt: serverTimestamp(),
@@ -877,6 +913,10 @@ export async function updateUser(id: string, data: Partial<PlatformUser>) {
   const payload: Partial<PlatformUser> = {
     ...data,
     email: data.email ? data.email.trim().toLowerCase() : data.email,
+    authUid: data.authUid,
+    inviteStatus: data.inviteStatus,
+    passwordResetSentAt: data.passwordResetSentAt,
+    lastLoginAt: data.lastLoginAt,
     clientIds: data.scope === "all_clients" ? [] : data.clientIds,
     permissions: data.isMaster ? getRoleTemplatePermissions("master") : data.permissions
   };

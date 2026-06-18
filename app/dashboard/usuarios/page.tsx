@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { onAuthStateChanged, sendPasswordResetEmail, User as FirebaseUser } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import AppShell from "@/components/AppShell";
 import {
   Brand,
@@ -29,6 +31,8 @@ export default function UsuariosPage(){
   const [filter,setFilter]=useState("all");
   const [message,setMessage]=useState("");
   const [busy,setBusy]=useState(false);
+  const [authUser,setAuthUser]=useState<FirebaseUser | null>(null);
+  const [authBusyId,setAuthBusyId]=useState("");
 
   async function load(){
     const [loadedUsers,loadedClients] = await Promise.all([listUsers(),listUniqueBrands()]);
@@ -37,6 +41,7 @@ export default function UsuariosPage(){
   }
 
   useEffect(()=>{load()},[]);
+  useEffect(()=>onAuthStateChanged(auth,setAuthUser),[]);
 
   const activeUsers = users.filter(u=>u.status!=="inactive").length;
   const masterUsers = users.filter(u=>u.isMaster || u.roleKey==="master").length;
@@ -135,7 +140,9 @@ export default function UsuariosPage(){
         clientIds: form.isMaster || form.scope === "all_clients" ? [] : form.clientIds,
         permissions: form.isMaster ? getRoleTemplatePermissions("master") : form.permissions,
         canBypassClientLimits: Boolean(form.isMaster || form.canBypassClientLimits),
-        canManageBilling: Boolean(form.isMaster || form.canManageBilling)
+        canManageBilling: Boolean(form.isMaster || form.canManageBilling),
+        authUid: form.authUid || "",
+        inviteStatus: form.inviteStatus || "pending_auth"
       };
       if(editingId) await updateUser(editingId,payload);
       else await saveUser(payload);
@@ -143,6 +150,52 @@ export default function UsuariosPage(){
       resetForm();
       await load();
     }finally{setBusy(false)}
+  }
+
+
+  async function createAccessAndSendReset(user: PlatformUser){
+    if(!user.id) return;
+    if(!user.email) return alert("Este usuario no tiene correo.");
+    setAuthBusyId(user.id);
+    setMessage("");
+    try{
+      const headers: Record<string,string> = {"Content-Type":"application/json"};
+      if(authUser){
+        headers.Authorization = `Bearer ${await authUser.getIdToken()}`;
+      }else{
+        const setupToken = prompt("Para crear el primer acceso seguro, pega el AUTH_SETUP_TOKEN configurado en Vercel. Después ya podrás hacerlo como usuario master autenticado.");
+        if(!setupToken) return;
+        headers["x-setup-token"] = setupToken;
+      }
+      const res = await fetch("/api/admin/create-auth-user",{
+        method:"POST",
+        headers,
+        body:JSON.stringify({platformUserId:user.id,email:user.email,name:user.name})
+      });
+      const json = await res.json();
+      if(!res.ok || !json.ok) throw new Error(json.error || "No se pudo crear el acceso en Firebase Auth.");
+      await sendPasswordResetEmail(auth,user.email.trim().toLowerCase());
+      await updateUser(user.id,{authUid:json.uid,inviteStatus:"reset_sent",passwordResetSentAt:new Date().toISOString()});
+      setMessage(`Acceso creado y correo de contraseña enviado a ${user.email}.`);
+      await load();
+    }catch(error:any){
+      alert(error?.message || "No se pudo crear/enviar acceso.");
+    }finally{
+      setAuthBusyId("");
+    }
+  }
+
+  async function sendResetOnly(user: PlatformUser){
+    if(!user.email) return alert("Este usuario no tiene correo.");
+    setAuthBusyId(user.id || user.email);
+    try{
+      await sendPasswordResetEmail(auth,user.email.trim().toLowerCase());
+      if(user.id) await updateUser(user.id,{inviteStatus:"reset_sent",passwordResetSentAt:new Date().toISOString()});
+      setMessage(`Correo de contraseña enviado a ${user.email}.`);
+      await load();
+    }catch(error:any){
+      alert(error?.message || "No se pudo enviar el correo.");
+    }finally{setAuthBusyId("");}
   }
 
   async function remove(user:PlatformUser){
@@ -188,6 +241,7 @@ export default function UsuariosPage(){
         <div className="form-grid" style={{marginTop:14}}>
           <div className="field"><label>Nombre</label><input value={form.name} onChange={e=>setField("name",e.target.value)} placeholder="Ej. Mafer Gutiérrez"/></div>
           <div className="field"><label>Correo</label><input value={form.email} onChange={e=>setField("email",e.target.value)} placeholder="correo@empresa.com"/></div>
+          <div className="field"><label>Estado de contraseña</label><select value={form.inviteStatus||"pending_auth"} onChange={e=>setField("inviteStatus",e.target.value as PlatformUser["inviteStatus"])}><option value="pending_auth">Pendiente crear acceso</option><option value="auth_created">Acceso creado</option><option value="reset_sent">Correo enviado</option><option value="active">Activo</option><option value="disabled">Deshabilitado</option></select></div>
           <div className="field"><label>Rol base</label><select value={form.roleKey} onChange={e=>applyRole(e.target.value)}>{roleTemplates.map(role=><option key={role.key} value={role.key}>{role.label}</option>)}</select></div>
           <div className="field"><label>Estatus</label><select value={form.status} onChange={e=>setField("status",e.target.value as PlatformUser["status"])}><option value="active">Activo</option><option value="inactive">Inactivo</option></select></div>
           <div className="field"><label>Departamento</label><input value={form.department||""} onChange={e=>setField("department",e.target.value)} placeholder="Operación, Diseño, Dirección..."/></div>
@@ -224,6 +278,7 @@ export default function UsuariosPage(){
 
         <div className="config-actions">
           <button className="btn blue" onClick={save} disabled={busy}>{busy?"Guardando...":editingId?"Guardar cambios":"Crear usuario"}</button>
+          {editingId && <button className="btn" onClick={()=>createAccessAndSendReset({...form,id:editingId})} disabled={authBusyId===editingId}>{authBusyId===editingId?"Enviando...":"Crear acceso y enviar contraseña"}</button>}
           <button className="btn" onClick={resetForm}>Limpiar</button>
         </div>
       </article>
@@ -240,8 +295,11 @@ export default function UsuariosPage(){
               </div>
               <div className="mini">{user.roleLabel || user.roleKey} · {user.scope==="all_clients"?"Todos los clientes":`${user.clientIds?.length||0} clientes asignados`}</div>
               <div className="mini">Módulos visibles: {platformModules.filter(m=>canUser(user,m.key,"view")).length} · Genera IA: {platformModules.filter(m=>canUser(user,m.key,"generate")).length ? "Sí" : "No"}</div>
+              <div className="mini">Auth: {user.authUid ? "Conectado" : "Sin acceso"} · {user.inviteStatus === "reset_sent" ? "Correo enviado" : user.inviteStatus || "pendiente"}</div>
               <div className="config-actions">
                 <button className="btn" onClick={()=>editUser(user)}>Editar</button>
+                <button className="btn" onClick={()=>createAccessAndSendReset(user)} disabled={authBusyId===(user.id||user.email)}>{authBusyId===(user.id||user.email)?"Enviando...":user.authUid?"Reenviar link":"Crear acceso"}</button>
+                {user.authUid && <button className="btn" onClick={()=>sendResetOnly(user)} disabled={authBusyId===(user.id||user.email)}>Reset contraseña</button>}
                 <button className="btn red" onClick={()=>remove(user)}>Eliminar</button>
               </div>
             </div>)}
@@ -256,7 +314,7 @@ export default function UsuariosPage(){
             <li><strong>KAM:</strong> solo debe ver clientes asignados.</li>
             <li><strong>Cliente:</strong> ideal para solo aprobar piezas.</li>
           </ul>
-          <p className="mini" style={{marginTop:12}}>La seguridad fuerte se completa conectando estos usuarios con Firebase Auth y reglas de Firestore. Esta versión deja lista la configuración funcional dentro de la plataforma.</p>
+          <p className="mini" style={{marginTop:12}}>La contraseña se maneja con Firebase Auth. Primero crea el usuario operativo, después usa “Crear acceso” para crear el usuario de Auth y enviarle un correo para definir contraseña. Cuando termines la migración, activa NEXT_PUBLIC_AUTH_ENFORCED=true en Vercel.</p>
         </div>
       </aside>
     </section>
