@@ -392,6 +392,12 @@ export type Brand = {
   website?: string;
   instagram?: string;
   location?: string;
+  marketScope?: string;
+  marketRegion?: string;
+  primaryCity?: string;
+  serviceArea?: string;
+  offerSummary?: string;
+  localAudienceContext?: string;
   packageName?: string;
   billingConfig?: ClientBillingConfig;
   services?: string[];

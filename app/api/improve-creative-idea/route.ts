@@ -29,16 +29,58 @@ function buildSafeFallbackIdea(input: {
   objective: string;
   keyMessage: string;
   cta: string;
+  marketContext: string;
+  successfulContext: string;
 }) {
   const piece = input.contentType || "pieza de contenido";
   const client = input.clientName || "el cliente";
   const format = input.visualFormat ? ` en formato ${input.visualFormat}` : "";
   const platforms = input.platforms ? ` para ${input.platforms}` : "";
+  const market = input.marketContext ? ` Adaptar el enfoque al contexto comercial del cliente: ${input.marketContext}.` : "";
   const objective = input.objective ? ` El objetivo principal es ${input.objective.toLowerCase()}.` : "";
   const keyMessage = input.keyMessage ? ` Debe reforzar como mensaje central: ${input.keyMessage}.` : "";
   const cta = input.cta ? ` Cerrar con una invitación clara a ${input.cta.toLowerCase()}.` : " Cerrar con una invitación sencilla a pedir más información o avanzar al siguiente paso.";
+  const learning = input.successfulContext ? " Usar como referencia el historial de contenidos finalizados del cliente para mantener continuidad con lo que ya funcionó, sin copiar ideas anteriores." : "";
 
-  return `Crear un ${piece}${format}${platforms} para ${client}, tomando como base esta idea: ${input.creativeIdea}. La pieza debe iniciar con un momento natural y fácil de entender que introduzca la situación desde la experiencia de una persona real, evitando que se sienta como un anuncio rígido. En el desarrollo, mostrar los elementos más importantes de la idea con acciones concretas, cambios de plano y detalles visuales que ayuden a que el equipo de producción o edición sepa exactamente qué capturar. El tono debe sentirse cercano, aspiracional y auténtico, manteniendo una narrativa clara de inicio, recorrido y cierre.${objective}${keyMessage} ${cta}`.replace(/\s+/g, " ").trim();
+  return `Crear un ${piece}${format}${platforms} para ${client}, tomando como base esta idea: ${input.creativeIdea}.${market}${learning} La pieza debe iniciar con un momento natural y fácil de entender que introduzca la situación desde la experiencia de una persona real, evitando que se sienta como un anuncio rígido. En el desarrollo, mostrar los elementos más importantes de la idea con acciones concretas, cambios de plano y detalles visuales que ayuden a que el equipo de producción o edición sepa exactamente qué capturar. El tono debe sentirse estratégico, cercano y profesional, con criterio de content manager senior para que la pieza conecte con la audiencia real del cliente.${objective}${keyMessage} ${cta}`.replace(/\s+/g, " ").trim();
+}
+
+async function callOpenAI(prompt: string) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("Falta configurar OPENAI_API_KEY.");
+  const model = process.env.OPENAI_TEXT_MODEL || "gpt-4.1-mini";
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      input: prompt,
+      max_output_tokens: 1200
+    })
+  });
+
+  const payload = await response.json();
+  if (!response.ok) {
+    const message = payload?.error?.message || "No se pudo perfeccionar la idea con OpenAI.";
+    throw new Error(message);
+  }
+
+  const outputText = typeof payload?.output_text === "string"
+    ? payload.output_text
+    : Array.isArray(payload?.output)
+      ? payload.output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+          .map((part: any) => part?.text || part?.value || "")
+          .join(" ")
+      : "";
+
+  return {
+    text: outputText.replace(/\s+/g, " ").trim(),
+    finishReason: payload?.status === "incomplete" ? "MAX_TOKENS" : "STOP"
+  };
 }
 
 async function callGemini(prompt: string) {
@@ -64,7 +106,7 @@ async function callGemini(prompt: string) {
 
   const payload = await response.json();
   if (!response.ok) {
-    const message = payload?.error?.message || "No se pudo perfeccionar la idea.";
+    const message = payload?.error?.message || "No se pudo perfeccionar la idea con Gemini.";
     throw new Error(message);
   }
 
@@ -79,11 +121,27 @@ async function callGemini(prompt: string) {
   return { text: text || "", finishReason };
 }
 
+async function callBestAvailableModel(prompt: string) {
+  try {
+    return await callOpenAI(prompt);
+  } catch (openAIError) {
+    try {
+      return await callGemini(prompt);
+    } catch (geminiError) {
+      const openMessage = openAIError instanceof Error ? openAIError.message : String(openAIError);
+      const geminiMessage = geminiError instanceof Error ? geminiError.message : String(geminiError);
+      throw new Error(`No se pudo perfeccionar la idea. OpenAI: ${openMessage}. Gemini: ${geminiMessage}`);
+    }
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const clientName = normalizeText(body.clientName);
     const clientContext = normalizeText(body.clientContext);
+    const successfulContext = normalizeText(body.successfulContext);
+    const marketContext = normalizeText(body.marketContext);
     const contentType = normalizeText(body.contentType);
     const objective = normalizeText(body.objective);
     const platforms = Array.isArray(body.platforms) ? body.platforms.join(", ") : normalizeText(body.platforms);
@@ -99,19 +157,24 @@ export async function POST(req: Request) {
     const outputRules = `Reglas estrictas de salida:
 - Devuelve solo la idea creativa final, sin título, sin bullets, sin comillas y sin explicación.
 - Escribe exactamente 5 oraciones completas.
-- Usa entre 90 y 140 palabras.
+- Usa entre 100 y 160 palabras.
 - No cortes frases a la mitad.
 - No termines con conectores como: con, desde, para, que, donde, iniciando, muestra.
 - La última oración debe ser un cierre completo y accionable.
-- No generes copy final ni guion palabra por palabra; solo una instrucción creativa clara.`;
+- No generes copy final ni guion palabra por palabra; solo una instrucción creativa clara.
+- No copies literalmente solicitudes finalizadas; úsalas solo como aprendizaje de tono, estructura y ángulos que han funcionado.`;
 
-    const prompt = `Eres director creativo senior de una agencia. Tu tarea es perfeccionar únicamente el campo IDEA CREATIVA de una solicitud de contenido.
+    const prompt = `Actúa como un Content Manager senior profesional con expertise en creación de contenido para redes sociales, estrategia creativa, UGC, contenido inmobiliario/comercial y adaptación regional de mensajes.
+
+Tu tarea es perfeccionar únicamente el campo IDEA CREATIVA de una solicitud de contenido.
 
 Objetivo del botón:
 - NO generar copy final.
 - NO resumir la idea.
 - NO responder con una frase poética o incompleta.
-- Sí convertir la idea base en una instrucción clara y accionable para producción, diseño o audiovisual.
+- Sí convertir la idea base en una instrucción clara, accionable y útil para producción, diseño o audiovisual.
+- Sí analizar el contexto del cliente, su alcance geográfico, región, ciudad y oferta para que la idea se sienta realista para su mercado.
+- Sí revisar el historial de solicitudes finalizadas del cliente para inferir qué tipo de enfoque, tono o estructura ya se ha usado/funcionado, sin repetirlo literalmente.
 
 ${outputRules}
 
@@ -120,16 +183,22 @@ Contenido esperado:
 - Cómo inicia la pieza.
 - Qué se muestra en el desarrollo.
 - Tono visual/narrativo.
+- Adaptación al mercado/región del cliente.
 - Cierre sugerido.
 
 Criterios de estilo:
 - Si es UGC, debe sonar natural, como contenido grabado por una persona real, no como anuncio corporativo.
 - Si es reel/video, describe recorrido, planos o momentos clave, sin escribir un guion rígido palabra por palabra.
+- Si el cliente es regional o local, aterriza la idea al contexto de su ciudad o región sin usar clichés forzados.
 - Mantén la intención original del usuario y no inventes datos duros del cliente.
 
-Datos de la solicitud:
+Datos del cliente:
 Cliente: ${clientName || "Sin cliente"}
-Contexto del cliente: ${clientContext || "Sin contexto adicional"}
+Contexto estratégico del cliente: ${clientContext || "Sin contexto adicional"}
+Contexto de alcance/mercado: ${marketContext || "Sin alcance o región definida"}
+Historial resumido de solicitudes finalizadas del cliente: ${successfulContext || "Sin historial finalizado disponible"}
+
+Datos de la solicitud actual:
 Tipo de pieza: ${contentType || "Sin tipo"}
 Objetivo: ${objective || "Sin objetivo"}
 Plataformas: ${platforms || "Sin plataformas"}
@@ -138,16 +207,16 @@ Mensaje clave: ${keyMessage || "Sin mensaje clave"}
 CTA: ${cta || "Sin CTA"}
 Idea creativa actual: ${creativeIdea}`;
 
-    let result = await callGemini(prompt);
+    let result = await callBestAvailableModel(prompt);
     let improved = result.text;
 
     if (result.finishReason === "MAX_TOKENS" || looksTooWeakOrIncomplete(improved)) {
-      result = await callGemini(`${prompt}\n\nLa respuesta anterior quedó cortada o demasiado corta. Rehazla completa en exactamente 5 oraciones, entre 90 y 140 palabras, terminando con una oración completa.`);
+      result = await callBestAvailableModel(`${prompt}\n\nLa respuesta anterior quedó cortada o demasiado corta. Rehazla completa en exactamente 5 oraciones, entre 100 y 160 palabras, terminando con una oración completa.`);
       improved = result.text;
     }
 
     if (result.finishReason === "MAX_TOKENS" || looksTooWeakOrIncomplete(improved)) {
-      improved = buildSafeFallbackIdea({ clientName, contentType, platforms, visualFormat, creativeIdea, objective, keyMessage, cta });
+      improved = buildSafeFallbackIdea({ clientName, contentType, platforms, visualFormat, creativeIdea, objective, keyMessage, cta, marketContext, successfulContext });
     }
 
     return NextResponse.json({ creativeIdea: improved || creativeIdea });

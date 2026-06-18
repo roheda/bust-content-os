@@ -122,17 +122,45 @@ export default function CreatorPage(){
     if(!client)return "";
     const brain = client.brandBrain || {};
     return [
-      client.brandNotes,
-      client.brandPersonality,
-      client.visualStyle,
-      client.contentPillars,
-      brain.brandDescription,
-      brain.tone,
-      brain.typography,
-      (brain.visualStyle||[]).join(", "),
-      (brain.dos||[]).join(", "),
-      (brain.donts||[]).join(", ")
+      client.brandNotes && `Notas de marca: ${client.brandNotes}`,
+      client.brandPersonality && `Personalidad: ${client.brandPersonality}`,
+      client.visualStyle && `Estilo visual operativo: ${client.visualStyle}`,
+      client.contentPillars && `Pilares de contenido: ${client.contentPillars}`,
+      brain.brandDescription && `Descripción de marca: ${brain.brandDescription}`,
+      brain.tone && `Tono: ${brain.tone}`,
+      brain.typography && `Tipografía: ${brain.typography}`,
+      (brain.visualStyle||[]).length ? `Estilo visual del Brand Brain: ${(brain.visualStyle||[]).join(", ")}` : "",
+      (brain.dos||[]).length ? `Sí hacer: ${(brain.dos||[]).join(", ")}` : "",
+      (brain.donts||[]).length ? `Evitar: ${(brain.donts||[]).join(", ")}` : ""
     ].filter(Boolean).join("\n");
+  }
+
+  function marketContext(){
+    if(!client)return "";
+    return [
+      client.marketScope && `Alcance del cliente: ${client.marketScope}`,
+      client.marketRegion && `Región: ${client.marketRegion}`,
+      client.primaryCity && `Ciudad base: ${client.primaryCity}`,
+      client.serviceArea && `Zona de servicio/venta: ${client.serviceArea}`,
+      client.offerSummary && `Qué ofrece: ${client.offerSummary}`,
+      client.localAudienceContext && `Contexto de audiencia local: ${client.localAudienceContext}`,
+      client.location && `Ubicación registrada: ${client.location}`
+    ].filter(Boolean).join("\n");
+  }
+
+  function successfulRequestsContext(){
+    if(!client?.id)return "";
+    return requests
+      .filter(x=>x.clientId===client.id && x.status==="finalizada")
+      .slice(0,8)
+      .map((x,index)=>[
+        `${index+1}. ${x.contentType || "Contenido"} · ${x.objective || "Sin objetivo"} · ${x.visualFormat || x.feedPlacement || "Sin formato"}`,
+        x.topic ? `Tema: ${x.topic}` : "",
+        x.creativeIdea ? `Idea usada: ${x.creativeIdea}` : "",
+        x.copyOut ? `Copy final: ${x.copyOut}` : "",
+        x.approvalNotes ? `Nota de aprobación: ${x.approvalNotes}` : ""
+      ].filter(Boolean).join(" | "))
+      .join("\n");
   }
 
   async function improveCreativeIdea(target:"manual"|number){
@@ -147,6 +175,8 @@ export default function CreatorPage(){
         body:JSON.stringify({
           clientName: client?.name || item.clientName,
           clientContext: clientContext(),
+          marketContext: marketContext(),
+          successfulContext: successfulRequestsContext(),
           contentType:item.contentType,
           objective:item.objective,
           platforms:item.platforms || [],

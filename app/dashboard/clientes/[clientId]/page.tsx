@@ -25,7 +25,7 @@ const defaultBillingForm = {
 export default function ClientBrandBrainPage(){
   const {clientId} = useParams<{clientId:string}>();
   const [client,setClient]=useState<Brand|null>(null);
-  const [form,setForm]=useState({name:"",industry:"",brandDescription:"",tone:"",colors:"",typography:"",visualStyle:"",dos:"",donts:"",recommendedModels:""});
+  const [form,setForm]=useState({name:"",industry:"",brandDescription:"",tone:"",colors:"",typography:"",visualStyle:"",dos:"",donts:"",recommendedModels:"",marketScope:"",marketRegion:"",primaryCity:"",serviceArea:"",offerSummary:"",localAudienceContext:""});
   const [billingForm,setBillingForm]=useState(defaultBillingForm);
   const [saving,setSaving]=useState(false);
   const [savingBilling,setSavingBilling]=useState(false);
@@ -43,7 +43,9 @@ export default function ClientBrandBrainPage(){
       brandDescription:brain.brandDescription||row.brandNotes||"",
       tone:brain.tone||row.tone||"", colors:joinItems(brain.colors), typography:brain.typography||"",
       visualStyle:joinItems(brain.visualStyle), dos:Array.isArray(brain.dos)?brain.dos.join("\n"):"",
-      donts:Array.isArray(brain.donts)?brain.donts.join("\n"):"", recommendedModels:joinItems(brain.recommendedModels)
+      donts:Array.isArray(brain.donts)?brain.donts.join("\n"):"", recommendedModels:joinItems(brain.recommendedModels),
+      marketScope:row.marketScope||"", marketRegion:row.marketRegion||"", primaryCity:row.primaryCity||"",
+      serviceArea:row.serviceArea||row.location||"", offerSummary:row.offerSummary||"", localAudienceContext:row.localAudienceContext||""
     });
     setBillingForm({
       monthlyRetainer:String(billing.monthlyRetainer || 0),
@@ -66,6 +68,9 @@ export default function ClientBrandBrainPage(){
     setSaving(true);
     await updateBrand(clientId,{
       name:form.name.trim(), industry:form.industry.trim(), tone:form.tone.trim(), brandNotes:form.brandDescription.trim(),
+      marketScope:form.marketScope.trim(), marketRegion:form.marketRegion.trim(), primaryCity:form.primaryCity.trim(),
+      serviceArea:form.serviceArea.trim(), location:form.serviceArea.trim(), offerSummary:form.offerSummary.trim(),
+      localAudienceContext:form.localAudienceContext.trim(),
       brandBrain:{brandDescription:form.brandDescription.trim(), tone:form.tone.trim(), colors:splitComma(form.colors), typography:form.typography.trim(), visualStyle:splitComma(form.visualStyle), dos:splitLines(form.dos), donts:splitLines(form.donts), recommendedModels:splitComma(form.recommendedModels)}
     });
     setSuccess("Brand Brain guardado correctamente.");
@@ -120,6 +125,20 @@ export default function ClientBrandBrainPage(){
         <div className="brandbrain-form">
           <div className="client-profile-grid"><div className="field"><label>Nombre</label><input value={form.name} onChange={e=>set("name",e.target.value)}/></div><div className="field"><label>Giro</label><input value={form.industry} onChange={e=>set("industry",e.target.value)}/></div></div>
           <div className="field"><label>Descripción de marca</label><textarea value={form.brandDescription} onChange={e=>set("brandDescription",e.target.value)}/></div>
+          <div className="brief-box">
+            <h4>Contexto de mercado para IA</h4>
+            <p className="mini">Esto ayuda a que el botón de IA adapte las ideas al alcance real del cliente: local, regional, nacional o ciudad específica.</p>
+            <div className="client-profile-grid">
+              <div className="field"><label>Alcance del cliente</label><select value={form.marketScope} onChange={e=>set("marketScope",e.target.value)}><option value="">Seleccionar</option><option>Local</option><option>Regional</option><option>Nacional</option><option>Internacional</option></select></div>
+              <div className="field"><label>Región</label><input value={form.marketRegion} onChange={e=>set("marketRegion",e.target.value)} placeholder="Ej. Sureste de México"/></div>
+            </div>
+            <div className="client-profile-grid">
+              <div className="field"><label>Ciudad base</label><input value={form.primaryCity} onChange={e=>set("primaryCity",e.target.value)} placeholder="Ej. Mérida, Yucatán"/></div>
+              <div className="field"><label>Zona de servicio/venta</label><input value={form.serviceArea} onChange={e=>set("serviceArea",e.target.value)} placeholder="Ej. Mérida norte, Riviera Maya, Cancún"/></div>
+            </div>
+            <div className="field"><label>Qué ofrece / diferenciador comercial</label><textarea value={form.offerSummary} onChange={e=>set("offerSummary",e.target.value)} placeholder="Ej. Casas premium listas para entrega, recorridos, inversión inmobiliaria, cocinas europeas, experiencias turísticas..."/></div>
+            <div className="field"><label>Contexto de audiencia local</label><textarea value={form.localAudienceContext} onChange={e=>set("localAudienceContext",e.target.value)} placeholder="Ej. Familias jóvenes de Mérida norte, compradores de vivienda premium, turistas que visitan Valladolid..."/></div>
+          </div>
           <div className="client-profile-grid"><div className="field"><label>Tono</label><input value={form.tone} onChange={e=>set("tone",e.target.value)}/></div><div className="field"><label>Tipografía</label><input value={form.typography} onChange={e=>set("typography",e.target.value)}/></div></div>
           <div className="field"><label>Colores</label><input value={form.colors} onChange={e=>set("colors",e.target.value)} placeholder="#003B71, #E31E24"/></div>
           <div className="field"><label>Estilo visual</label><input value={form.visualStyle} onChange={e=>set("visualStyle",e.target.value)}/></div>
@@ -132,7 +151,7 @@ export default function ClientBrandBrainPage(){
 
       <aside className="brandbrain-card">
         <h2>Resumen para generación</h2>
-        <div className="detail-copy"><strong>Marca:</strong> {form.name}{"\n"}<strong>Giro:</strong> {form.industry}{"\n"}<strong>Tono:</strong> {form.tone||"Pendiente"}{"\n"}<strong>Colores:</strong> {form.colors||"Pendiente"}{"\n"}<strong>Tipografía:</strong> {form.typography||"Pendiente"}{"\n"}<strong>Estilo:</strong> {form.visualStyle||"Pendiente"}</div>
+        <div className="detail-copy"><strong>Marca:</strong> {form.name}{"\n"}<strong>Giro:</strong> {form.industry}{"\n"}<strong>Tono:</strong> {form.tone||"Pendiente"}{"\n"}<strong>Colores:</strong> {form.colors||"Pendiente"}{"\n"}<strong>Tipografía:</strong> {form.typography||"Pendiente"}{"\n"}<strong>Estilo:</strong> {form.visualStyle||"Pendiente"}{"\n"}<strong>Alcance:</strong> {form.marketScope||"Pendiente"}{"\n"}<strong>Región:</strong> {form.marketRegion||"Pendiente"}{"\n"}<strong>Ciudad:</strong> {form.primaryCity||"Pendiente"}{"\n"}<strong>Oferta:</strong> {form.offerSummary||"Pendiente"}</div>
         <div className="soft-delete-note">Para eliminar escribe exactamente su nombre. Se marca como deleted para conservar trazabilidad.</div>
         <input value={deleteConfirmation} onChange={e=>setDeleteConfirmation(e.target.value)} placeholder={client.name}/>
         <button className="btn red" onClick={archive}>Eliminar cliente</button>
