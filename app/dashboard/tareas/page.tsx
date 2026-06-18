@@ -38,6 +38,14 @@ export default function TasksPage(){
 
   useEffect(()=>{load()},[]);
 
+  useEffect(()=>{
+    if(typeof window === "undefined" || !requests.length) return;
+    const taskId = new URLSearchParams(window.location.search).get("task");
+    if(!taskId || selected?.id === taskId) return;
+    const found = requests.find((item)=>item.id === taskId);
+    if(found) openTask(found);
+  },[requests, selected?.id]);
+
   const filtered = useMemo(()=>requests.filter(x=>{
     const taskStates = ["asignada","en_revision","rebotada","pendiente_aprobacion","finalizada"].includes(x.status || "") && x.status !== "eliminada";
     const overdue = isOverdue(x);
@@ -124,6 +132,7 @@ export default function TasksPage(){
       target: commentTarget,
       body: comment.trim(),
       mentions: extractMentions(comment),
+      status: "open",
       createdAt: new Date().toISOString()
     };
     const comments = [...(selected.comments||[]), nextComment];
@@ -335,11 +344,12 @@ export default function TasksPage(){
               <button className="btn blue" onClick={addComment}>Agregar comentario</button>
 
               <div style={{marginTop:14}}>
-                {((selected.comments||[]).slice().reverse()).map(c=><div className="comment-box" key={c.id}>
+                {((selected.comments||[]).slice().reverse()).map(c=><div className={`comment-box ${c.resolvedAt || c.status==="resolved" ? "resolved" : ""}`} key={c.id}>
                   <strong>{c.author} → {c.target}</strong>
                   <span className="mini">{new Date(c.createdAt).toLocaleString("es-MX")}</span>
                   <p>{c.body}</p>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{c.mentions.map(m=><span className="mention" key={m}>{m}</span>)}</div>
+                  {(c.resolvedAt || c.status==="resolved") && <span className="resolved-badge">Resuelto{c.resolvedBy ? ` por ${c.resolvedBy}` : ""}</span>}
                 </div>)}
                 {!(selected.comments||[]).length && <p className="mini">Sin comentarios todavía.</p>}
               </div>

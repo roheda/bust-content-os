@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import FeedbackWidget from "./FeedbackWidget";
+import PendingMentionsWidget from "./PendingMentionsWidget";
 import { PlatformUser, canUser, findUserByAuth, listUsers, markUserLogin, platformModules } from "@/lib/data";
 
 const items = platformModules.map((module) => [module.label, module.route, module.key] as const);
@@ -114,11 +115,13 @@ export default function AppShell({
         {!authEnforced && users.length>0 && <select className="sidebar-user-select" value={activeUser?.id||""} onChange={e=>chooseUser(e.target.value)}>
           {users.map(user=><option key={user.id || user.email} value={user.id}>{user.name} · {user.roleLabel || user.roleKey}</option>)}
         </select>}
-        {authEnforced && <button className="sidebar-logout" type="button" onClick={logout}>Cerrar sesión</button>}
+        {(authEnforced || firebaseUser) && <button className="sidebar-logout" type="button" onClick={logout}>Cerrar sesión</button>}
+        {authEnforced && <p className="mini" style={{marginTop:6}}>Sesión segura activa</p>}
         {canUser(activeUser,"usuarios","configure") && <Link className="mini" style={{display:"inline-block",marginTop:8}} href="/dashboard/usuarios">Configurar usuarios →</Link>}
       </div>
     </aside>
     <main className="main">{children}</main>
+    <PendingMentionsWidget activeUser={activeUser}/>
     <FeedbackWidget/>
   </div>;
 }

@@ -250,6 +250,9 @@ export type TaskComment = {
   body: string;
   createdAt: string;
   mentions: string[];
+  status?: "open" | "resolved";
+  resolvedAt?: string;
+  resolvedBy?: string;
 };
 
 export type ReferenceFile = {
