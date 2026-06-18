@@ -5,22 +5,26 @@ import {
   Brand,
   ContentRequest,
   ReferenceFile,
+  PlatformUser,
   areas,
   getOperationalStatus,
   hasMaterial,
   isImageFile,
   listUniqueBrands,
   listRequests,
+  listUsers,
+  organizationTeam,
   priorities,
   updateRequest,
   deleteRequest
 } from "@/lib/data";
 
-const team = ["Ana Diseño","Luis Diseño","Carlos Editor","Mariana Editora","Pedro Video","Mafer KAM","Rodrigo"];
+const fallbackTeam = organizationTeam.map(user=>user.name);
 
 export default function AssignmentPage(){
   const [items,setItems]=useState<ContentRequest[]>([]);
   const [brands,setBrands]=useState<Brand[]>([]);
+  const [users,setUsers]=useState<PlatformUser[]>([]);
   const [client,setClient]=useState("all");
   const [area,setArea]=useState("all");
   const [status,setStatus]=useState("all");
@@ -32,14 +36,36 @@ export default function AssignmentPage(){
   const [rejectNote,setRejectNote]=useState("");
   const [deleteModal,setDeleteModal]=useState(false);
   const [deleteConfirm,setDeleteConfirm]=useState("");
+  const [bulkAssignee,setBulkAssignee]=useState("");
+  const [sort,setSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"batch",direction:"asc"});
 
-  async function load(){setItems(await listRequests());setBrands(await listUniqueBrands())}
+  async function load(){
+    const [loadedItems, loadedBrands, loadedUsers] = await Promise.all([listRequests(), listUniqueBrands(), listUsers()]);
+    setItems(loadedItems);
+    setBrands(loadedBrands);
+    setUsers(loadedUsers.filter(user=>user.status!=="inactive"));
+  }
   useEffect(()=>{load()},[]);
+
+  const teamOptions = useMemo(()=>Array.from(new Set([...users.map(user=>user.name).filter(Boolean),...fallbackTeam])),[users]);
+
+  function sortValue(item:ContentRequest,key:string){
+    if(key==="batch")return item.batchName || item.batchDueDate || "";
+    if(key==="client")return item.clientName || "";
+    if(key==="request")return `${item.contentType} ${item.objective} ${item.creativeIdea}`;
+    if(key==="dueDate")return item.batchDueDate || item.dueDate || item.publishDate || "";
+    if(key==="status")return getOperationalStatus(item);
+    if(key==="area")return item.suggestedArea || item.assignedArea || "";
+    if(key==="assignedTo")return item.assignedTo || "";
+    return "";
+  }
+
+  function toggleSort(key:string){setSort(prev=>prev.key===key?{key,direction:prev.direction==="asc"?"desc":"asc"}:{key,direction:"asc"});}
 
   const filtered=useMemo(()=>items.filter(item=>{
     const op=getOperationalStatus(item);
     return (client==="all"||item.clientId===client) && (area==="all"||item.suggestedArea===area||item.assignedArea===area) && (status==="all"||op===status);
-  }),[items,client,area,status]);
+  }).sort((a,b)=>String(sortValue(a,sort.key)).localeCompare(String(sortValue(b,sort.key)),"es",{numeric:true})*(sort.direction==="asc"?1:-1)),[items,client,area,status,sort]);
 
   function toggle(id:string){setSelected(selected.includes(id)?selected.filter(x=>x!==id):[...selected,id])}
 
@@ -60,7 +86,7 @@ export default function AssignmentPage(){
     }
     await update(item.id,{
       assignedArea:item.assignedArea||item.suggestedArea,
-      assignedTo:item.assignedTo||team[0],
+      assignedTo:item.assignedTo||teamOptions[0]||"",
       priority:item.priority||"Media",
       dueDate:item.dueDate||item.batchDueDate||item.publishDate,
       status:"asignada"
@@ -89,6 +115,25 @@ export default function AssignmentPage(){
     setDetailDraft({});
     await load();
     alert("Solicitud asignada");
+  }
+
+  async function assignSelected(){
+    if(!selected.length)return alert("Selecciona al menos una solicitud.");
+    if(!bulkAssignee)return alert("Selecciona una persona para asignar.");
+    const selectedItems = items.filter(item=>selected.includes(item.id||""));
+    const blocked = selectedItems.filter(item=>(item.requiresProduction && !item.productionId) || (!item.requiresProduction && !hasMaterial(item)));
+    if(blocked.length)return alert(`${blocked.length} solicitud(es) no están listas para asignar por falta de producción o material.`);
+    await Promise.all(selectedItems.map(item=>updateRequest(item.id!,{
+      assignedArea:item.assignedArea||item.suggestedArea,
+      assignedTo:bulkAssignee,
+      priority:item.priority||"Media",
+      dueDate:item.dueDate||item.batchDueDate||item.publishDate,
+      status:"asignada"
+    })));
+    setSelected([]);
+    setBulkAssignee("");
+    await load();
+    alert("Solicitudes asignadas");
   }
 
   async function rejectRequests(ids:string[], note:string){
@@ -146,11 +191,12 @@ export default function AssignmentPage(){
         <option value="asignada">Asignada</option>
       </select>
       <button className="btn" onClick={load}>Actualizar</button>
-      {selected.length>0 && <a className="btn blue" href="/dashboard/producciones">Crear producción con seleccionadas →</a>}
     </div>
 
     {selected.length>0 && <div className="bulk-actions">
       <span className="pill">{selected.length} seleccionada(s)</span>
+      <select value={bulkAssignee} onChange={e=>setBulkAssignee(e.target.value)}><option value="">Asignar seleccionadas a...</option>{teamOptions.map(name=><option key={name}>{name}</option>)}</select>
+      <button className="btn blue" onClick={assignSelected}>Asignar seleccionadas</button>
       <button className="btn" onClick={()=>setRejectModal(true)}>Rebotar seleccionadas</button>
       <button className="btn red" onClick={()=>setDeleteModal(true)}>Eliminar seleccionadas</button>
     </div>}
@@ -159,11 +205,12 @@ export default function AssignmentPage(){
       <div className="card">
         <h3>Solicitudes para asignar</h3>
         <div className="table-wrap"><table className="table">
-          <thead><tr><th></th><th>Solicitud</th><th>Límite lote</th><th>Estado</th><th>Área</th><th>Asignación</th><th></th></tr></thead>
+          <thead><tr><th><input type="checkbox" checked={filtered.length>0 && filtered.every(item=>selected.includes(item.id!))} onChange={e=>setSelected(e.target.checked?filtered.map(item=>item.id!).filter(Boolean):[])}/></th><th><SortButton label="Lote" active={sort.key==="batch"} direction={sort.direction} onClick={()=>toggleSort("batch")}/></th><th><SortButton label="Solicitud" active={sort.key==="request"} direction={sort.direction} onClick={()=>toggleSort("request")}/></th><th><SortButton label="Límite lote" active={sort.key==="dueDate"} direction={sort.direction} onClick={()=>toggleSort("dueDate")}/></th><th><SortButton label="Estado" active={sort.key==="status"} direction={sort.direction} onClick={()=>toggleSort("status")}/></th><th><SortButton label="Área" active={sort.key==="area"} direction={sort.direction} onClick={()=>toggleSort("area")}/></th><th><SortButton label="Asignación" active={sort.key==="assignedTo"} direction={sort.direction} onClick={()=>toggleSort("assignedTo")}/></th><th></th></tr></thead>
           <tbody>{filtered.map(item=>{
             const op=getOperationalStatus(item);
             return <tr key={item.id}>
               <td><input type="checkbox" checked={selected.includes(item.id!)} onChange={()=>toggle(item.id!)}/></td>
+              <td><strong>{item.batchName||"Sin lote"}</strong><br/><span className="mini">#{item.number||"--"} de {item.total||"--"}</span></td>
               <td><strong>{item.clientName}</strong><br/><span>{item.contentType} · {item.objective}</span><br/><span className="mini">{item.creativeIdea}</span><br/><span className="mini">Publica: {item.publishDate||"Sin fecha"}</span>{item.rejectionNote && <div className="reject-note">Rebotada: {item.rejectionNote}</div>}</td>
               <td><strong>{item.batchDueDate||item.dueDate||"Sin fecha"}</strong><br/><span className="mini">Entrega operativa</span></td>
               <td><StatusPill status={op}/></td>
@@ -171,7 +218,7 @@ export default function AssignmentPage(){
               <td>
                 <select value={item.assignedArea||item.suggestedArea||"Diseño"} onChange={e=>item.id&&update(item.id,{assignedArea:e.target.value})}>{areas.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
-                <select value={item.assignedTo||""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})}><option value="">Sin asignar</option>{team.map(x=><option key={x}>{x}</option>)}</select>
+                <select value={item.assignedTo||""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})}><option value="">Sin asignar</option>{teamOptions.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
                 <select value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select>
               </td>
@@ -183,7 +230,7 @@ export default function AssignmentPage(){
 
       <aside className="card">
         <h3>{editing?"Detalle":"Reglas"}</h3>
-        {editing ? <RequestDetail item={editing} draft={detailDraft} setDraft={setDetailDraft} onAssign={assignFromDetail} onReject={rejectFromDetail} onClose={()=>setEditing(null)} onPreview={setPreview}/> : <div className="draft-list">
+        {editing ? <RequestDetail item={editing} draft={detailDraft} setDraft={setDetailDraft} teamOptions={teamOptions} onAssign={assignFromDetail} onReject={rejectFromDetail} onClose={()=>setEditing(null)} onPreview={setPreview}/> : <div className="draft-list">
           <div className="draft-item"><strong>No requiere producción</strong><span className="mini">Debe traer material/link desde el Creador. Si no, queda bloqueada.</span></div>
           <div className="draft-item"><strong>Requiere producción</strong><span className="mini">Se agrupa en Producciones y no se asigna a ejecución hasta tener material.</span></div>
           <div className="draft-item"><strong>Asignada</strong><span className="mini">Aparece en Calendario por persona, área y fecha.</span></div>
@@ -215,6 +262,10 @@ export default function AssignmentPage(){
 }
 
 
+function SortButton({label,active,direction,onClick}:{label:string;active:boolean;direction:"asc"|"desc";onClick:()=>void}){
+  return <button type="button" className={active?"sort-button active":"sort-button"} onClick={onClick}>{label} {active ? (direction==="asc"?"↑":"↓") : "↕"}</button>;
+}
+
 function splitLinks(value:string){
   return (value||"")
     .split(/\s|,|\n/)
@@ -226,6 +277,7 @@ function RequestDetail({
   item,
   draft,
   setDraft,
+  teamOptions,
   onAssign,
   onReject,
   onClose,
@@ -234,6 +286,7 @@ function RequestDetail({
   item:ContentRequest;
   draft:Partial<ContentRequest>;
   setDraft:(data:Partial<ContentRequest>)=>void;
+  teamOptions:string[];
   onAssign:(item:ContentRequest)=>void;
   onReject:(item:ContentRequest,note:string)=>void;
   onClose:()=>void;
@@ -341,7 +394,7 @@ function RequestDetail({
           <label>Responsable</label>
           <select value={draft.assignedTo||item.assignedTo||""} onChange={e=>setDraft({...draft,assignedTo:e.target.value})}>
             <option value="">Sin asignar</option>
-            {team.map(x=><option key={x}>{x}</option>)}
+            {teamOptions.map(x=><option key={x}>{x}</option>)}
           </select>
         </div>
         <div className="field">

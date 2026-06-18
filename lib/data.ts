@@ -33,8 +33,26 @@ export const requestStates = [
   "cancelada"
 ];
 
-export const areas = ["Diseño", "Audiovisual", "Copy", "Mixto"];
+export const areas = ["Diseño", "Audiovisual"];
 export const priorities = ["Baja", "Media", "Alta", "Urgente"];
+
+export const organizationTeam = [
+  { name: "Fernanda Gutierrez", area: "KAM", role: "Jefa de Key Accounts" },
+  { name: "Gabriela Tapia", area: "KAM", role: "KAM con cuentas asignadas" },
+  { name: "Mauricio Manzanilla", area: "Audiovisual", role: "Fotógrafo y editor de foto" },
+  { name: "Pablo Soberanis", area: "KAM", role: "KAM con cuentas asignadas" },
+  { name: "Paolette Pavon", area: "KAM", role: "KAM con cuentas asignadas" },
+  { name: "Rodrigo Hernandez", area: "Copy", role: "Copy y creador de solicitudes" },
+  { name: "Carlos Juarez", area: "Diseño", role: "Jefe de diseño" },
+  { name: "Monica Lopez", area: "Content", role: "Programa posts y crea solicitudes" },
+  { name: "Roberto Pech", area: "Content", role: "Jefe de content y departamentos creativos" },
+  { name: "Antonio Pool", area: "Audiovisual", role: "Productor audiovisual y editor" },
+  { name: "Icela Zapata", area: "Diseño", role: "Diseñadora" },
+  { name: "Rodrigo Maldonado", area: "KAM", role: "KAM con cuentas asignadas" },
+  { name: "Abril Ordoñez", area: "Audiovisual", role: "Editor audiovisual" },
+  { name: "Jorge David", area: "Diseño", role: "Diseñadora" },
+  { name: "Belinda Irene Lopez Benavides", area: "Audiovisual", role: "Editor audiovisual" }
+];
 
 
 
@@ -392,6 +410,9 @@ export type ContentRequest = {
   total: number;
   contentType: string;
   objective: string;
+  platforms?: string[];
+  visualFormat?: string;
+  feedPlacement?: string;
   topic: string;
   creativeIdea: string;
   referenceLinks: string;
@@ -463,11 +484,13 @@ export type Production = {
   requestIds: string[];
   objective: string;
   location: string;
+  locations?: string;
   scheduledDate: string;
   startTime: string;
   endTime: string;
   producer: string;
   team: string;
+  teamMembers?: string[];
   shotList: string;
   requirements: string;
   notes: string;
@@ -583,6 +606,9 @@ export const emptyRequest: ContentRequest = {
   total: 1,
   contentType: "Reel",
   objective: "Ventas",
+  platforms: [],
+  visualFormat: "",
+  feedPlacement: "",
   topic: "",
   creativeIdea: "",
   referenceLinks: "",

@@ -47,6 +47,7 @@ export default function CreatorPage(){
   const [manual,setManual]=useState<ContentRequest>(emptyRequest);
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
   const [busy,setBusy]=useState(false);
+  const [improvingKey,setImprovingKey]=useState<string>("");
 
   const [aiCount,setAiCount]=useState(5);
   const [startDate,setStartDate]=useState("");
@@ -116,6 +117,55 @@ export default function CreatorPage(){
   }
 
   function setManualField(k:keyof ContentRequest, v:any){setManual({...manual,[k]:v})}
+
+  function clientContext(){
+    if(!client)return "";
+    const brain = client.brandBrain || {};
+    return [
+      client.brandNotes,
+      client.brandPersonality,
+      client.visualStyle,
+      client.contentPillars,
+      brain.brandDescription,
+      brain.tone,
+      brain.typography,
+      (brain.visualStyle||[]).join(", "),
+      (brain.dos||[]).join(", "),
+      (brain.donts||[]).join(", ")
+    ].filter(Boolean).join("\n");
+  }
+
+  async function improveCreativeIdea(target:"manual"|number){
+    const item = target === "manual" ? manual : items[target];
+    if(!item?.creativeIdea?.trim())return alert("Primero escribe una idea creativa base.");
+    const key = target === "manual" ? "manual" : String(target);
+    setImprovingKey(key);
+    try{
+      const response = await fetch("/api/improve-creative-idea",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          clientName: client?.name || item.clientName,
+          clientContext: clientContext(),
+          contentType:item.contentType,
+          objective:item.objective,
+          platforms:item.platforms || [],
+          visualFormat:item.visualFormat || item.feedPlacement || "",
+          creativeIdea:item.creativeIdea,
+          keyMessage:item.keyMessage,
+          cta:item.cta
+        })
+      });
+      const payload = await response.json();
+      if(!response.ok)throw new Error(payload?.error || "No se pudo perfeccionar la idea.");
+      if(target === "manual")setManual({...manual,creativeIdea:payload.creativeIdea || manual.creativeIdea});
+      else updateItem(target,"creativeIdea",payload.creativeIdea || item.creativeIdea);
+    }catch(error){
+      alert(error instanceof Error ? error.message : "No se pudo perfeccionar la idea.");
+    }finally{
+      setImprovingKey("");
+    }
+  }
 
   async function saveDraft(){
     if(!client?.id)return alert("Selecciona cliente");
@@ -189,6 +239,9 @@ export default function CreatorPage(){
         contentType,
         objective,
         topic,
+        platforms: contentType === "TikTok" ? ["TikTok"] : ["Instagram","Facebook"],
+        visualFormat: ["Reel","TikTok"].includes(contentType) ? "Vertical 9:16" : contentType === "Carrusel" ? "Carrusel Feed" : "Cuadrado 1:1",
+        feedPlacement: contentType === "Carrusel" ? "Carrousel para el Feed" : "Feed",
         suggestedArea,
         creativeIdea:`Idea creativa para ${topic} con enfoque en ${objective}.`,
         keyMessage:must,
@@ -347,7 +400,7 @@ export default function CreatorPage(){
           <button className="btn blue" onClick={generateAI}>Agregar propuestas IA</button>
 
           <h3 style={{marginTop:28}}>Manual</h3>
-          <RequestForm request={manual} onChange={setManualField} onUpload={uploadToManual} onPreview={setPreview} onRemove={(kind,index)=> {
+          <RequestForm request={manual} onChange={setManualField} onUpload={uploadToManual} onPreview={setPreview} onImprove={()=>improveCreativeIdea("manual")} improving={improvingKey==="manual"} onRemove={(kind,index)=> {
             if(kind==="reference")setManual({...manual,referenceFiles:manual.referenceFiles.filter((_,i)=>i!==index)});
             else setManual({...manual,materialFiles:manual.materialFiles.filter((_,i)=>i!==index)});
           }}/>
@@ -368,7 +421,8 @@ export default function CreatorPage(){
                     <div className="field"><label>Objetivo</label><select value={item.objective} onChange={e=>updateItem(index,"objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
                     <div className="field"><label>Área sugerida</label><select value={item.suggestedArea} onChange={e=>updateItem(index,"suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
                     <div className="field"><label>Fecha publicación</label><input type="date" value={item.publishDate} onChange={e=>updateItem(index,"publishDate",e.target.value)}/></div>
-                    <div className="field"><label>Idea creativa</label><textarea value={item.creativeIdea} onChange={e=>updateItem(index,"creativeIdea",e.target.value)}/></div>
+                    <PostInfoSelector request={item} onChange={(k,v)=>updateItem(index,k,v)}/>
+                    <CreativeIdeaField value={item.creativeIdea} onChange={(v)=>updateItem(index,"creativeIdea",v)} onImprove={()=>improveCreativeIdea(index)} busy={improvingKey===String(index)}/>
                     <div className="field"><label>Copy In</label><textarea value={item.copyIn} onChange={e=>updateItem(index,"copyIn",e.target.value)}/></div>
                     <OperationalEstimate item={item} rules={costRules} overrides={clientOverrides}/>
                     {error?<span className="pill red">{error}</span>:<span className="pill green">Lista para enviar</span>}
@@ -431,13 +485,14 @@ export default function CreatorPage(){
   </AppShell>
 }
 
-function RequestForm({request,onChange,onUpload,onPreview,onRemove}:{request:ContentRequest;onChange:(k:keyof ContentRequest,v:any)=>void;onUpload:(kind:"reference"|"material",files:FileList|null)=>void;onPreview:(file:ReferenceFile)=>void;onRemove:(kind:"reference"|"material",index:number)=>void;}){
+function RequestForm({request,onChange,onUpload,onPreview,onImprove,improving,onRemove}:{request:ContentRequest;onChange:(k:keyof ContentRequest,v:any)=>void;onUpload:(kind:"reference"|"material",files:FileList|null)=>void;onPreview:(file:ReferenceFile)=>void;onImprove:()=>void;improving:boolean;onRemove:(kind:"reference"|"material",index:number)=>void;}){
   return <div className="form-grid">
     <div className="field"><label>Tipo</label><select value={request.contentType} onChange={e=>onChange("contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Objetivo</label><select value={request.objective} onChange={e=>onChange("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Área sugerida</label><select value={request.suggestedArea} onChange={e=>onChange("suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Fecha publicación</label><input type="date" value={request.publishDate} onChange={e=>onChange("publishDate",e.target.value)}/></div>
-    <div className="field full"><label>Idea creativa</label><textarea value={request.creativeIdea} onChange={e=>onChange("creativeIdea",e.target.value)}/></div>
+    <PostInfoSelector request={request} onChange={onChange}/>
+    <CreativeIdeaField value={request.creativeIdea} onChange={(value)=>onChange("creativeIdea",value)} onImprove={onImprove} busy={improving}/>
     <div className="field full"><label>Copy In</label><textarea value={request.copyIn} onChange={e=>onChange("copyIn",e.target.value)}/></div>
     <div className="field full"><label>Inspiración / referencias</label><textarea value={request.referenceLinks} onChange={e=>onChange("referenceLinks",e.target.value)}/><input type="file" multiple onChange={e=>onUpload("reference",e.target.files)}/><FileList files={request.referenceFiles||[]} onPreview={onPreview} onRemove={(i)=>onRemove("reference",i)}/></div>
     <div className="field full">
@@ -449,6 +504,39 @@ function RequestForm({request,onChange,onUpload,onPreview,onRemove}:{request:Con
       <FileList files={request.materialFiles||[]} onPreview={onPreview} onRemove={(i)=>onRemove("material",i)}/>
     </div>
   </div>
+}
+
+
+const platformOptions = ["Instagram","Facebook","TikTok"];
+const formatOptions = ["Vertical 9:16","Cuadrado 1:1","Carrusel Feed","Horizontal 16:9","Story 9:16"];
+const feedOptions = ["Feed","Carrousel para el Feed","Reel","Story","TikTok"];
+
+function toggleArrayValue(values:string[]|undefined, value:string){
+  const current = values || [];
+  return current.includes(value) ? current.filter(x=>x!==value) : [...current,value];
+}
+
+function PostInfoSelector({request,onChange}:{request:ContentRequest;onChange:(k:keyof ContentRequest,v:any)=>void;}){
+  return <div className="post-info-card full">
+    <div className="post-info-title">Información visual del post</div>
+    <div className="chip-group">
+      {platformOptions.map(option=><button type="button" className={(request.platforms||[]).includes(option)?"chip-btn selected":"chip-btn"} key={option} onClick={()=>onChange("platforms",toggleArrayValue(request.platforms,option))}>{option}</button>)}
+    </div>
+    <div className="chip-group">
+      {formatOptions.map(option=><button type="button" className={request.visualFormat===option?"chip-btn selected":"chip-btn"} key={option} onClick={()=>onChange("visualFormat",option)}>{option}</button>)}
+    </div>
+    <div className="chip-group">
+      {feedOptions.map(option=><button type="button" className={request.feedPlacement===option?"chip-btn selected":"chip-btn"} key={option} onClick={()=>onChange("feedPlacement",option)}>{option}</button>)}
+    </div>
+  </div>;
+}
+
+function CreativeIdeaField({value,onChange,onImprove,busy}:{value:string;onChange:(value:string)=>void;onImprove:()=>void;busy:boolean;}){
+  return <div className="field full creative-field">
+    <label>Idea creativa</label>
+    <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder="Describe la idea base de la pieza. Luego puedes mejorarla con IA."/>
+    <button type="button" className="btn ai-inside" onClick={onImprove} disabled={busy}>{busy?"Mejorando...":"Perfeccionar con IA"}</button>
+  </div>;
 }
 
 function FileList({files,onPreview,onRemove}:{files:ReferenceFile[];onPreview:(file:ReferenceFile)=>void;onRemove:(index:number)=>void;}){
