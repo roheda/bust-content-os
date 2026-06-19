@@ -9,8 +9,7 @@ const commentTargets = ["Content","Key Account","Diseño","Audiovisual","Cliente
 const workStatuses = [
   ["asignada","Asignada"],
   ["en_revision","En revisión"],
-  ["rebotada","Rebotada"],
-  ["pendiente_aprobacion","En aprobación"]
+  ["rebotada","Rebotada"]
 ];
 
 export default function TasksPage(){
@@ -116,9 +115,25 @@ export default function TasksPage(){
 
   const overdueCount = filtered.filter(isOverdue).length;
 
-  function openTask(task:ContentRequest){
-    setSelected(task);
+  async function openTask(task:ContentRequest){
+    const shouldStart = task.status === "asignada";
+    const updatedTask = shouldStart ? {...task,status:"en_revision"} : task;
+    setSelected(updatedTask);
     setFinalLink(task.finalPostLink || "");
+    if(shouldStart && task.id){
+      const nextLog:TaskComment = {
+        id:`${Date.now()}`,
+        author:"Sistema",
+        target:"Interno",
+        body:"Tarea abierta por el responsable. Estado actualizado a En revisión.",
+        mentions:[],
+        createdAt:new Date().toISOString()
+      };
+      const comments = [...(task.comments||[]), nextLog];
+      await updateRequest(task.id,{status:"en_revision",comments});
+      setSelected({...updatedTask,comments});
+      await load();
+    }
   }
 
   function openTaskById(taskId:string){
@@ -144,6 +159,7 @@ export default function TasksPage(){
 
   async function setStatus(status:string){
     if(!selected?.id)return;
+    if(status === "pendiente_aprobacion")return alert("Para enviar a aprobación usa el botón Enviar a aprobación y pega el link final.");
     const label = statusLabel(status);
     const nextLog:TaskComment = {
       id: `${Date.now()}`,
@@ -346,7 +362,7 @@ export default function TasksPage(){
             </div> : <div className="finalize-box">
               <h4>Tarea cerrada</h4>
               <p className="mini">Esta tarea ya fue aprobada y finalizada. Se conserva como historial.</p>
-              {selected.finalPostLink && <a className="link-card" href={selected.finalPostLink} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a>}
+              {selected.finalPostLink && <a className="link-card" href={normalizeExternalUrl(selected.finalPostLink)} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a>}
             </div>}
 
             <div className="detail-section">
@@ -463,6 +479,12 @@ function normalizeForMention(value:string){
 
 function makeMentionToken(value:string){
   return normalizeForMention(value).slice(0,40);
+}
+
+function normalizeExternalUrl(value?:string){
+  const url=(value||"").trim();
+  if(!url)return "#";
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
 function statusLabel(status:string){

@@ -345,7 +345,7 @@ export default function ApprovalsPage(){
               <strong>{item.contentType} · {item.objective}</strong>
               <p className="mini">Responsable: {item.assignedTo||"Sin responsable"} · Publica: {item.publishDate||"Sin fecha"}</p>
               <p className="mini">{item.creativeIdea}</p>
-              {item.finalPostLink && <a className="link-card" href={item.finalPostLink} target="_blank"><span>{item.finalPostLink}</span><small>Abrir →</small></a>}
+              {item.finalPostLink && <a className="link-card" href={normalizeExternalUrl(item.finalPostLink)} target="_blank"><span>{item.finalPostLink}</span><small>Abrir →</small></a>}
             </div>
             <button className="btn" onClick={()=>{setSelected(item);setReason(reasons[0]);setNotes("")}}>Revisar</button>
           </div>
@@ -359,7 +359,7 @@ export default function ApprovalsPage(){
       <p><strong>{selected.clientName} · {selected.contentType}</strong></p>
       <p className="mini">{selected.creativeIdea}</p>
       <p><strong>Link final:</strong></p>
-      {selected.finalPostLink ? <a className="link-card" href={selected.finalPostLink} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a> : <p className="mini">Sin link final.</p>}
+      {selected.finalPostLink ? <a className="link-card" href={normalizeExternalUrl(selected.finalPostLink)} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a> : <p className="mini">Sin link final.</p>}
 
       <div className="field">
         <label>Motivo de no aprobación</label>
@@ -398,26 +398,21 @@ export default function ApprovalsPage(){
             <p className="mini">{group.batchName} · {group.items.length} aprobada(s)</p>
           </div>
         </div>
-        {group.items.map(item=><div className="copyout-card" key={item.id}>
-          <strong>{item.contentType} · {item.objective}</strong>
-          <p className="mini">Responsable: {item.assignedTo||"Sin responsable"} · Publica: {item.publishDate||"Sin fecha"}</p>
-          <p className="mini">{item.creativeIdea}</p>
-          {item.finalPostLink && <a className="link-card" href={item.finalPostLink} target="_blank"><span>{item.finalPostLink}</span><small>Abrir →</small></a>}
-          <div className="field">
-            <label>Copy Out final</label>
-            <textarea value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Escribe el copy final que se publicará."/>
-          </div>
-          <div className="copyout-ai-panel">
+        {group.items.map(item=><div className="copyout-card copyout-compact" key={item.id}>
+          <div className="copyout-compact-head">
             <div>
-              <strong>Mejora IA de Copy Out</strong>
-              <p className="mini">Usa la idea, objetivo, plataforma, buyer persona y {approvedCopyExamples(item).length} copy(s) finalizados del cliente como base de aprendizaje.</p>
+              <strong>{item.contentType} · {item.objective}</strong>
+              <p className="mini">Responsable: {item.assignedTo||"Sin responsable"} · Publica: {item.publishDate||"Sin fecha"} · IA usa {approvedCopyExamples(item).length} copy(s) previos</p>
             </div>
-            <button className="btn" type="button" onClick={()=>improveCopyOut(item)} disabled={improvingCopyId===item.id}>
-              <span className="ai-inside-badge" aria-hidden="true"><span className="spark-main">✦</span><span className="spark-mini">✦</span><span>AI</span></span>
-              {improvingCopyId===item.id ? "Mejorando..." : "Mejorar copy con AI"}
-            </button>
+            {item.finalPostLink ? <a className="btn" href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : <span className="pill amber">Sin link</span>}
           </div>
-          <button className="btn blue" onClick={()=>saveCopyOut(item)}>Guardar Copy Out y finalizar</button>
+          <div className="copyout-inline-editor">
+            <textarea value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Copy Out final"/>
+            <button className="btn ai-only-button" type="button" aria-label="Mejorar copy con AI" title="Mejorar copy con AI" onClick={()=>improveCopyOut(item)} disabled={improvingCopyId===item.id}>
+              <span className="ai-inside-badge" aria-hidden="true"><span className="spark-main">✦</span><span className="spark-mini">✦</span><span>AI</span></span>
+            </button>
+            <button className="btn blue" onClick={()=>saveCopyOut(item)}>Guardar y finalizar</button>
+          </div>
         </div>)}
       </div>)}
 
@@ -468,7 +463,7 @@ export default function ApprovalsPage(){
           <span>{finalPlatformsLabel(item)}</span>
           <span className="final-copyout">{item.copyOut || "Sin Copy Out"}</span>
           <span>{item.publishDate||"Sin fecha"}</span>
-          <span>{item.finalPostLink ? <a href={item.finalPostLink} target="_blank">Abrir link</a> : "Sin link"}</span>
+          <span>{item.finalPostLink ? <a href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : "Sin link"}</span>
           <span><span className="pill green">{item.status}</span></span>
         </div>)}
       </div>)}
@@ -489,6 +484,12 @@ export default function ApprovalsPage(){
       </table></div>
     </section>}
   </AppShell>
+}
+
+function normalizeExternalUrl(value?:string){
+  const url=(value||"").trim();
+  if(!url)return "#";
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
 function groupByClientBatch(items:ContentRequest[]){

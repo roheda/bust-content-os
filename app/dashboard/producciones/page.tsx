@@ -14,6 +14,7 @@ const empty: Production = {
   scheduledDate: "",
   startTime: "",
   endTime: "",
+  durationMinutes: 120,
   producer: "",
   team: "",
   teamMembers: [],
@@ -75,10 +76,41 @@ export default function ProductionsPage(){
     return (value||"").toLowerCase().includes(search.trim().toLowerCase());
   }
 
+  function toTitleCase(value:string){
+    return (value||"").toLowerCase().replace(/\s+/g," ").trim().split(" ").map(part=>part ? part.charAt(0).toUpperCase()+part.slice(1) : "").join(" ");
+  }
+
+  function getUserArea(user:PlatformUser){
+    return String(user.department || user.roleLabel || user.roleKey || "").toLowerCase();
+  }
+
+  function isProductionTeamName(name:string){
+    const normalized = name.toLowerCase();
+    const user = users.find(u=>toTitleCase(u.name||"").toLowerCase()===normalized || (u.email||"").toLowerCase()===normalized);
+    if(user)return /audiovisual|producci[oó]n|editor|foto|video/.test(getUserArea(user));
+    const member = organizationTeam.find(m=>toTitleCase(m.name).toLowerCase()===normalized);
+    return member ? /audiovisual|producci[oó]n|editor|foto|video/.test(`${member.area} ${member.role}`.toLowerCase()) : true;
+  }
+
+  function addMinutesToTime(time:string, minutes:number){
+    if(!time)return "";
+    const [h,m] = time.split(":").map(Number);
+    if(Number.isNaN(h)||Number.isNaN(m))return "";
+    const total = h*60 + m + Number(minutes||0);
+    const next = ((total % (24*60)) + (24*60)) % (24*60);
+    return `${String(Math.floor(next/60)).padStart(2,"0")}:${String(next%60).padStart(2,"0")}`;
+  }
+
+  function durationLabel(minutes:number){
+    const h=Math.floor(minutes/60);
+    const m=minutes%60;
+    return `${h?`${h} h`:""}${h&&m?" ":""}${m?`${m} min`:""}` || "0 min";
+  }
+
   const teamOptions = useMemo(()=>{
-    const fromUsers = users.map(user=>user.name).filter(Boolean);
-    const fallback = organizationTeam.map(user=>user.name);
-    return Array.from(new Set([...fromUsers,...fallback]));
+    const fromUsers = users.map(user=>toTitleCase(user.name||"")).filter(Boolean);
+    const fallback = organizationTeam.map(user=>toTitleCase(user.name));
+    return Array.from(new Map([...fromUsers,...fallback].filter(Boolean).filter(isProductionTeamName).map(name=>[name.toLowerCase(),name])).values()).sort((a,b)=>a.localeCompare(b,"es"));
   },[users]);
 
   function getInternalDueDate(item:ContentRequest){return item.dueDate || item.batchDueDate || "";}
@@ -144,11 +176,17 @@ export default function ProductionsPage(){
   function openModal(){
     if(!selected.length)return alert("Selecciona solicitudes para producción");
     const first = selectedRequests[0];
-    setForm({...empty,clientId:first.clientId,clientName:first.clientName,title:`Producción ${first.clientName} · ${new Date().toLocaleDateString("es-MX")}`,requestIds:selected,objective:selectedRequests.map(x=>x.creativeIdea).join("\n"),shotList:selectedRequests.map(x=>`${requestTypeLabel(x)} · ${x.contentType}: ${x.creativeIdea}`).join("\n"),locations:""});
+    setForm({...empty,clientId:first.clientId,clientName:first.clientName,title:`Producción ${first.clientName} · ${new Date().toLocaleDateString("es-MX")}`,requestIds:selected,objective:"",shotList:"",requirements:"",locations:""});
     setShowModal(true);
   }
 
-  function set(k:keyof Production,v:any){setForm({...form,[k]:v})}
+  function set(k:keyof Production,v:any){
+    const next:any = {...form,[k]:v};
+    if(k==="startTime" || k==="durationMinutes"){
+      next.endTime = addMinutesToTime(k==="startTime" ? v : form.startTime, Number(k==="durationMinutes" ? v : form.durationMinutes || 120));
+    }
+    setForm(next);
+  }
 
   function toggleTeamMember(name:string){
     const current = form.teamMembers || [];
@@ -157,7 +195,7 @@ export default function ProductionsPage(){
   }
 
   async function submit(){
-    if(!form.title||!form.scheduledDate||!form.startTime||!form.endTime||!(form.locations||form.location)||!form.producer||!(form.teamMembers||[]).length||!form.requirements||!form.shotList)return alert("Todos los campos de la producción son obligatorios.");
+    if(!form.title||!form.scheduledDate||!form.startTime||!form.endTime||!(form.locations||form.location)||!form.producer||!(form.teamMembers||[]).length||!form.objective||!form.requirements||!form.shotList)return alert("Todos los campos de la producción son obligatorios.");
     const ref = await saveProduction(form);
     await Promise.all(form.requestIds.map(id=>updateRequest(id,{productionId:ref.id,productionName:form.title,status:"produccion_programada"})));
     setSelected([]);
@@ -198,31 +236,49 @@ export default function ProductionsPage(){
     setEditing({...editing,materialFiles:(editing.materialFiles||[]).filter((_,i)=>i!==index)});
   }
 
+  async function persistEditingMaterial(){
+    if(!editing?.id)return;
+    await updateProduction(editing.id,{...editing});
+  }
+
   async function saveProductionMaterial(markDelivered=false){
     if(!editing?.id)return;
-    const nextStatus = markDelivered ? "material_entregado" : editing.status;
-    await updateProduction(editing.id,{...editing,status:nextStatus});
-    if(markDelivered){
-      const missingLinks = (editing.requestIds||[]).filter(id => !((editing.materialLinksByRequest||{})[id] || editing.materialLinks || "").trim());
-      if(missingLinks.length){
-        alert("Falta link de material en una o más solicitudes. Agrega link por post o un link general de respaldo.");
-        return;
-      }
-
-      await Promise.all((editing.requestIds||[]).map(id=>{
-        const individualLink = (editing.materialLinksByRequest||{})[id] || "";
-        const finalLink = individualLink.trim() || editing.materialLinks || "";
-        return updateRequest(id,{
-          materialAvailable:true,
-          materialLinks:finalLink,
-          materialFiles:[],
-          status:"material_listo"
-        });
-      }));
+    if(!markDelivered){
+      await persistEditingMaterial();
+      await load();
+      return;
     }
+    if(!(editing.materialLinks||"").trim())return alert("Agrega el link general de material de la producción.");
+    const missingLinks = (editing.requestIds||[]).filter(id => !((editing.materialLinksByRequest||{})[id] || "").trim());
+    if(missingLinks.length){
+      alert("Falta link específico de material en una o más publicaciones.");
+      return;
+    }
+    const nextStatus = "material_entregado";
+    await updateProduction(editing.id,{...editing,status:nextStatus});
+    await Promise.all((editing.requestIds||[]).map(id=>{
+      const req = requests.find(x=>x.id===id);
+      const individualLink = (editing.materialLinksByRequest||{})[id] || "";
+      const comments = [...(req?.comments||[]), {
+        id:`${Date.now()}-${id}`,
+        author:"Sistema",
+        target:"Asignación",
+        body:"Material de producción entregado. Esta solicitud ya puede asignarse.",
+        mentions:["@asignacion"],
+        status:"open" as const,
+        createdAt:new Date().toISOString()
+      }];
+      return updateRequest(id,{
+        materialAvailable:true,
+        materialLinks:individualLink.trim(),
+        materialFiles:[],
+        status:"material_listo",
+        comments
+      });
+    }));
     setEditing(null);
     await load();
-    alert(markDelivered?"Material entregado y solicitudes desbloqueadas":"Producción actualizada");
+    alert("Material entregado y solicitudes desbloqueadas");
   }
 
   return <AppShell active="Producciones">
@@ -257,15 +313,15 @@ export default function ProductionsPage(){
         </tr></thead><tbody>{productionRequests.map(x=><tr key={x.id} className="clickable-row" onClick={()=>setPendingDetail(x)}>
           <td onClick={event=>event.stopPropagation()}><input type="checkbox" checked={selected.includes(x.id!)} onChange={()=>toggle(x.id!)}/></td>
           <td><strong>{x.batchName||"Sin lote"}</strong><br/><span className="mini">Entrega interna: {getInternalDueDate(x)||"Sin fecha"}</span></td>
-          <td><strong>{x.clientName}</strong><br/>{x.contentType} · {x.objective}<br/><span className="mini">{x.creativeIdea}</span></td>
-          <td>{x.productionNotes||"Sin notas"}</td>
+          <td><strong>{x.clientName}</strong><br/>{x.contentType} · {x.objective}<br/><span className="mini text-clamp-2">{x.creativeIdea}</span></td>
+          <td><span className="text-clamp-2">{x.productionNotes||"Sin notas"}</span></td>
           <td>{x.publishDate||"Sin fecha"}</td>
           <td><span className={isVideoRequest(x)?"pill orange":"pill blue"}>{requestTypeLabel(x)}</span></td>
         </tr>)}</tbody></table></div>{!productionRequests.length && <p className="mini">No hay solicitudes pendientes con esos filtros.</p>}
       </div>
       <aside className="card">
         <h3>Seleccionadas</h3>
-        {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{requestTypeLabel(x)} · {x.contentType}</strong><span className="mini">{x.creativeIdea}</span></div>)}
+        {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{requestTypeLabel(x)} · {x.contentType}</strong><span className="mini text-clamp-2">{x.creativeIdea}</span></div>)}
         {!selectedRequests.length && <p className="mini">Selecciona solicitudes para crear una producción.</p>}
       </aside>
     </section>
@@ -303,44 +359,37 @@ export default function ProductionsPage(){
       <ProductionBrief production={brief} requests={requests}/>
     </div></div>}
 
-    {editing && <div className="modal-backdrop"><div className="modal-card">
+    {editing && <section className="card production-material-inline" style={{marginTop:24}}>
       <h2>Completar material de producción</h2>
       <p className="mini">{editing.title} · {editing.clientName}</p>
       <div className="production-material-box">
         <div className="field">
-          <label>Link general del material producido</label>
-          <textarea value={editing.materialLinks||""} onChange={e=>setEditingField("materialLinks",e.target.value)} placeholder="Carpeta general de Drive, Dropbox, Frame, WeTransfer, etc."/>
-          <div className="material-mode-note">Este link sirve como respaldo general. Lo ideal es llenar también el link específico de cada post.</div>
+          <label>Link general del material producido *</label>
+          <input value={editing.materialLinks||""} onChange={e=>setEditingField("materialLinks",e.target.value)} onBlur={persistEditingMaterial} placeholder="Carpeta general de Drive, Dropbox, Frame, WeTransfer, etc."/>
+          <div className="material-mode-note">Se guarda al salir del campo. Además, cada publicación debe tener su link específico.</div>
         </div>
       </div>
 
       <h3>Links por solicitud / post</h3>
-      <div className="per-post-material-list">
+      <div className="table-wrap"><table className="table material-links-table"><thead><tr><th>Publicación</th><th>Idea</th><th>Fecha</th><th>Link específico *</th><th>Acción</th></tr></thead><tbody>
         {(editing.requestIds||[]).map(id=>{
           const req=requests.find(x=>x.id===id);
-          return <div className="per-post-material-card" key={id}>
-            <strong>{req?.contentType||"Solicitud"} · {req?.objective||""}</strong>
-            <span className="mini">{req?.creativeIdea||id}</span>
-            <span className="mini">Publica: {req?.publishDate||"Sin fecha"}</span>
-            <input value={(editing.materialLinksByRequest||{})[id]||""} onChange={e=>setPostMaterialLink(id,e.target.value)} placeholder="Link exacto del material para esta pieza"/>
-          </div>
+          const link=(editing.materialLinksByRequest||{})[id]||"";
+          return <tr key={id}>
+            <td><strong>{req?.contentType||"Solicitud"} · {req?.objective||""}</strong></td>
+            <td><span className="mini text-clamp-2">{req?.creativeIdea||id}</span></td>
+            <td>{req?.publishDate||"Sin fecha"}</td>
+            <td><input value={link} onChange={e=>setPostMaterialLink(id,e.target.value)} onBlur={persistEditingMaterial} placeholder="Link exacto del material para esta pieza"/></td>
+            <td><a className="btn" href={link || "https://drive.google.com"} target="_blank">Anexar imagen</a></td>
+          </tr>
         })}
-      </div>
+      </tbody></table></div>
 
-      <div className="production-material-box">
-        <div className="field">
-          <label>Archivos generales opcionales</label>
-          <input type="file" multiple onChange={e=>uploadProductionMaterial(e.target.files)}/>
-          <span className="mini">{uploading?"Subiendo...":""}</span>
-        </div>
-        <FileList files={editing.materialFiles||[]} onPreview={setPreview} onRemove={removeProductionFile}/>
-      </div>
       <div style={{display:"flex",gap:12,marginTop:16,flexWrap:"wrap"}}>
-        <button className="btn" onClick={()=>saveProductionMaterial(false)}>Guardar material</button>
-        <button className="btn blue" onClick={()=>saveProductionMaterial(true)}>Marcar material entregado</button>
+        <button className="btn blue" onClick={()=>saveProductionMaterial(true)}>Marcar como material entregado</button>
         <button className="btn red" onClick={()=>setEditing(null)}>Cerrar</button>
       </div>
-    </div></div>}
+    </section>}
 
     {pendingDetail && <div className="modal-backdrop"><div className="modal-card">
       <h2>Solicitud de producción</h2>
@@ -358,12 +407,14 @@ export default function ProductionsPage(){
         <div className="field full"><label>Título *</label><input value={form.title} onChange={e=>set("title",e.target.value)}/></div>
         <div className="field"><label>Cliente</label><input value={form.clientName} disabled/></div>
         <div className="field"><label>Fecha producción *</label><input type="date" value={form.scheduledDate} onChange={e=>set("scheduledDate",e.target.value)}/></div>
-        <div className="field"><label>Hora inicio *</label><input type="time" value={form.startTime} onChange={e=>set("startTime",e.target.value)}/></div>
-        <div className="field"><label>Hora fin *</label><input type="time" value={form.endTime} onChange={e=>set("endTime",e.target.value)}/></div>
+        <div className="field"><label>Hora de inicio *</label><input type="time" step="1800" value={form.startTime} onChange={e=>set("startTime",e.target.value)}/></div>
+        <div className="field"><label>Duración *</label><select value={String(form.durationMinutes||120)} onChange={e=>set("durationMinutes" as keyof Production, Number(e.target.value))}>{[30,60,90,120,150,180,210,240,300,360,420,480].map(minutes=><option key={minutes} value={minutes}>{durationLabel(minutes)}</option>)}</select></div>
+        <div className="field"><label>Hora de finalización</label><input value={form.endTime||""} disabled placeholder="Se calcula sola"/></div>
+        <div className="field full"><label>Objetivo general *</label><textarea value={form.objective} onChange={e=>set("objective",e.target.value)} placeholder="Escribe manualmente el objetivo de la producción."/></div>
         <div className="field full"><label>Locaciones *</label><textarea value={form.locations||form.location||""} onChange={e=>{set("locations",e.target.value);set("location",e.target.value)}} placeholder="Puedes agregar una o varias locaciones, una por línea."/></div>
         <div className="field"><label>Responsable de producción *</label><select value={form.producer} onChange={e=>set("producer",e.target.value)}><option value="">Seleccionar responsable</option>{teamOptions.map(name=><option key={name}>{name}</option>)}</select></div>
         <div className="field full"><label>Equipo que asiste *</label><div className="client-chip-grid">{teamOptions.map(name=><button type="button" className={(form.teamMembers||[]).includes(name)?"chip-btn selected":"chip-btn"} key={name} onClick={()=>toggleTeamMember(name)}>{name}</button>)}</div></div>
-        <div className="field full"><label>Observaciones *</label><textarea value={form.shotList} onChange={e=>set("shotList",e.target.value)} placeholder="Observaciones, tomas especiales, secuencia o detalles relevantes de los posts."/></div>
+        <div className="field full"><label>Observaciones *</label><textarea value={form.shotList} onChange={e=>set("shotList",e.target.value)} placeholder="Observaciones generales, tomas especiales, logística o detalles relevantes. No se llena automáticamente."/></div>
         <div className="field full"><label>Requerimientos *</label><textarea value={form.requirements} onChange={e=>set("requirements",e.target.value)} placeholder="Equipo, props, permisos, modelos, productos, horarios, vestuario, etc."/></div>
       </div>
       <h3>Solicitudes incluidas</h3>

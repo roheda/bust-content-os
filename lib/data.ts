@@ -517,6 +517,7 @@ export type Production = {
   scheduledDate: string;
   startTime: string;
   endTime: string;
+  durationMinutes?: number;
   producer: string;
   team: string;
   teamMembers?: string[];

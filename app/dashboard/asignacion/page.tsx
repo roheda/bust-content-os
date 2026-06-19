@@ -373,7 +373,7 @@ export default function AssignmentPage(){
             return <tr key={item.id} className={!assignable ? "row-muted" : ""}>
               <td><input type="checkbox" checked={selected.includes(item.id!)} disabled={!assignable} title={assignable ? "Lista para asignar" : getAssignBlockReason(item)} onChange={()=>toggle(item.id!)}/></td>
               <td><strong>{item.batchName||"Sin lote"}</strong><br/><span className="mini">#{item.number||"--"} de {item.total||"--"}</span></td>
-              <td><strong>{item.clientName}</strong><br/><span>{item.contentType} · {item.objective}</span><br/><span className="mini">{item.creativeIdea}</span><br/><span className="mini">Publica: {item.publishDate||"Sin fecha"}</span>{item.rejectionNote && <div className="reject-note">Rebotada: {item.rejectionNote}</div>}</td>
+              <td><strong>{item.clientName}</strong><br/><span>{item.contentType} · {item.objective}</span><br/><span className="mini text-clamp-2">{item.creativeIdea}</span><br/><span className="mini">Publica: {item.publishDate||"Sin fecha"}</span>{item.rejectionNote && <div className="reject-note text-clamp-2">Rebotada: {item.rejectionNote}</div>}</td>
               <td><strong>{item.batchDueDate||item.dueDate||"Sin fecha"}</strong><br/><span className="mini">Entrega operativa</span></td>
               <td><StatusPill status={op}/>{!assignable && <p className="mini warn-text">{getAssignBlockReason(item)}</p>}</td>
               <td>{item.suggestedArea}</td>

@@ -508,6 +508,7 @@ export default function CreatorPage(){
           {!items.length ? <div className="empty">Todavía no hay solicitudes.</div> :
           <div className="table-wrap">
             <table className="table creator-request-table">
+              <colgroup><col className="creator-col-main"/><col className="creator-col-prod"/><col className="creator-col-ref"/><col className="creator-col-actions"/></colgroup>
               <thead><tr><th>Solicitud</th><th>Producción / Material</th><th>Referencias</th><th>Acciones</th></tr></thead>
               <tbody>{items.map((item,index)=>{
                 const error = validateCreatorItem(item);
@@ -594,7 +595,7 @@ export default function CreatorPage(){
 }
 
 function RequestForm({request,buyerPersonas,onPersonaChange,onChange,onUpload,onPreview,onImprove,improving,onRemove}:{request:ContentRequest;buyerPersonas:ClientBuyerPersona[];onPersonaChange:(persona?:ClientBuyerPersona)=>void;onChange:(k:keyof ContentRequest,v:any)=>void;onUpload:(kind:"reference"|"material",files:FileList|null)=>void;onPreview:(file:ReferenceFile)=>void;onImprove:()=>void;improving:boolean;onRemove:(kind:"reference"|"material",index:number)=>void;}){
-  return <div className="form-grid">
+  return <div className="request-form-grid">
     <div className="field"><label>Tipo</label><select value={request.contentType} onChange={e=>onChange("contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Objetivo</label><select value={request.objective} onChange={e=>onChange("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Área sugerida</label><select value={request.suggestedArea} onChange={e=>onChange("suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
@@ -678,9 +679,8 @@ function CreativeIdeaField({value,onChange,onImprove,busy}:{value:string;onChang
   return <div className="field full creative-field">
     <label>Idea creativa</label>
     <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder="Describe la idea base de la pieza. Luego puedes mejorarla con IA."/>
-    <button type="button" className="btn ai-inside" onClick={onImprove} disabled={busy}>
+    <button type="button" className="btn ai-inside ai-only-button" aria-label={busy?"Mejorando idea con AI":"Mejorar idea con AI"} title={busy?"Mejorando idea con AI":"Mejorar idea con AI"} onClick={onImprove} disabled={busy}>
       <span className="ai-inside-badge" aria-hidden="true"><span className="spark-main">✦</span><span className="spark-mini">✦</span><span>AI</span></span>
-      <span>{busy?"Mejorando idea...":"Mejorar idea con AI"}</span>
     </button>
   </div>;
 }
