@@ -8,7 +8,27 @@ import FeedbackWidget from "./FeedbackWidget";
 import PendingMentionsWidget from "./PendingMentionsWidget";
 import { PlatformUser, canUser, findUserByAuth, listUsers, markUserLogin, platformModules } from "@/lib/data";
 
-const items = platformModules.map((module) => [module.label, module.route, module.key] as const);
+const moduleIcons: Record<string, string> = {
+  dashboard: "⌘",
+  clientes: "◎",
+  creador: "+",
+  asignacion: "↗",
+  producciones: "◉",
+  tareas: "✓",
+  generador: "✦",
+  aprobaciones: "●",
+  reportes: "▤",
+  configuracion: "⚙",
+  usuarios: "☻"
+};
+
+const moduleGroups = [
+  { label: "Operación", keys: ["dashboard", "clientes", "creador", "asignacion", "producciones", "tareas"] },
+  { label: "IA y revisión", keys: ["generador", "aprobaciones"] },
+  { label: "Dirección", keys: ["reportes", "configuracion", "usuarios"] }
+];
+
+const items = platformModules.map((module) => [module.label, module.route, module.key, module.description] as const);
 const authEnforced = process.env.NEXT_PUBLIC_AUTH_ENFORCED === "true";
 
 export default function AppShell({
@@ -92,9 +112,13 @@ export default function AppShell({
   }
 
   const visibleItems = useMemo(()=>items.filter(([, , key])=>canUser(activeUser,key,"view")),[activeUser]);
+  const groupedItems = useMemo(()=>moduleGroups.map(group=>({
+    ...group,
+    items: visibleItems.filter(([, , key])=>group.keys.includes(key))
+  })).filter(group=>group.items.length>0),[visibleItems]);
 
   if(loading) {
-    return <div className="shell-loading"><div className="card"><p className="eyebrow">BUST Content OS</p><h2>Cargando permisos...</h2></div></div>;
+    return <div className="shell-loading"><div className="card"><p className="eyebrow">BUST Content OS</p><h2>Cargando permisos...</h2><p className="mini">Preparando tu espacio operativo.</p></div></div>;
   }
 
   if(authEnforced && accessError) {
@@ -102,22 +126,45 @@ export default function AppShell({
   }
 
   return <div className="shell">
-    <aside className="sidebar">
+    <aside className="sidebar" aria-label="Navegación principal">
       <div>
-        <h1 className="logo">BUST<br/><span>Content OS</span></h1>
-        <nav className="nav">
-          {visibleItems.map(([label, href]) => <Link className={active === label ? "active" : ""} href={href} key={href}>{label}</Link>)}
+        <Link href="/dashboard" className="brand-mark" aria-label="Ir al dashboard">
+          <span className="brand-word">BUST</span>
+          <span className="brand-subtitle">Content OS</span>
+        </Link>
+        <nav className="nav" aria-label="Módulos">
+          {groupedItems.map(group=><div className="nav-group" key={group.label}>
+            <p className="nav-section-label">{group.label}</p>
+            {group.items.map(([label, href, key, description]) => {
+              const isActive = active === label || pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
+              return <Link
+                className={isActive ? "active" : ""}
+                href={href}
+                key={href}
+                title={description}
+                aria-current={isActive ? "page" : undefined}
+              >
+                <span className="nav-icon" aria-hidden="true">{moduleIcons[key] || "•"}</span>
+                <span className="nav-label">{label}</span>
+              </Link>;
+            })}
+          </div>)}
         </nav>
       </div>
       <div className="userbox">
-        <strong>{activeUser?.name || firebaseUser?.email || "BUST Content OS"}</strong><br/>
-        <span>{activeUser?.roleLabel || "Sistema oficial"}</span>
-        {!authEnforced && users.length>0 && <select className="sidebar-user-select" value={activeUser?.id||""} onChange={e=>chooseUser(e.target.value)}>
+        <div className="user-profile-row">
+          <span className="user-avatar" aria-hidden="true">{(activeUser?.name || firebaseUser?.email || "B").slice(0,1).toUpperCase()}</span>
+          <div>
+            <strong>{activeUser?.name || firebaseUser?.email || "BUST Content OS"}</strong><br/>
+            <span>{activeUser?.roleLabel || "Sistema oficial"}</span>
+          </div>
+        </div>
+        {!authEnforced && users.length>0 && <select className="sidebar-user-select" value={activeUser?.id||""} onChange={e=>chooseUser(e.target.value)} aria-label="Cambiar usuario activo">
           {users.map(user=><option key={user.id || user.email} value={user.id}>{user.name} · {user.roleLabel || user.roleKey}</option>)}
         </select>}
         {(authEnforced || firebaseUser) && <button className="sidebar-logout" type="button" onClick={logout}>Cerrar sesión</button>}
-        {authEnforced && <p className="mini" style={{marginTop:6}}>Sesión segura activa</p>}
-        {canUser(activeUser,"usuarios","configure") && <Link className="mini" style={{display:"inline-block",marginTop:8}} href="/dashboard/usuarios">Configurar usuarios →</Link>}
+        {authEnforced && <p className="mini session-note">Sesión segura activa</p>}
+        {canUser(activeUser,"usuarios","configure") && <Link className="mini user-config-link" href="/dashboard/usuarios">Configurar usuarios →</Link>}
       </div>
     </aside>
     <main className="main">{children}</main>
