@@ -1428,3 +1428,20 @@ button[class*="bg-white"][disabled],button[class*="bg-zinc-50"][disabled],button
   color:rgba(52,58,64,.62)!important;
   -webkit-text-fill-color:rgba(52,58,64,.62)!important;
 }
+
+/* v33 · Copy Out IA */
+.copyout-ai-panel{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  margin:12px 0 14px;
+  padding:14px;
+  border:1px solid rgba(52,58,64,.14);
+  border-radius:18px;
+  background:linear-gradient(135deg,rgba(158,252,123,.22),rgba(248,249,250,.96));
+}
+.copyout-ai-panel strong{display:block;color:var(--brand-dark);font-size:14px}
+.copyout-ai-panel .btn{gap:10px;white-space:nowrap;background:rgba(248,249,250,.98)!important;color:var(--brand-dark)!important;-webkit-text-fill-color:var(--brand-dark)!important;border-color:rgba(52,58,64,.18)!important}
+.copyout-ai-panel .ai-inside-badge{background:var(--brand-dark)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;border-color:rgba(52,58,64,.18)!important}
+@media(max-width:780px){.copyout-ai-panel{align-items:stretch;flex-direction:column}.copyout-ai-panel .btn{width:100%}}

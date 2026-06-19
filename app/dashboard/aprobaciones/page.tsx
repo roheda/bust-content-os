@@ -26,6 +26,7 @@ export default function ApprovalsPage(){
   const [pendingSearch,setPendingSearch]=useState("");
 
   const [copyOutDrafts,setCopyOutDrafts]=useState<Record<string,string>>({});
+  const [improvingCopyId,setImprovingCopyId]=useState<string|null>(null);
 
   const [finalClientFilter,setFinalClientFilter]=useState("all");
   const [finalBatchFilter,setFinalBatchFilter]=useState("all");
@@ -60,6 +61,31 @@ export default function ApprovalsPage(){
 
   const approvedForCopyOut = useMemo(()=>requests.filter(x=>x.status==="aprobada_pendiente_copyout" || (x.approvalStatus==="aprobada" && x.status!=="finalizada")), [requests]);
   const rejected = useMemo(()=>requests.filter(x=>x.approvalStatus==="rechazada"),[requests]);
+
+  function approvedCopyExamples(item:ContentRequest){
+    return requests
+      .filter(x=>x.status==="finalizada" && x.clientId===item.clientId && x.copyOut?.trim() && x.id!==item.id)
+      .sort((a,b)=>(b.publishDate||"").localeCompare(a.publishDate||""))
+      .slice(0,12)
+      .map(x=>({
+        copyOut:x.copyOut||"",
+        contentType:x.contentType||"",
+        objective:x.objective||"",
+        publishDate:x.publishDate||""
+      }));
+  }
+
+  function buyerPersonaContext(item:ContentRequest){
+    const persona = item.buyerPersonaSnapshot;
+    if(!persona)return "";
+    return [
+      persona.name ? `Nombre: ${persona.name}` : "",
+      persona.description ? `Descripción: ${persona.description}` : "",
+      persona.pains ? `Dolores: ${persona.pains}` : "",
+      persona.desires ? `Deseos: ${persona.desires}` : "",
+      persona.contentAngles ? `Ángulos de contenido: ${persona.contentAngles}` : ""
+    ].filter(Boolean).join(" | ");
+  }
 
   const finalized = useMemo(()=>requests.filter(x=>{
     return x.status==="finalizada" &&
@@ -138,6 +164,42 @@ export default function ApprovalsPage(){
     alert("Tarea rechazada y rebotada");
   }
 
+  async function improveCopyOut(item:ContentRequest){
+    if(!item.id)return;
+    const currentCopy = (copyOutDrafts[item.id] ?? item.copyOut ?? item.copyIn ?? item.creativeIdea ?? "").trim();
+    if(!currentCopy)return alert("Escribe una base de copy o revisa que la solicitud tenga idea creativa.");
+    setImprovingCopyId(item.id);
+    try{
+      const response = await fetch("/api/improve-copy-out",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          copyDraft:currentCopy,
+          clientName:item.clientName,
+          contentType:item.contentType,
+          objective:item.objective,
+          platforms:item.platforms||[],
+          visualFormat:item.visualFormat||"",
+          feedPlacement:item.feedPlacement||"",
+          creativeIdea:item.creativeIdea||"",
+          copyIn:item.copyIn||"",
+          keyMessage:item.keyMessage||"",
+          cta:item.cta||"",
+          buyerPersonaName:item.buyerPersonaName||"Sin enfoque particular",
+          buyerPersonaContext:buyerPersonaContext(item),
+          successfulCopies:approvedCopyExamples(item)
+        })
+      });
+      const payload = await response.json();
+      if(!response.ok)throw new Error(payload.error||"No se pudo mejorar el Copy Out.");
+      setCopyOutDrafts(prev=>({...prev,[item.id||""]:payload.improvedCopyOut||currentCopy}));
+    }catch(error){
+      alert(error instanceof Error ? error.message : "No se pudo mejorar el Copy Out.");
+    }finally{
+      setImprovingCopyId(null);
+    }
+  }
+
   async function saveCopyOut(item:ContentRequest){
     if(!item.id)return;
     const copyOut = (copyOutDrafts[item.id] ?? item.copyOut ?? "").trim();
@@ -146,7 +208,7 @@ export default function ApprovalsPage(){
       id:`${Date.now()}`,
       author:"Sistema",
       target:"Interno",
-      body:"Copy Out capturado. Tarea finalizada.",
+      body:"Copy Out capturado, guardado como referencia aprobada y tarea finalizada.",
       mentions:[],
       createdAt:new Date().toISOString()
     };
@@ -283,7 +345,7 @@ export default function ApprovalsPage(){
 
     <section className="card" style={{marginTop:20}}>
       <h3>Aprobadas para Copy Out</h3>
-      <p className="mini">Una vez aprobada la pieza, captura el copy final que se usará para publicación. Al guardar Copy Out, la tarea queda finalizada.</p>
+      <p className="mini">Una vez aprobada la pieza, captura el copy final que se usará para publicación. Puedes mejorarlo con IA usando el contexto de la solicitud y los copys finalizados del cliente. Al guardar Copy Out, también se conserva como base de aprendizaje para futuras mejoras.</p>
 
       {groupedCopyOut.map(group=><div className="finalized-group" key={`${group.clientName}-${group.batchName}`}>
         <div className="finalized-group-title">
@@ -300,6 +362,16 @@ export default function ApprovalsPage(){
           <div className="field">
             <label>Copy Out final</label>
             <textarea value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Escribe el copy final que se publicará."/>
+          </div>
+          <div className="copyout-ai-panel">
+            <div>
+              <strong>Mejora IA de Copy Out</strong>
+              <p className="mini">Usa la idea, objetivo, plataforma, buyer persona y {approvedCopyExamples(item).length} copy(s) finalizados del cliente como base de aprendizaje.</p>
+            </div>
+            <button className="btn" type="button" onClick={()=>improveCopyOut(item)} disabled={improvingCopyId===item.id}>
+              <span className="ai-inside-badge" aria-hidden="true"><span className="spark-main">✦</span><span className="spark-mini">✦</span><span>AI</span></span>
+              {improvingCopyId===item.id ? "Mejorando..." : "Mejorar copy con AI"}
+            </button>
           </div>
           <button className="btn blue" onClick={()=>saveCopyOut(item)}>Guardar Copy Out y finalizar</button>
         </div>)}
