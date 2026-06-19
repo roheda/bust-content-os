@@ -1512,3 +1512,26 @@ a[class*="bg-black"],
 @media(max-width:900px){
   .assignment-person-select,.assignment-area-select,.assignment-priority-select,.assignment-bulk-select{width:100%!important;min-width:100%!important;}
 }
+
+
+/* v37 · @menciones como flujo principal */
+.calendar-workspace.no-doubts-panel{
+  grid-template-columns:1fr!important;
+}
+.sidebar-logout{
+  background:var(--brand-dark)!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+  border-color:rgba(52,58,64,.22)!important;
+  box-shadow:0 10px 24px rgba(52,58,64,.10)!important;
+}
+.sidebar-logout:hover{
+  background:#202428!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+  border-color:#202428!important;
+}
+.mention-suggestions button:focus-visible{
+  background:rgba(158,252,123,.34)!important;
+  border-color:rgba(52,58,64,.24)!important;
+}

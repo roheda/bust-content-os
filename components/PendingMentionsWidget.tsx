@@ -157,7 +157,7 @@ export default function PendingMentionsWidget({ activeUser }: { activeUser: Plat
         <div>
           <p className="eyebrow">@menciones</p>
           <h3>Mis pendientes</h3>
-          <p className="mini">Aparecen solo @menciones directas, dudas dirigidas a tu área o rebotes que requieren tu respuesta.</p>
+          <p className="mini">Aparecen @menciones directas y devoluciones automáticas que requieren tu respuesta.</p>
         </div>
         <button className="feedback-close" type="button" onClick={() => setOpen(false)}>✕</button>
       </div>

@@ -28,7 +28,7 @@ export default function TasksPage(){
   const [selected,setSelected]=useState<ContentRequest|null>(null);
   const [comment,setComment]=useState("");
   const [mentionSearch,setMentionSearch]=useState("");
-  const [commentTarget,setCommentTarget]=useState("Content");
+  const [commentTarget,setCommentTarget]=useState("Interno");
   const [finalLink,setFinalLink]=useState("");
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
   const [contextPost,setContextPost]=useState<ContentRequest|null>(null);
@@ -179,6 +179,13 @@ export default function TasksPage(){
     setMentionSearch("");
   }
 
+  function handleMentionKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>){
+    if((event.key === "Enter" || event.key === "Tab") && mentionSearch && filteredMentionOptions.length === 1){
+      event.preventDefault();
+      insertMention(filteredMentionOptions[0].token);
+    }
+  }
+
   async function addComment(){
     if(!selected?.id)return;
     if(!comment.trim())return alert("Escribe un comentario.");
@@ -290,10 +297,10 @@ export default function TasksPage(){
     </div>
 
     <section className="grid kpis">
-      {[["Tareas",String(filtered.length)],["Vencidas",String(overdueCount)],["Finalizadas",String(requests.filter(x=>x.status==="finalizada").length)],["Dudas",String(mentionsFeed.length)],["Persona",person],["Área",area]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Tareas",String(filtered.length)],["Vencidas",String(overdueCount)],["Finalizadas",String(requests.filter(x=>x.status==="finalizada").length)],["Persona",person],["Área",area]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
-    <section className="calendar-workspace">
+    <section className="calendar-workspace no-doubts-panel">
       <div>
         {view==="calendario" && (calendarMode==="semana"
           ? <WeekView days={weekDays} tasksByDate={tasksByDate} onOpen={openTask}/>
@@ -303,17 +310,6 @@ export default function TasksPage(){
         {view==="persona" && <PersonView tasks={filtered} onOpen={openTask}/>}
       </div>
 
-      <aside className="chat-panel">
-        <h3>Panel de dudas / menciones</h3>
-        <p className="mini">Aquí aparecen dudas abiertas con @menciones o dirigidas a un área. Los movimientos automáticos no cuentan como pendiente personal.</p>
-        {!mentionsFeed.length && <p className="mini">Aún no hay dudas activas.</p>}
-        {mentionsFeed.slice(0,30).map(({request,comment})=><button className="chat-item" key={`${request.id}-${comment.id}`} onClick={()=>openTask(request)}>
-          <strong>{request.clientName} · {request.contentType}</strong>
-          <span className="mini">Para: {comment.target} · {new Date(comment.createdAt).toLocaleString("es-MX")}</span>
-          <p>{comment.body}</p>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{comment.mentions.map(m=><span className="mention" key={m}>{m}</span>)}</div>
-        </button>)}
-      </aside>
     </section>
 
     {selected && <div className="modal-backdrop">
@@ -389,15 +385,11 @@ export default function TasksPage(){
 
           <aside>
             <div className="detail-section">
-              <h4>Comentarios y dudas</h4>
-              <div className="field">
-                <label>Dirigir a</label>
-                <select value={commentTarget} onChange={e=>setCommentTarget(e.target.value)}>{commentTargets.map(x=><option key={x}>{x}</option>)}</select>
-              </div>
+              <h4>Comentarios y @menciones</h4>
               <div className="field">
                 <label>Comentario</label>
                 <div className="mention-input-wrap">
-                  <textarea value={comment} onChange={e=>handleCommentChange(e.target.value)} placeholder="Escribe una duda. Usa @ y empieza a escribir una persona o área."/>
+                  <textarea value={comment} onChange={e=>handleCommentChange(e.target.value)} onKeyDown={handleMentionKeyDown} placeholder="Escribe un comentario. Usa @ para mencionar a una persona o área; Enter completa la única coincidencia."/>
                   {!!filteredMentionOptions.length && <div className="mention-suggestions">
                     {filteredMentionOptions.map(option=><button type="button" key={option.token} onClick={()=>insertMention(option.token)}>
                       <strong>@{option.token}</strong>
