@@ -22,14 +22,19 @@ import {
 
 const assignableProductionAreas = ["Diseño", "Audiovisual"];
 const assignableRoleKeys = ["diseno", "diseno_lead", "audiovisual"];
-const normalizedAssignableTeam = new Set(
-  organizationTeam
-    .filter(user=>assignableProductionAreas.includes(user.area))
-    .map(user=>normalizePersonKey(user.name))
+const organizationAreaByName = new Map(
+  organizationTeam.map(user=>[normalizePersonKey(user.name), normalizeAssignableArea(user.area)])
 );
-const fallbackTeam = organizationTeam
-  .filter(user=>assignableProductionAreas.includes(user.area))
-  .map(user=>toDisplayName(user.name));
+
+function normalizeAssignableArea(value = ""){
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if(normalized.includes("diseno") || normalized.includes("diseño")) return "Diseño";
+  if(normalized.includes("audiovisual") || normalized.includes("video") || normalized.includes("foto")) return "Audiovisual";
+  return "";
+}
 
 function normalizePersonKey(value = ""){
   return value
@@ -51,12 +56,27 @@ function toDisplayName(value = ""){
     .join(" ");
 }
 
-function isAssignableTeamUser(user: PlatformUser){
+function getAssignableUserArea(user: PlatformUser){
   const nameKey = normalizePersonKey(user.name);
-  if(normalizedAssignableTeam.has(nameKey)) return true;
-  const searchable = [user.department, user.jobTitle, user.roleLabel].filter(Boolean).join(" ").toLowerCase();
-  if(searchable.includes("diseño") || searchable.includes("diseno") || searchable.includes("audiovisual")) return true;
-  return assignableRoleKeys.includes(user.roleKey) && !searchable.includes("kam") && !searchable.includes("content") && !searchable.includes("copy") && !searchable.includes("key account");
+  const organizationArea = organizationAreaByName.get(nameKey);
+  if(organizationArea) return organizationArea;
+
+  const searchable = [user.department, user.jobTitle, user.roleLabel, user.roleKey]
+    .filter(Boolean)
+    .join(" ");
+  const areaFromText = normalizeAssignableArea(searchable);
+  if(areaFromText) return areaFromText;
+
+  const roleKey = (user.roleKey || "").toLowerCase();
+  if(assignableRoleKeys.includes(roleKey)){
+    if(roleKey.includes("diseno")) return "Diseño";
+    if(roleKey.includes("audiovisual")) return "Audiovisual";
+  }
+  return "";
+}
+
+function isAssignableTeamUser(user: PlatformUser){
+  return Boolean(getAssignableUserArea(user));
 }
 
 function uniqueDisplayNames(names: string[]){
@@ -99,13 +119,42 @@ export default function AssignmentPage(){
   }
   useEffect(()=>{load()},[]);
 
+  const teamOptionsByArea = useMemo(()=>{
+    const grouped: Record<string,string[]> = { "Diseño": [], "Audiovisual": [] };
+
+    users
+      .filter(user=>user.status!=="inactive")
+      .forEach(user=>{
+        const userArea = getAssignableUserArea(user);
+        if(userArea && grouped[userArea]) grouped[userArea].push(user.name);
+      });
+
+    organizationTeam
+      .filter(user=>assignableProductionAreas.includes(normalizeAssignableArea(user.area)))
+      .forEach(user=>{
+        const userArea = normalizeAssignableArea(user.area);
+        if(userArea && grouped[userArea]) grouped[userArea].push(user.name);
+      });
+
+    return {
+      "Diseño": uniqueDisplayNames(grouped["Diseño"]),
+      "Audiovisual": uniqueDisplayNames(grouped["Audiovisual"])
+    };
+  },[users]);
+
   const teamOptions = useMemo(()=>uniqueDisplayNames([
-    ...users
-      .filter(isAssignableTeamUser)
-      .map(user=>user.name)
-      .filter(Boolean),
-    ...fallbackTeam
-  ]),[users]);
+    ...teamOptionsByArea["Diseño"],
+    ...teamOptionsByArea["Audiovisual"]
+  ]),[teamOptionsByArea]);
+
+  function getAreaForItem(item: Partial<ContentRequest>){
+    return normalizeAssignableArea(item.assignedArea || item.suggestedArea || "") || "Diseño";
+  }
+
+  function getTeamOptionsForArea(areaValue = ""){
+    const normalizedArea = normalizeAssignableArea(areaValue) || "Diseño";
+    return teamOptionsByArea[normalizedArea] || [];
+  }
 
   function sortValue(item:ContentRequest,key:string){
     if(key==="batch")return item.batchName || item.batchDueDate || "";
@@ -129,6 +178,9 @@ export default function AssignmentPage(){
   const selectedItems = useMemo(()=>items.filter(item=>selected.includes(item.id||"")),[items,selected]);
   const selectedAssignableCount = selectedItems.filter(canAssignRequest).length;
   const selectedBlockedCount = selectedItems.length - selectedAssignableCount;
+  const selectedAssignableAreas = useMemo(()=>Array.from(new Set(selectedItems.filter(canAssignRequest).map(getAreaForItem))),[selectedItems]);
+  const bulkArea = selectedAssignableAreas.length === 1 ? selectedAssignableAreas[0] : "";
+  const bulkTeamOptions = bulkArea ? getTeamOptionsForArea(bulkArea) : [];
 
   function toggle(id:string){setSelected(selected.includes(id)?selected.filter(x=>x!==id):[...selected,id])}
 
@@ -145,7 +197,7 @@ export default function AssignmentPage(){
     }
     await update(item.id,{
       assignedArea:item.assignedArea||item.suggestedArea,
-      assignedTo:item.assignedTo||teamOptions[0]||"",
+      assignedTo:getTeamOptionsForArea(item.assignedArea||item.suggestedArea).includes(item.assignedTo||"") ? item.assignedTo : getTeamOptionsForArea(item.assignedArea||item.suggestedArea)[0]||"",
       priority:item.priority||"Media",
       dueDate:item.dueDate||item.batchDueDate||item.publishDate,
       status:"asignada"
@@ -158,9 +210,11 @@ export default function AssignmentPage(){
       alert(getAssignBlockReason(item));
       return;
     }
+    const targetArea = detailDraft.assignedArea || item.assignedArea || item.suggestedArea || "Diseño";
+    const validAssignees = getTeamOptionsForArea(targetArea);
     await updateRequest(item.id,{
-      assignedArea:detailDraft.assignedArea || item.suggestedArea,
-      assignedTo:detailDraft.assignedTo || "",
+      assignedArea:targetArea,
+      assignedTo:validAssignees.includes(detailDraft.assignedTo || "") ? detailDraft.assignedTo || "" : "",
       priority:detailDraft.priority || "Media",
       internalNotes:detailDraft.internalNotes || "",
       dueDate:item.dueDate||item.batchDueDate||item.publishDate,
@@ -178,6 +232,16 @@ export default function AssignmentPage(){
     const selectedItems = items.filter(item=>selected.includes(item.id||""));
     const assignable = selectedItems.filter(canAssignRequest);
     const blocked = selectedItems.filter(item=>!canAssignRequest(item));
+    const areasInSelection = Array.from(new Set(assignable.map(getAreaForItem)));
+    if(areasInSelection.length > 1){
+      alert("Selecciona solicitudes de una sola área para asignarlas en bloque. Diseño y Audiovisual tienen responsables distintos.");
+      return;
+    }
+    const validBulkAssignees = getTeamOptionsForArea(areasInSelection[0] || "");
+    if(!validBulkAssignees.includes(bulkAssignee)){
+      alert(`La persona seleccionada no pertenece al área ${areasInSelection[0] || "correspondiente"}.`);
+      return;
+    }
     if(!assignable.length){
       alert("Ninguna de las solicitudes seleccionadas está lista para asignarse. Las piezas que requieren producción deben tener material listo antes de pasar a diseño/audiovisual.");
       return;
@@ -254,8 +318,8 @@ export default function AssignmentPage(){
 
     {selected.length>0 && <div className="bulk-actions">
       <span className="pill">{selected.length} seleccionada(s)</span>{selectedBlockedCount>0 && <span className="pill amber">{selectedBlockedCount} no asignable(s)</span>}{selectedAssignableCount>0 && <span className="pill green">{selectedAssignableCount} lista(s)</span>}
-      <select value={bulkAssignee} onChange={e=>setBulkAssignee(e.target.value)} title="Solo aparecen personas de Diseño y Audiovisual"><option value="">Asignar seleccionadas a diseño/audiovisual...</option>{teamOptions.map(name=><option key={name}>{name}</option>)}</select>
-      <button className="btn blue" onClick={assignSelected}>Asignar seleccionadas</button>
+      <select value={bulkAssignee} onChange={e=>setBulkAssignee(e.target.value)} disabled={!bulkArea} title={bulkArea ? `Solo aparecen personas de ${bulkArea}` : "Selecciona solicitudes de una sola área"}><option value="">{bulkArea ? `Asignar seleccionadas a ${bulkArea}...` : "Selecciona una sola área"}</option>{bulkTeamOptions.map(name=><option key={name}>{name}</option>)}</select>
+      <button className="btn blue" onClick={assignSelected} disabled={!bulkArea}>Asignar seleccionadas</button>
       <button className="btn" onClick={()=>setRejectModal(true)}>Rebotar seleccionadas</button>
       <button className="btn red" onClick={()=>setDeleteModal(true)}>Eliminar seleccionadas</button>
     </div>}
@@ -268,6 +332,8 @@ export default function AssignmentPage(){
           <tbody>{filtered.map(item=>{
             const op=getOperationalStatus(item);
             const assignable = canAssignRequest(item);
+            const rowArea = getAreaForItem(item);
+            const rowTeamOptions = getTeamOptionsForArea(rowArea);
             return <tr key={item.id} className={!assignable ? "row-muted" : ""}>
               <td><input type="checkbox" checked={selected.includes(item.id!)} disabled={!assignable} title={assignable ? "Lista para asignar" : getAssignBlockReason(item)} onChange={()=>toggle(item.id!)}/></td>
               <td><strong>{item.batchName||"Sin lote"}</strong><br/><span className="mini">#{item.number||"--"} de {item.total||"--"}</span></td>
@@ -276,9 +342,9 @@ export default function AssignmentPage(){
               <td><StatusPill status={op}/>{!assignable && <p className="mini warn-text">{getAssignBlockReason(item)}</p>}</td>
               <td>{item.suggestedArea}</td>
               <td>
-                <select value={item.assignedArea||item.suggestedArea||"Diseño"} onChange={e=>item.id&&update(item.id,{assignedArea:e.target.value})}>{areas.map(x=><option key={x}>{x}</option>)}</select>
+                <select value={item.assignedArea||item.suggestedArea||"Diseño"} onChange={e=>item.id&&update(item.id,{assignedArea:e.target.value,assignedTo:""})}>{assignableProductionAreas.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
-                <select value={item.assignedTo||""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})} title="Solo aparecen personas de Diseño y Audiovisual"><option value="">Sin asignar</option>{teamOptions.map(x=><option key={x}>{x}</option>)}</select>
+                <select value={rowTeamOptions.includes(item.assignedTo||"") ? item.assignedTo||"" : ""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})} title={`Solo aparecen personas de ${rowArea}`}><option value="">Sin asignar</option>{rowTeamOptions.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
                 <select value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select>
               </td>
@@ -290,7 +356,7 @@ export default function AssignmentPage(){
 
       <aside className="card">
         <h3>{editing?"Detalle":"Reglas"}</h3>
-        {editing ? <RequestDetail item={editing} draft={detailDraft} setDraft={setDetailDraft} teamOptions={teamOptions} onAssign={assignFromDetail} onReject={rejectFromDetail} onClose={()=>setEditing(null)} onPreview={setPreview}/> : <div className="draft-list">
+        {editing ? <RequestDetail item={editing} draft={detailDraft} setDraft={setDetailDraft} getTeamOptionsForArea={getTeamOptionsForArea} onAssign={assignFromDetail} onReject={rejectFromDetail} onClose={()=>setEditing(null)} onPreview={setPreview}/> : <div className="draft-list">
           <div className="draft-item"><strong>No requiere producción</strong><span className="mini">Debe traer material/link desde el Creador. Si no, queda bloqueada.</span></div>
           <div className="draft-item"><strong>Requiere producción</strong><span className="mini">Se agrupa en Producciones y no se asigna a ejecución hasta tener material.</span></div>
           <div className="draft-item"><strong>Asignada</strong><span className="mini">Aparece en Calendario por persona, área y fecha.</span></div>
@@ -337,7 +403,7 @@ function RequestDetail({
   item,
   draft,
   setDraft,
-  teamOptions,
+  getTeamOptionsForArea,
   onAssign,
   onReject,
   onClose,
@@ -346,7 +412,7 @@ function RequestDetail({
   item:ContentRequest;
   draft:Partial<ContentRequest>;
   setDraft:(data:Partial<ContentRequest>)=>void;
-  teamOptions:string[];
+  getTeamOptionsForArea:(areaValue?:string)=>string[];
   onAssign:(item:ContentRequest)=>void;
   onReject:(item:ContentRequest,note:string)=>void;
   onClose:()=>void;
@@ -356,6 +422,9 @@ function RequestDetail({
   const materialLinks = splitLinks(item.materialLinks);
   const [localRejectNote,setLocalRejectNote]=useState("");
   const op = getOperationalStatus(item);
+  const detailArea = draft.assignedArea || item.assignedArea || item.suggestedArea || "Diseño";
+  const detailTeamOptions = getTeamOptionsForArea(detailArea);
+  const validDetailAssignee = detailTeamOptions.includes((draft.assignedTo || item.assignedTo || ""));
 
   return <div className="assignment-detail-scroll">
     <div className="detail-hero">
@@ -446,15 +515,15 @@ function RequestDetail({
       <div className="form-grid">
         <div className="field">
           <label>Área</label>
-          <select value={draft.assignedArea||item.assignedArea||item.suggestedArea||"Diseño"} onChange={e=>setDraft({...draft,assignedArea:e.target.value})}>
-            {areas.map(x=><option key={x}>{x}</option>)}
+          <select value={detailArea} onChange={e=>setDraft({...draft,assignedArea:e.target.value,assignedTo:""})}>
+            {assignableProductionAreas.map(x=><option key={x}>{x}</option>)}
           </select>
         </div>
         <div className="field">
           <label>Responsable</label>
-          <select value={draft.assignedTo||item.assignedTo||""} onChange={e=>setDraft({...draft,assignedTo:e.target.value})}>
+          <select value={validDetailAssignee ? draft.assignedTo||item.assignedTo||"" : ""} onChange={e=>setDraft({...draft,assignedTo:e.target.value})}>
             <option value="">Sin asignar</option>
-            {teamOptions.map(x=><option key={x}>{x}</option>)}
+            {detailTeamOptions.map(x=><option key={x}>{x}</option>)}
           </select>
         </div>
         <div className="field">
