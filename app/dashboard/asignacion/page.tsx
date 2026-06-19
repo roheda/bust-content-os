@@ -20,7 +20,58 @@ import {
   deleteRequest
 } from "@/lib/data";
 
-const fallbackTeam = organizationTeam.map(user=>user.name);
+const assignableProductionAreas = ["Diseño", "Audiovisual"];
+const assignableRoleKeys = ["diseno", "diseno_lead", "audiovisual"];
+const normalizedAssignableTeam = new Set(
+  organizationTeam
+    .filter(user=>assignableProductionAreas.includes(user.area))
+    .map(user=>normalizePersonKey(user.name))
+);
+const fallbackTeam = organizationTeam
+  .filter(user=>assignableProductionAreas.includes(user.area))
+  .map(user=>toDisplayName(user.name));
+
+function normalizePersonKey(value = ""){
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function toDisplayName(value = ""){
+  const lowerWords = new Set(["de", "del", "la", "las", "los", "y"]);
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map((word,index)=> lowerWords.has(word) && index > 0 ? word : word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function isAssignableTeamUser(user: PlatformUser){
+  const nameKey = normalizePersonKey(user.name);
+  if(normalizedAssignableTeam.has(nameKey)) return true;
+  const searchable = [user.department, user.jobTitle, user.roleLabel].filter(Boolean).join(" ").toLowerCase();
+  if(searchable.includes("diseño") || searchable.includes("diseno") || searchable.includes("audiovisual")) return true;
+  return assignableRoleKeys.includes(user.roleKey) && !searchable.includes("kam") && !searchable.includes("content") && !searchable.includes("copy") && !searchable.includes("key account");
+}
+
+function uniqueDisplayNames(names: string[]){
+  const seen = new Set<string>();
+  return names
+    .map(toDisplayName)
+    .filter(Boolean)
+    .filter(name=>{
+      const key = normalizePersonKey(name);
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a,b)=>a.localeCompare(b,"es",{sensitivity:"base"}));
+}
 
 export default function AssignmentPage(){
   const [items,setItems]=useState<ContentRequest[]>([]);
@@ -48,7 +99,13 @@ export default function AssignmentPage(){
   }
   useEffect(()=>{load()},[]);
 
-  const teamOptions = useMemo(()=>Array.from(new Set([...users.map(user=>user.name).filter(Boolean),...fallbackTeam])),[users]);
+  const teamOptions = useMemo(()=>uniqueDisplayNames([
+    ...users
+      .filter(isAssignableTeamUser)
+      .map(user=>user.name)
+      .filter(Boolean),
+    ...fallbackTeam
+  ]),[users]);
 
   function sortValue(item:ContentRequest,key:string){
     if(key==="batch")return item.batchName || item.batchDueDate || "";
@@ -197,7 +254,7 @@ export default function AssignmentPage(){
 
     {selected.length>0 && <div className="bulk-actions">
       <span className="pill">{selected.length} seleccionada(s)</span>{selectedBlockedCount>0 && <span className="pill amber">{selectedBlockedCount} no asignable(s)</span>}{selectedAssignableCount>0 && <span className="pill green">{selectedAssignableCount} lista(s)</span>}
-      <select value={bulkAssignee} onChange={e=>setBulkAssignee(e.target.value)}><option value="">Asignar seleccionadas a...</option>{teamOptions.map(name=><option key={name}>{name}</option>)}</select>
+      <select value={bulkAssignee} onChange={e=>setBulkAssignee(e.target.value)} title="Solo aparecen personas de Diseño y Audiovisual"><option value="">Asignar seleccionadas a diseño/audiovisual...</option>{teamOptions.map(name=><option key={name}>{name}</option>)}</select>
       <button className="btn blue" onClick={assignSelected}>Asignar seleccionadas</button>
       <button className="btn" onClick={()=>setRejectModal(true)}>Rebotar seleccionadas</button>
       <button className="btn red" onClick={()=>setDeleteModal(true)}>Eliminar seleccionadas</button>
@@ -221,7 +278,7 @@ export default function AssignmentPage(){
               <td>
                 <select value={item.assignedArea||item.suggestedArea||"Diseño"} onChange={e=>item.id&&update(item.id,{assignedArea:e.target.value})}>{areas.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
-                <select value={item.assignedTo||""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})}><option value="">Sin asignar</option>{teamOptions.map(x=><option key={x}>{x}</option>)}</select>
+                <select value={item.assignedTo||""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})} title="Solo aparecen personas de Diseño y Audiovisual"><option value="">Sin asignar</option>{teamOptions.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
                 <select value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select>
               </td>

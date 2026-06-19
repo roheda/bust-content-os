@@ -1397,3 +1397,34 @@ a[class*="bg-slate-50"]:not([class*="text-white"]):not([class*="text-red"]):not(
   color:var(--brand-dark)!important;
   -webkit-text-fill-color:var(--brand-dark)!important;
 }
+
+
+/* v31 · Contraste definitivo para botones claros y deshabilitados */
+.btn:not(.blue):not(.dark):not(.red),
+.hero .btn:not(.blue):not(.dark):not(.red),
+button.btn:not(.blue):not(.dark):not(.red),
+a.btn:not(.blue):not(.dark):not(.red){
+  background:rgba(248,249,250,.98)!important;
+  color:var(--brand-dark)!important;
+  -webkit-text-fill-color:var(--brand-dark)!important;
+  border-color:rgba(52,58,64,.18)!important;
+}
+button:disabled:not(.blue):not(.dark):not(.red),
+.btn:disabled:not(.blue):not(.dark):not(.red),
+button[disabled]:not(.blue):not(.dark):not(.red),
+a[aria-disabled="true"]:not(.blue):not(.dark):not(.red){
+  background:rgba(248,249,250,.74)!important;
+  color:rgba(52,58,64,.62)!important;
+  -webkit-text-fill-color:rgba(52,58,64,.62)!important;
+  border-color:rgba(52,58,64,.16)!important;
+  opacity:1!important;
+  filter:none!important;
+}
+button[class*="bg-white"],a[class*="bg-white"],button[class*="bg-zinc-50"],a[class*="bg-zinc-50"],button[class*="bg-zinc-100"],a[class*="bg-zinc-100"],button[class*="bg-slate-50"],a[class*="bg-slate-50"]{
+  color:var(--brand-dark)!important;
+  -webkit-text-fill-color:var(--brand-dark)!important;
+}
+button[class*="bg-white"][disabled],button[class*="bg-zinc-50"][disabled],button[class*="bg-zinc-100"][disabled],button[class*="bg-slate-50"][disabled]{
+  color:rgba(52,58,64,.62)!important;
+  -webkit-text-fill-color:rgba(52,58,64,.62)!important;
+}

@@ -89,21 +89,21 @@ function permissionsFor(roleKey: string): PermissionMatrix {
 }
 
 const seedUsers: SeedUser[] = [
-  { name:"FERNANDA GUTIERREZ", email:"marifer@bust.mx", department:"Key Accounts", jobTitle:"Jefa de Key Accounts", roleKey:"admin", roleLabel:"Jefa de Key Accounts", notes:"KAM líder. Puede configurar operación, asignación y seguimiento general.", scope:"all_clients", canManageBilling:true },
-  { name:"GABRIELA TAPIA", email:"gabs.bustmx@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
-  { name:"MAURICIO MANZANILLA", email:"mau_photo@hotmail.com", department:"Audiovisual", jobTitle:"Fotógrafo y editor de foto", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Fotógrafo y editor de foto." },
-  { name:"PABLO SOBERANIS", email:"juansoberanisvazquez@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
-  { name:"PAOLETTE PAVON", email:"paolette.bust@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
-  { name:"RODRIGO HERNANDEZ", email:"copywriterbust2@gmail.com", department:"Copy", jobTitle:"Copywriter", roleKey:"creativo", roleLabel:"Copy / Creativo", notes:"Crea solicitudes y copy." },
-  { name:"CARLOS JUAREZ", email:"designbustmkt@gmail.com", department:"Diseño", jobTitle:"Jefe de Diseño", roleKey:"diseno_lead", roleLabel:"Jefe de Diseño", notes:"Jefe de diseño. Puede asignar y revisar carga de diseño." },
-  { name:"MONICA LOPEZ", email:"moniibust@gmail.com", department:"Content", jobTitle:"Content Manager", roleKey:"content", roleLabel:"Content", notes:"Programa posts y crea solicitudes." },
-  { name:"ROBERTO PECH", email:"cafeinivoro@gmail.com", department:"Content", jobTitle:"Jefe de Content", roleKey:"content_lead", roleLabel:"Jefe de Content", notes:"Jefe de content y departamentos creativos." },
-  { name:"ANTONIO POOL", email:"filmstlacuache7@gmail.com", department:"Audiovisual", jobTitle:"Productor audiovisual y editor", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Productor audiovisual y editor." },
-  { name:"ICELA ZAPATA", email:"icelagreene19@gmail.com", department:"Diseño", jobTitle:"Diseñadora", roleKey:"diseno", roleLabel:"Diseño", notes:"Diseñadora." },
-  { name:"RODRIGO MALDONADO", email:"rodri.maldonado98@hotmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
-  { name:"ABRIL ORDOÑEZ", email:"abril.registros@gmail.com", department:"Audiovisual", jobTitle:"Editora audiovisual", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Editora audiovisual." },
-  { name:"JORGE DAVID", email:"jorgedavid311003@gmail.com", department:"Diseño", jobTitle:"Diseñador", roleKey:"diseno", roleLabel:"Diseño", notes:"Diseñador." },
-  { name:"BELINDA IRENE LOPEZ BENAVIDES", email:"belizepol28@gmail.com", department:"Audiovisual", jobTitle:"Editora audiovisual", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Editora audiovisual." }
+  { name:"Fernanda Gutierrez", email:"marifer@bust.mx", department:"Key Accounts", jobTitle:"Jefa de Key Accounts", roleKey:"admin", roleLabel:"Jefa de Key Accounts", notes:"KAM líder. Puede configurar operación, asignación y seguimiento general.", scope:"all_clients", canManageBilling:true },
+  { name:"Gabriela Tapia", email:"gabs.bustmx@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
+  { name:"Mauricio Manzanilla", email:"mau_photo@hotmail.com", department:"Audiovisual", jobTitle:"Fotógrafo y editor de foto", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Fotógrafo y editor de foto." },
+  { name:"Pablo Soberanis", email:"juansoberanisvazquez@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
+  { name:"Paolette Pavon", email:"paolette.bust@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
+  { name:"Rodrigo Hernandez", email:"copywriterbust2@gmail.com", department:"Copy", jobTitle:"Copywriter", roleKey:"creativo", roleLabel:"Copy / Creativo", notes:"Crea solicitudes y copy." },
+  { name:"Carlos Juarez", email:"designbustmkt@gmail.com", department:"Diseño", jobTitle:"Jefe de Diseño", roleKey:"diseno_lead", roleLabel:"Jefe de Diseño", notes:"Jefe de diseño. Puede asignar y revisar carga de diseño." },
+  { name:"Monica Lopez", email:"moniibust@gmail.com", department:"Content", jobTitle:"Content Manager", roleKey:"content", roleLabel:"Content", notes:"Programa posts y crea solicitudes." },
+  { name:"Roberto Pech", email:"cafeinivoro@gmail.com", department:"Content", jobTitle:"Jefe de Content", roleKey:"content_lead", roleLabel:"Jefe de Content", notes:"Jefe de content y departamentos creativos." },
+  { name:"Antonio Pool", email:"filmstlacuache7@gmail.com", department:"Audiovisual", jobTitle:"Productor audiovisual y editor", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Productor audiovisual y editor." },
+  { name:"Icela Zapata", email:"icelagreene19@gmail.com", department:"Diseño", jobTitle:"Diseñadora", roleKey:"diseno", roleLabel:"Diseño", notes:"Diseñadora." },
+  { name:"Rodrigo Maldonado", email:"rodri.maldonado98@hotmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
+  { name:"Abril Ordoñez", email:"abril.registros@gmail.com", department:"Audiovisual", jobTitle:"Editora audiovisual", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Editora audiovisual." },
+  { name:"Jorge David", email:"jorgedavid311003@gmail.com", department:"Diseño", jobTitle:"Diseñador", roleKey:"diseno", roleLabel:"Diseño", notes:"Diseñador." },
+  { name:"Belinda Irene Lopez Benavides", email:"belizepol28@gmail.com", department:"Audiovisual", jobTitle:"Editora audiovisual", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Editora audiovisual." }
 ];
 
 async function canConfigureFromToken(token: string) {
