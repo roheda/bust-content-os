@@ -89,6 +89,7 @@ export type PlatformUser = {
   authCreatedAt?: unknown;
   passwordResetSentAt?: unknown;
   lastLoginAt?: unknown;
+  mustChangePassword?: boolean;
   notes?: string;
 };
 
@@ -983,6 +984,7 @@ export async function updateUser(id: string, data: Partial<PlatformUser>) {
     inviteStatus: data.inviteStatus,
     passwordResetSentAt: data.passwordResetSentAt,
     lastLoginAt: data.lastLoginAt,
+    mustChangePassword: data.mustChangePassword,
     clientIds: data.scope === "all_clients" ? [] : data.clientIds,
     permissions: data.isMaster ? getRoleTemplatePermissions("master") : data.permissions
   };

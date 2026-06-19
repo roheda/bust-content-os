@@ -86,6 +86,13 @@ export default function AppShell({
           setLoading(false);
           return;
         }
+        if(profile.mustChangePassword){
+          setAccessError("Debes cambiar tu contraseña temporal antes de entrar al sistema. Cierra sesión y vuelve a iniciar para definir tu contraseña personal.");
+          setActiveUser(null);
+          setUsers([]);
+          setLoading(false);
+          return;
+        }
         window.localStorage.setItem("bust-active-user-id", profile.id);
         setActiveUser(profile);
         setUsers([profile]);

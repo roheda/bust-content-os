@@ -2,9 +2,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut, updatePassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { PlatformUser, findUserByAuth, listUsers, markUserLogin } from "@/lib/data";
+import { PlatformUser, findUserByAuth, listUsers, markUserLogin, updateUser } from "@/lib/data";
 
 const authEnforced = process.env.NEXT_PUBLIC_AUTH_ENFORCED === "true";
 
@@ -18,6 +18,9 @@ export default function LoginPage(){
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
   const [secureMode,setSecureMode]=useState(authEnforced);
+  const [mustChangeProfile,setMustChangeProfile]=useState<PlatformUser | null>(null);
+  const [newPassword,setNewPassword]=useState("");
+  const [confirmPassword,setConfirmPassword]=useState("");
 
   useEffect(()=>{
     let mounted = true;
@@ -38,6 +41,12 @@ export default function LoginPage(){
       if(!firebaseUser || !authEnforced) return;
       const profile = await findUserByAuth(firebaseUser.uid, firebaseUser.email || "");
       if(profile?.id && profile.status !== "inactive") {
+        if(profile.mustChangePassword){
+          setMustChangeProfile(profile);
+          setSecureMode(true);
+          setEmail(profile.email || firebaseUser.email || "");
+          return;
+        }
         window.localStorage.setItem("bust-active-user-id", profile.id);
         await markUserLogin(profile.id).catch(()=>{});
         router.replace("/dashboard");
@@ -66,11 +75,36 @@ export default function LoginPage(){
         setError("Este correo no tiene usuario activo en BUST Content OS.");
         return;
       }
+      if(profile.mustChangePassword){
+        setMustChangeProfile(profile);
+        setPassword("");
+        setMessage("Por seguridad, cambia tu contraseña temporal para continuar.");
+        return;
+      }
       window.localStorage.setItem("bust-active-user-id", profile.id);
       await markUserLogin(profile.id).catch(()=>{});
       router.push("/dashboard");
     }catch(error:any){
       setError(error?.code === "auth/invalid-credential" ? "Correo o contraseña incorrectos." : (error?.message || "No se pudo iniciar sesión."));
+    }finally{setLoading(false)}
+  }
+
+
+  async function completePasswordChange(){
+    setError("");
+    setMessage("");
+    if(!auth.currentUser || !mustChangeProfile?.id) return setError("Vuelve a iniciar sesión para cambiar la contraseña.");
+    if(newPassword.length < 8) return setError("La nueva contraseña debe tener al menos 8 caracteres.");
+    if(newPassword !== confirmPassword) return setError("Las contraseñas no coinciden.");
+    setLoading(true);
+    try{
+      await updatePassword(auth.currentUser,newPassword);
+      await updateUser(mustChangeProfile.id,{mustChangePassword:false,inviteStatus:"active"});
+      window.localStorage.setItem("bust-active-user-id", mustChangeProfile.id);
+      await markUserLogin(mustChangeProfile.id).catch(()=>{});
+      router.push("/dashboard");
+    }catch(error:any){
+      setError(error?.code === "auth/requires-recent-login" ? "Por seguridad, vuelve a iniciar sesión con la contraseña temporal e inténtalo de nuevo." : (error?.message || "No se pudo cambiar la contraseña."));
     }finally{setLoading(false)}
   }
 
@@ -101,12 +135,21 @@ export default function LoginPage(){
         <h2 style={{fontSize:32,marginTop:0}}>Entrar al sistema</h2>
         <p style={{color:"#667085",lineHeight:1.6}}>La contraseña se administra con Firebase Auth. BUST Content OS solo guarda permisos, clientes asignados y rol operativo.</p>
 
-        {!authEnforced && <div className="auth-mode-tabs">
+        {mustChangeProfile ? <div className="alert green">Contraseña temporal detectada. Crea tu contraseña personal para continuar.</div> : null}
+
+        {!mustChangeProfile && !authEnforced && <div className="auth-mode-tabs">
           <button type="button" className={!secureMode?"active":""} onClick={()=>setSecureMode(false)}>Modo prueba</button>
           <button type="button" className={secureMode?"active":""} onClick={()=>setSecureMode(true)}>Acceso con contraseña</button>
         </div>}
 
-        {!secureMode && !authEnforced ? <>
+        {mustChangeProfile ? <>
+          <div className="field"><label>Nueva contraseña</label><input type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password"/></div>
+          <div className="field"><label>Confirmar contraseña</label><input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="Repite tu nueva contraseña" autoComplete="new-password" onKeyDown={e=>{if(e.key==="Enter") completePasswordChange();}}/></div>
+          {error && <div className="alert red">{error}</div>}
+          {message && <div className="alert green">{message}</div>}
+          <button className="btn blue" type="button" disabled={loading} onClick={completePasswordChange}>{loading?"Guardando...":"Cambiar contraseña y entrar →"}</button>
+          <button className="btn" type="button" disabled={loading} onClick={async()=>{await signOut(auth); setMustChangeProfile(null); setNewPassword(""); setConfirmPassword("");}}>Cancelar</button>
+        </> : !secureMode && !authEnforced ? <>
           {users.length>0 && <div className="field"><label>Usuario</label><select value={selected} onChange={e=>{setSelected(e.target.value); const found=users.find(u=>u.id===e.target.value); if(found?.email) setEmail(found.email);}}>{users.map(user=><option key={user.id || user.email} value={user.id}>{user.name} · {user.roleLabel || user.roleKey}</option>)}</select></div>}
           <Link className="btn blue" href="/dashboard" onClick={enterDemo}>Entrar al dashboard →</Link>
           {users.length===0 && <p className="mini" style={{marginTop:14}}>Aún no hay usuarios guardados. Entra y crea el usuario master desde Usuarios.</p>}

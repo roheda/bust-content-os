@@ -124,6 +124,37 @@ export default function UsuariosPage(){
     window.scrollTo({top:0,behavior:"smooth"});
   }
 
+
+  async function seedBustTeam(){
+    const tempPassword = prompt("Contraseña temporal para todo el equipo. Mínimo 8 caracteres. Ejemplo: BUST2026.Temp!");
+    if(!tempPassword) return;
+    if(tempPassword.length < 8) return alert("La contraseña temporal debe tener al menos 8 caracteres.");
+    const resetExistingPasswords = confirm("¿También quieres resetear a esta contraseña temporal los usuarios que ya existan en Firebase Auth?\n\nAceptar = sí, resetear existentes.\nCancelar = solo crear los que no existan.");
+    setBusy(true);
+    setMessage("");
+    try{
+      const headers: Record<string,string> = {"Content-Type":"application/json"};
+      if(authUser){
+        headers.Authorization = `Bearer ${await authUser.getIdToken()}`;
+      }else{
+        const setupToken = prompt("Pega el AUTH_SETUP_TOKEN de Vercel para autorizar la carga masiva.");
+        if(!setupToken) return;
+        headers["x-setup-token"] = setupToken;
+      }
+      const res = await fetch("/api/admin/seed-bust-users",{
+        method:"POST",
+        headers,
+        body:JSON.stringify({tempPassword,resetExistingPasswords})
+      });
+      const json = await res.json();
+      if(!res.ok || !json.ok) throw new Error(json.error || "No se pudo cargar el equipo BUST.");
+      setMessage(`Equipo BUST cargado: ${json.count} usuarios. Todos quedan con cambio de contraseña obligatorio.`);
+      await load();
+    }catch(error:any){
+      alert(error?.message || "No se pudo cargar el equipo.");
+    }finally{setBusy(false)}
+  }
+
   async function save(){
     if(!form.name.trim()) return alert("Escribe el nombre del usuario.");
     if(!form.email.trim()) return alert("Escribe el correo del usuario.");
@@ -215,6 +246,7 @@ export default function UsuariosPage(){
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         <button className="btn" onClick={load}>Actualizar</button>
+        <button className="btn" onClick={seedBustTeam} disabled={busy}>Cargar equipo BUST</button>
         <button className="btn blue" onClick={createMaster}>Crear master</button>
       </div>
     </section>
@@ -295,7 +327,7 @@ export default function UsuariosPage(){
               </div>
               <div className="mini">{user.roleLabel || user.roleKey} · {user.scope==="all_clients"?"Todos los clientes":`${user.clientIds?.length||0} clientes asignados`}</div>
               <div className="mini">Módulos visibles: {platformModules.filter(m=>canUser(user,m.key,"view")).length} · Genera IA: {platformModules.filter(m=>canUser(user,m.key,"generate")).length ? "Sí" : "No"}</div>
-              <div className="mini">Auth: {user.authUid ? "Conectado" : "Sin acceso"} · {user.inviteStatus === "reset_sent" ? "Correo enviado" : user.inviteStatus || "pendiente"}</div>
+              <div className="mini">Auth: {user.authUid ? "Conectado" : "Sin acceso"} · {user.mustChangePassword ? "Debe cambiar contraseña" : (user.inviteStatus === "reset_sent" ? "Correo enviado" : user.inviteStatus || "pendiente")}</div>
               <div className="config-actions">
                 <button className="btn" onClick={()=>editUser(user)}>Editar</button>
                 <button className="btn" onClick={()=>createAccessAndSendReset(user)} disabled={authBusyId===(user.id||user.email)}>{authBusyId===(user.id||user.email)?"Enviando...":user.authUid?"Reenviar link":"Crear acceso"}</button>
@@ -314,7 +346,7 @@ export default function UsuariosPage(){
             <li><strong>KAM:</strong> solo debe ver clientes asignados.</li>
             <li><strong>Cliente:</strong> ideal para solo aprobar piezas.</li>
           </ul>
-          <p className="mini" style={{marginTop:12}}>La contraseña se maneja con Firebase Auth. Primero crea el usuario operativo, después usa “Crear acceso” para crear el usuario de Auth y enviarle un correo para definir contraseña. Cuando termines la migración, activa NEXT_PUBLIC_AUTH_ENFORCED=true en Vercel.</p>
+          <p className="mini" style={{marginTop:12}}>La contraseña se maneja con Firebase Auth. Puedes crear usuario por usuario o usar “Cargar equipo BUST” para importar la lista base con una contraseña temporal. Al primer acceso, el sistema obliga a cambiarla antes de entrar al dashboard.</p>
         </div>
       </aside>
     </section>
