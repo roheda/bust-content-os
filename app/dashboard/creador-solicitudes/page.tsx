@@ -51,6 +51,7 @@ export default function CreatorPage(){
   const [busy,setBusy]=useState(false);
   const referenceMaxBytes = 80 * 1024 * 1024;
   const [improvingKey,setImprovingKey]=useState<string>("");
+  const [expandedItemIndex,setExpandedItemIndex]=useState<number|null>(null);
 
   const [aiCount,setAiCount]=useState(5);
   const [startDate,setStartDate]=useState("");
@@ -267,6 +268,7 @@ export default function CreatorPage(){
     setBatchDueDate(draft.batchDueDate || "");
     setClientId(draft.clientId);
     setItems((draft.items||[]).map(item=>({...item,batchDueDate:draft.batchDueDate||item.batchDueDate||""})));
+    setExpandedItemIndex(null);
   }
 
   function newDraft(){
@@ -275,6 +277,7 @@ export default function CreatorPage(){
     setBatchDueDate("");
     setItems([]);
     setManual(emptyRequest);
+    setExpandedItemIndex(null);
   }
 
   function reuseBatch(batch: RequestBatch){
@@ -297,6 +300,7 @@ export default function CreatorPage(){
       number: index + 1,
       total: batchItems.length
     })));
+    setExpandedItemIndex(null);
     window.scrollTo({top:0,behavior:"smooth"});
   }
 
@@ -334,6 +338,7 @@ export default function CreatorPage(){
     });
 
     setItems([...items,...generated]);
+    setExpandedItemIndex(null);
   }
 
   function addManual(){
@@ -341,6 +346,7 @@ export default function CreatorPage(){
     if(!manual.creativeIdea)return alert("Agrega idea creativa");
     if(!draftName)setDraftName(defaultBatchName(client.name));
     setItems([...items,hydrate(manual,"manual")]);
+    setExpandedItemIndex(items.length);
     setManual(emptyRequest);
   }
 
@@ -372,10 +378,16 @@ export default function CreatorPage(){
   function removeItem(index:number){
     if(!confirm("¿Quitar solicitud del borrador?"))return;
     setItems(items.filter((_,i)=>i!==index));
+    setExpandedItemIndex(current=>{
+      if(current===null)return null;
+      if(current===index)return null;
+      return current>index ? current-1 : current;
+    });
   }
 
   function duplicateItem(index:number){
     setItems([...items,{...items[index],id:undefined,source:"manual"}]);
+    setExpandedItemIndex(items.length);
   }
 
   async function uploadToManual(kind:"reference",files:FileList|null){
@@ -438,6 +450,7 @@ export default function CreatorPage(){
       if(currentDraftId)await updatePlannerDraft(currentDraftId,{status:"sent_to_assignment",batchDueDate,items:items.map(x=>({...x,batchDueDate,dueDate:x.dueDate||batchDueDate}))});
       setItems([]);
       setCurrentDraftId("");
+      setExpandedItemIndex(null);
       setDraftName("");
       await load();
       alert("Lote aprobado y enviado a Asignación");
@@ -452,9 +465,14 @@ export default function CreatorPage(){
     if (currentDraftId === id) {
       setCurrentDraftId("");
       setItems([]);
+      setExpandedItemIndex(null);
       setDraftName(client?.name ? defaultBatchName(client.name) : "");
     }
     await load();
+  }
+
+  function toggleItem(index:number){
+    setExpandedItemIndex(current=>current===index ? null : index);
   }
 
   return <AppShell active="Creador de Solicitudes">
@@ -515,52 +533,74 @@ export default function CreatorPage(){
         <div className="card">
           <h3>Lote actual</h3>
           {!items.length ? <div className="empty">Todavía no hay solicitudes.</div> :
-          <div className="table-wrap">
-            <table className="table creator-request-table">
-              <colgroup><col className="creator-col-main"/><col className="creator-col-prod"/><col className="creator-col-ref"/><col className="creator-col-actions"/></colgroup>
-              <thead><tr><th>Solicitud</th><th>Producción / Material</th><th>Referencias</th><th>Acciones</th></tr></thead>
-              <tbody>{items.map((item,index)=>{
-                const error = validateCreatorItem(item);
-                return <tr key={index} className="creator-request-row">
-                  <td>
-                    <div className="request-number-bar">
-                      <span>Solicitud {index + 1}</span>
-                      <strong>de {items.length}</strong>
+          <div className="creator-accordion-list">
+            {items.map((item,index)=>{
+              const error = validateCreatorItem(item);
+              const expanded = expandedItemIndex===index;
+              return <div className={`creator-accordion-card ${expanded?"expanded":"collapsed"}`} key={index}>
+                <button type="button" className="creator-accordion-summary" onClick={()=>toggleItem(index)} aria-expanded={expanded}>
+                  <div className="summary-main">
+                    <span className="request-index-pill">Solicitud {index + 1} de {items.length}</span>
+                    <strong>{item.topic || item.contentType || "Nueva solicitud"}</strong>
+                    <span className="summary-muted">{item.contentType || "Sin tipo"} · {item.objective || "Sin objetivo"}</span>
+                  </div>
+                  <div className="summary-meta">
+                    <span>{item.suggestedArea || "Sin área"}</span>
+                    <span>{item.publishDate || "Sin fecha"}</span>
+                    {item.requiresProduction ? <span>Producción</span> : <span>{item.materialAvailable ? "Material listo" : "Sin material"}</span>}
+                    {error ? <span className="pill red">Pendiente</span> : <span className="pill green">Lista</span>}
+                    <span className="summary-chevron">{expanded?"Ocultar":"Editar"}</span>
+                  </div>
+                </button>
+                {expanded && <div className="creator-accordion-body">
+                  <section className="creator-section creator-section-core">
+                    <div className="section-title"><strong>Información base</strong><span>Define tipo, objetivo, área y fecha.</span></div>
+                    <div className="creator-compact-grid">
+                      <div className="field"><label>Tipo</label><select value={item.contentType} onChange={e=>updateItem(index,"contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div>
+                      <div className="field"><label>Objetivo</label><select value={item.objective} onChange={e=>updateItem(index,"objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
+                      <div className="field"><label>Área sugerida</label><select value={item.suggestedArea} onChange={e=>updateItem(index,"suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
+                      <div className="field"><label>Fecha publicación</label><input type="date" value={item.publishDate} onChange={e=>updateItem(index,"publishDate",e.target.value)}/></div>
                     </div>
-                    <div className="request-card-title">
-                      <strong>{item.topic || item.contentType || "Nueva solicitud"}</strong>
-                      <span>{item.contentType || "Sin tipo"} · {item.objective || "Sin objetivo"}</span>
-                    </div>
-                    <div className="field"><label>Tipo</label><select value={item.contentType} onChange={e=>updateItem(index,"contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div>
-                    <div className="field"><label>Objetivo</label><select value={item.objective} onChange={e=>updateItem(index,"objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
-                    <div className="field"><label>Área sugerida</label><select value={item.suggestedArea} onChange={e=>updateItem(index,"suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
-                    <div className="field"><label>Fecha publicación</label><input type="date" value={item.publishDate} onChange={e=>updateItem(index,"publishDate",e.target.value)}/></div>
                     <BuyerPersonaSelector request={item} buyerPersonas={client?.buyerPersonas || []} onSelect={(persona)=>updateItemPersona(index, persona)}/>
                     <PostInfoSelector request={item} onChange={(k,v)=>updateItem(index,k,v)}/>
+                  </section>
+
+                  <section className="creator-section">
+                    <div className="section-title"><strong>Idea y copy</strong><span>Información para ejecución creativa.</span></div>
                     <CreativeIdeaField value={item.creativeIdea} onChange={(v)=>updateItem(index,"creativeIdea",v)} onImprove={()=>improveCreativeIdea(index)} busy={improvingKey===String(index)}/>
                     <div className="field"><label>Copy In</label><textarea value={item.copyIn} onChange={e=>updateItem(index,"copyIn",e.target.value)}/></div>
                     <OperationalEstimate item={item} rules={costRules} overrides={clientOverrides}/>
+                  </section>
+
+                  <section className="creator-section">
+                    <div className="section-title"><strong>Material y referencias</strong><span>Material final por link; referencias temporales pueden ser imagen o video.</span></div>
+                    <div className="creator-material-grid">
+                      <div>
+                        <label className="check-row"><input type="checkbox" checked={item.requiresProduction} onChange={e=>updateItem(index,"requiresProduction",e.target.checked)}/> Requiere producción</label>
+                        {!item.requiresProduction && <label className="check-row"><input type="checkbox" checked={item.materialAvailable} onChange={e=>updateItem(index,"materialAvailable",e.target.checked)}/> Material disponible</label>}
+                        <div className="field"><label>Links de material</label><textarea value={item.materialLinks} onChange={e=>updateItem(index,"materialLinks",e.target.value)} placeholder="Drive, Dropbox, Frame, etc."/></div>
+                        <p className="mini field-note">Para material final usa links de Drive/Frame/Dropbox. No se cargan archivos pesados en solicitudes.</p>
+                        {item.requiresProduction && <div className="field"><label>Notas para producción</label><textarea value={item.productionNotes} onChange={e=>updateItem(index,"productionNotes",e.target.value)} placeholder="Tomas necesarias, estilo, locación, etc."/></div>}
+                      </div>
+                      <div>
+                        <div className="field"><label>Links inspiración</label><textarea value={item.referenceLinks} onChange={e=>updateItem(index,"referenceLinks",e.target.value)}/></div>
+                        <input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm" onChange={e=>uploadToItem(index,"reference",e.target.files)}/>
+                        <p className="mini field-note">Referencia temporal hasta 80 MB. Se elimina al finalizar la solicitud.</p>
+                        <FileList files={item.referenceFiles||[]} onPreview={setPreview} onRemove={(i)=>removeFileFromItem(index,"reference",i)}/>
+                      </div>
+                    </div>
+                  </section>
+
+                  <div className="creator-accordion-actions">
                     {error?<span className="pill red">{error}</span>:<span className="pill green">Lista para enviar</span>}
-                  </td>
-                  <td>
-                    <label className="check-row"><input type="checkbox" checked={item.requiresProduction} onChange={e=>updateItem(index,"requiresProduction",e.target.checked)}/> Requiere producción</label>
-                    {!item.requiresProduction && <label className="check-row"><input type="checkbox" checked={item.materialAvailable} onChange={e=>updateItem(index,"materialAvailable",e.target.checked)}/> Material disponible</label>}
-                    <div className="field"><label>Links de material</label><textarea value={item.materialLinks} onChange={e=>updateItem(index,"materialLinks",e.target.value)} placeholder="Drive, Dropbox, Frame, etc."/></div>
-                    <p className="mini field-note">Para material final usa links de Drive/Frame/Dropbox. No se cargan archivos pesados en solicitudes.</p>
-                    {item.requiresProduction && <div className="field"><label>Notas para producción</label><textarea value={item.productionNotes} onChange={e=>updateItem(index,"productionNotes",e.target.value)} placeholder="Tomas necesarias, estilo, locación, etc."/></div>}
-                  </td>
-                  <td>
-                    <div className="field"><label>Links inspiración</label><textarea value={item.referenceLinks} onChange={e=>updateItem(index,"referenceLinks",e.target.value)}/></div>
-                    <input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm" onChange={e=>uploadToItem(index,"reference",e.target.files)}/>
-                    <FileList files={item.referenceFiles||[]} onPreview={setPreview} onRemove={(i)=>removeFileFromItem(index,"reference",i)}/>
-                  </td>
-                  <td>
-                    <button className="btn" onClick={()=>duplicateItem(index)}>Duplicar</button><br/><br/>
-                    <button className="btn red" onClick={()=>removeItem(index)}>Quitar</button>
-                  </td>
-                </tr>
-              })}</tbody>
-            </table>
+                    <div>
+                      <button className="btn" onClick={()=>duplicateItem(index)}>Duplicar</button>
+                      <button className="btn red" onClick={()=>removeItem(index)}>Quitar</button>
+                    </div>
+                  </div>
+                </div>}
+              </div>
+            })}
           </div>}
         </div>
       </div>
