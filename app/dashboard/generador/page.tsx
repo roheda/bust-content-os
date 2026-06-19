@@ -550,14 +550,9 @@ export default function BustItNowPage() {
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
           <header className="hero generator-apple-hero">
             <div className="generator-hero-copy">
-              <img className="module-lockup" src="/brand/bust-content-os-lockup.svg" alt="BUST Content OS" />
               <p className="eyebrow">BUST It Now</p>
               <h1>Generador de piezas</h1>
               <p>Selecciona una marca, carga su Brand Brain, reutiliza sus bloques de texto y elige los assets que sí deben viajar al request.</p>
-            </div>
-            <div className="hero-system-pill" aria-hidden="true">
-              <span>AI</span>
-              <strong>Brand Brain</strong>
             </div>
           </header>
 
