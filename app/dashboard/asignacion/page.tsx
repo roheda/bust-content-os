@@ -10,7 +10,7 @@ import {
   getOperationalStatus,
   hasMaterial,
   canAssignRequest,
-  isImageFile,
+  isImageFile, isVideoFile,
   listUniqueBrands,
   listRequests,
   listUsers,
@@ -595,7 +595,7 @@ function FilePreviewGrid({files,onPreview}:{files:ReferenceFile[];onPreview:(fil
       <button type="button" className="preview-thumb" key={index} onClick={()=>onPreview(file)}>
         {isImageFile(file)
           ? <img src={file.url} alt="Referencia"/>
-          : <span>Archivo</span>
+          : isVideoFile(file) ? <video src={file.url} muted playsInline preload="metadata"/> : <span>Archivo</span>
         }
       </button>
     )}
@@ -623,7 +623,7 @@ function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
       </div>
       {isImageFile(file)
         ? <img src={file.url} alt={file.name}/>
-        : <p>Archivo no previsualizable. Ábrelo desde su link original.</p>
+        : isVideoFile(file) ? <video src={file.url} controls playsInline/> : <p>Archivo no previsualizable. Ábrelo desde su link original.</p>
       }
     </div>
   </div>;

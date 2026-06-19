@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { ContentRequest, TaskComment, listRequests, subscribeRequests, updateRequest } from "@/lib/data";
+import { ContentRequest, TaskComment, deleteStorageFiles, listRequests, subscribeRequests, updateRequest } from "@/lib/data";
 
 const reasons = [
   "Errores ortográficos",
@@ -257,10 +257,13 @@ export default function ApprovalsPage(){
       createdAt:new Date().toISOString()
     };
     const comments = [...(item.comments||[]), log];
+    const temporaryReferenceFiles = (item.referenceFiles || []).filter((file) => file.temporary || file.storagePath);
+    await deleteStorageFiles(temporaryReferenceFiles);
     await updateRequest(item.id,{
       copyOut,
       status:"finalizada",
       approvalStatus:"aprobada",
+      referenceFiles:(item.referenceFiles || []).filter((file) => !temporaryReferenceFiles.includes(file)),
       comments
     });
     setCopyOutDrafts({...copyOutDrafts,[item.id]:""});

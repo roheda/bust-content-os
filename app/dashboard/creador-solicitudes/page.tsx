@@ -16,6 +16,7 @@ import {
   getRequestDate,
   hasMaterial,
   isImageFile,
+  isVideoFile,
   estimateRequestCost,
   getDeliveryRisk,
   listUniqueBrands,
@@ -48,6 +49,7 @@ export default function CreatorPage(){
   const [manual,setManual]=useState<ContentRequest>(emptyRequest);
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
   const [busy,setBusy]=useState(false);
+  const referenceMaxBytes = 80 * 1024 * 1024;
   const [improvingKey,setImprovingKey]=useState<string>("");
 
   const [aiCount,setAiCount]=useState(5);
@@ -376,32 +378,41 @@ export default function CreatorPage(){
     setItems([...items,{...items[index],id:undefined,source:"manual"}]);
   }
 
-  async function uploadToManual(kind:"reference"|"material",files:FileList|null){
+  async function uploadToManual(kind:"reference",files:FileList|null){
     if(!files)return;
     setBusy(true);
     try{
-      const uploaded=await uploadReferenceFiles(files,kind==="material"?"content-material":"content-request-references");
-      if(kind==="reference")setManual({...manual,referenceFiles:[...(manual.referenceFiles||[]),...uploaded]});
-      else setManual({...manual,materialFiles:[...(manual.materialFiles||[]),...uploaded],materialAvailable:true});
+      const uploaded=await uploadReferenceFiles(files,"content-request-references",{
+        maxBytes:referenceMaxBytes,
+        temporary:true,
+        allowedTypes:/^(image\/|video\/)|\.(jpg|jpeg|png|webp|gif|heic|heif|mp4|mov|m4v|webm)$/i
+      });
+      setManual({...manual,referenceFiles:[...(manual.referenceFiles||[]),...uploaded]});
+    }catch(error){
+      alert(error instanceof Error ? error.message : "No se pudo subir la referencia.");
     }finally{setBusy(false)}
   }
 
-  async function uploadToItem(index:number,kind:"reference"|"material",files:FileList|null){
+  async function uploadToItem(index:number,kind:"reference",files:FileList|null){
     if(!files)return;
     setBusy(true);
     try{
-      const uploaded=await uploadReferenceFiles(files,kind==="material"?"content-material":"content-request-references");
+      const uploaded=await uploadReferenceFiles(files,"content-request-references",{
+        maxBytes:referenceMaxBytes,
+        temporary:true,
+        allowedTypes:/^(image\/|video\/)|\.(jpg|jpeg|png|webp|gif|heic|heif|mp4|mov|m4v|webm)$/i
+      });
       const next=[...items];
-      if(kind==="reference")next[index]={...next[index],referenceFiles:[...(next[index].referenceFiles||[]),...uploaded]};
-      else next[index]={...next[index],materialFiles:[...(next[index].materialFiles||[]),...uploaded],materialAvailable:true};
+      next[index]={...next[index],referenceFiles:[...(next[index].referenceFiles||[]),...uploaded]};
       setItems(next);
+    }catch(error){
+      alert(error instanceof Error ? error.message : "No se pudo subir la referencia.");
     }finally{setBusy(false)}
   }
 
-  function removeFileFromItem(index:number,kind:"reference"|"material",fileIndex:number){
+  function removeFileFromItem(index:number,kind:"reference",fileIndex:number){
     const next=[...items];
-    if(kind==="reference")next[index]={...next[index],referenceFiles:(next[index].referenceFiles||[]).filter((_,i)=>i!==fileIndex)};
-    else next[index]={...next[index],materialFiles:(next[index].materialFiles||[]).filter((_,i)=>i!==fileIndex)};
+    next[index]={...next[index],referenceFiles:(next[index].referenceFiles||[]).filter((_,i)=>i!==fileIndex)};
     setItems(next);
   }
 
@@ -416,6 +427,7 @@ export default function CreatorPage(){
   }
 
   async function publishBatch(){
+    if(busy)return alert("Espera a que termine la carga de referencias.");
     if(!client?.id)return alert("Selecciona cliente");
     const name = draftName || defaultBatchName(client.name);
     if(!batchDueDate)return alert("Define la fecha límite del lote.");
@@ -466,7 +478,7 @@ export default function CreatorPage(){
         <input type="date" value={batchDueDate} onChange={e=>setBatchDueDate(e.target.value)}/>
       </div>
       <button className="btn blue" onClick={saveDraft}>Guardar borrador</button>
-      <button className="btn dark" onClick={publishBatch}>Aprobar lote y enviar a Asignación</button>
+      <button className="btn dark" onClick={publishBatch} disabled={busy}>{busy?"Cargando referencias...":"Aprobar lote y enviar a Asignación"}</button>
       <button className="btn red" onClick={newDraft}>Nuevo</button>
     </div>
 
@@ -496,10 +508,7 @@ export default function CreatorPage(){
           <button className="btn blue" onClick={generateAI}>Agregar propuestas IA</button>
 
           <h3 style={{marginTop:28}}>Manual</h3>
-          <RequestForm request={manual} buyerPersonas={client?.buyerPersonas || []} onPersonaChange={(persona)=>setManual({...manual,buyerPersonaId:persona?.id || "",buyerPersonaName:persona?.name || "Sin enfoque particular",buyerPersonaSnapshot:persona || null})} onChange={setManualField} onUpload={uploadToManual} onPreview={setPreview} onImprove={()=>improveCreativeIdea("manual")} improving={improvingKey==="manual"} onRemove={(kind,index)=> {
-            if(kind==="reference")setManual({...manual,referenceFiles:manual.referenceFiles.filter((_,i)=>i!==index)});
-            else setManual({...manual,materialFiles:manual.materialFiles.filter((_,i)=>i!==index)});
-          }}/>
+          <RequestForm request={manual} buyerPersonas={client?.buyerPersonas || []} onPersonaChange={(persona)=>setManual({...manual,buyerPersonaId:persona?.id || "",buyerPersonaName:persona?.name || "Sin enfoque particular",buyerPersonaSnapshot:persona || null})} onChange={setManualField} onUpload={uploadToManual} onPreview={setPreview} onImprove={()=>improveCreativeIdea("manual")} improving={improvingKey==="manual"} onRemove={(_,index)=>setManual({...manual,referenceFiles:manual.referenceFiles.filter((_,i)=>i!==index)})}/>
           <button className="btn blue" onClick={addManual}>Agregar manual al lote</button>
         </div>
 
@@ -537,12 +546,12 @@ export default function CreatorPage(){
                     <label className="check-row"><input type="checkbox" checked={item.requiresProduction} onChange={e=>updateItem(index,"requiresProduction",e.target.checked)}/> Requiere producción</label>
                     {!item.requiresProduction && <label className="check-row"><input type="checkbox" checked={item.materialAvailable} onChange={e=>updateItem(index,"materialAvailable",e.target.checked)}/> Material disponible</label>}
                     <div className="field"><label>Links de material</label><textarea value={item.materialLinks} onChange={e=>updateItem(index,"materialLinks",e.target.value)} placeholder="Drive, Dropbox, Frame, etc."/></div>
-                    <div className="field"><label>Archivos de material</label><input type="file" multiple onChange={e=>uploadToItem(index,"material",e.target.files)}/><FileList files={item.materialFiles||[]} onPreview={setPreview} onRemove={(i)=>removeFileFromItem(index,"material",i)}/></div>
+                    <p className="mini field-note">Para material final usa links de Drive/Frame/Dropbox. No se cargan archivos pesados en solicitudes.</p>
                     {item.requiresProduction && <div className="field"><label>Notas para producción</label><textarea value={item.productionNotes} onChange={e=>updateItem(index,"productionNotes",e.target.value)} placeholder="Tomas necesarias, estilo, locación, etc."/></div>}
                   </td>
                   <td>
                     <div className="field"><label>Links inspiración</label><textarea value={item.referenceLinks} onChange={e=>updateItem(index,"referenceLinks",e.target.value)}/></div>
-                    <input type="file" multiple onChange={e=>uploadToItem(index,"reference",e.target.files)}/>
+                    <input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm" onChange={e=>uploadToItem(index,"reference",e.target.files)}/>
                     <FileList files={item.referenceFiles||[]} onPreview={setPreview} onRemove={(i)=>removeFileFromItem(index,"reference",i)}/>
                   </td>
                   <td>
@@ -594,7 +603,7 @@ export default function CreatorPage(){
   </AppShell>
 }
 
-function RequestForm({request,buyerPersonas,onPersonaChange,onChange,onUpload,onPreview,onImprove,improving,onRemove}:{request:ContentRequest;buyerPersonas:ClientBuyerPersona[];onPersonaChange:(persona?:ClientBuyerPersona)=>void;onChange:(k:keyof ContentRequest,v:any)=>void;onUpload:(kind:"reference"|"material",files:FileList|null)=>void;onPreview:(file:ReferenceFile)=>void;onImprove:()=>void;improving:boolean;onRemove:(kind:"reference"|"material",index:number)=>void;}){
+function RequestForm({request,buyerPersonas,onPersonaChange,onChange,onUpload,onPreview,onImprove,improving,onRemove}:{request:ContentRequest;buyerPersonas:ClientBuyerPersona[];onPersonaChange:(persona?:ClientBuyerPersona)=>void;onChange:(k:keyof ContentRequest,v:any)=>void;onUpload:(kind:"reference",files:FileList|null)=>void;onPreview:(file:ReferenceFile)=>void;onImprove:()=>void;improving:boolean;onRemove:(kind:"reference",index:number)=>void;}){
   return <div className="request-form-grid">
     <div className="field"><label>Tipo</label><select value={request.contentType} onChange={e=>onChange("contentType",e.target.value)}>{contentTypes.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Objetivo</label><select value={request.objective} onChange={e=>onChange("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
@@ -604,14 +613,13 @@ function RequestForm({request,buyerPersonas,onPersonaChange,onChange,onUpload,on
     <PostInfoSelector request={request} onChange={onChange}/>
     <CreativeIdeaField value={request.creativeIdea} onChange={(value)=>onChange("creativeIdea",value)} onImprove={onImprove} busy={improving}/>
     <div className="field full"><label>Copy In</label><textarea value={request.copyIn} onChange={e=>onChange("copyIn",e.target.value)}/></div>
-    <div className="field full"><label>Inspiración / referencias</label><textarea value={request.referenceLinks} onChange={e=>onChange("referenceLinks",e.target.value)}/><input type="file" multiple onChange={e=>onUpload("reference",e.target.files)}/><FileList files={request.referenceFiles||[]} onPreview={onPreview} onRemove={(i)=>onRemove("reference",i)}/></div>
+    <div className="field full"><label>Inspiración / referencias</label><textarea value={request.referenceLinks} onChange={e=>onChange("referenceLinks",e.target.value)}/><input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm" onChange={e=>onUpload("reference",e.target.files)}/><p className="mini field-note">Referencia temporal: imagen o video hasta 80 MB. Se eliminará al finalizar la solicitud.</p><FileList files={request.referenceFiles||[]} onPreview={onPreview} onRemove={(i)=>onRemove("reference",i)}/></div>
     <div className="field full">
       <label>Producción / Material</label>
       <label className="check-row"><input type="checkbox" checked={request.requiresProduction} onChange={e=>onChange("requiresProduction",e.target.checked)}/> Requiere producción</label>
       {!request.requiresProduction && <label className="check-row"><input type="checkbox" checked={request.materialAvailable} onChange={e=>onChange("materialAvailable",e.target.checked)}/> Material disponible</label>}
       <textarea value={request.materialLinks} onChange={e=>onChange("materialLinks",e.target.value)} placeholder="Links de material si ya existe"/>
-      <input type="file" multiple onChange={e=>onUpload("material",e.target.files)}/>
-      <FileList files={request.materialFiles||[]} onPreview={onPreview} onRemove={(i)=>onRemove("material",i)}/>
+      <p className="mini field-note">No cargues archivos de material aquí. Pega el link de Drive/Frame/Dropbox para evitar saturar Storage.</p>
     </div>
   </div>
 }
@@ -688,7 +696,7 @@ function CreativeIdeaField({value,onChange,onImprove,busy}:{value:string;onChang
 function FileList({files,onPreview,onRemove}:{files:ReferenceFile[];onPreview:(file:ReferenceFile)=>void;onRemove:(index:number)=>void;}){
   return <div className="ref-grid">
     {(files||[]).map((file,index)=><button type="button" className="ref-thumb" onClick={()=>onPreview(file)} key={index}>
-      {isImageFile(file)?<img src={file.url} alt="Referencia"/>:<div className="ref-thumb-file">Archivo</div>}
+      {isImageFile(file)?<img src={file.url} alt="Referencia"/>:isVideoFile(file)?<video src={file.url} muted playsInline preload="metadata"/>:<div className="ref-thumb-file">Archivo</div>}
       <span className="ref-delete" onClick={(event)=>{event.stopPropagation();onRemove(index);}}>Eliminar</span>
     </button>)}
   </div>
@@ -698,7 +706,7 @@ function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
   return <div className="preview-modal" onClick={onClose}>
     <div className="preview-box" onClick={e=>e.stopPropagation()}>
       <div className="preview-actions"><strong>{file.name}</strong><button className="btn red" onClick={onClose}>Cerrar</button></div>
-      {isImageFile(file)?<img src={file.url} alt={file.name}/>:<p>Archivo no previsualizable.</p>}
+      {isImageFile(file)?<img src={file.url} alt={file.name}/>:isVideoFile(file)?<video src={file.url} controls playsInline/>:<p>Archivo no previsualizable.</p>}
     </div>
   </div>
 }

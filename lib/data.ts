@@ -13,7 +13,7 @@ import {
   updateDoc,
   where
 } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "./firebase";
 
 export const contentTypes = ["Reel", "Carrusel", "Post", "Story", "TikTok", "Foto", "Diseño", "Blog"];
@@ -279,6 +279,10 @@ export type ReferenceFile = {
   name: string;
   url: string;
   type: string;
+  storagePath?: string;
+  size?: number;
+  temporary?: boolean;
+  uploadedAt?: string;
 };
 
 export type BrandBrain = {
@@ -683,6 +687,12 @@ export function isImageFile(file: ReferenceFile) {
   return type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|avif|heic|heif)$/i.test(name);
 }
 
+export function isVideoFile(file: ReferenceFile) {
+  const type = file.type || "";
+  const name = (file.name || "").toLowerCase();
+  return type.startsWith("video/") || /\.(mp4|mov|m4v|webm|avi|mpeg|mpg)$/i.test(name);
+}
+
 export function getRequestDate(item: Partial<ContentRequest>) {
   return item.publishDate || "";
 }
@@ -732,26 +742,57 @@ export function validateCreatorItem(item: ContentRequest) {
   if (!item.publishDate) return "Falta fecha de publicación.";
 
   if (!item.requiresProduction && !hasMaterial(item)) {
-    return "Si no requiere producción, debes marcar material disponible y subir archivo o agregar link de material.";
+    return "Si no requiere producción, debes marcar material disponible y agregar un link de material.";
   }
 
   return "";
 }
 
-export async function uploadReferenceFiles(files: FileList | File[], folder = "content-request-references") {
+export async function uploadReferenceFiles(
+  files: FileList | File[],
+  folder = "content-request-references",
+  options: { maxBytes?: number; temporary?: boolean; allowedTypes?: RegExp } = {}
+) {
   const list = Array.from(files);
   const uploaded: ReferenceFile[] = [];
+  const maxBytes = options.maxBytes || 80 * 1024 * 1024;
 
   for (const file of list) {
+    if (file.size > maxBytes) {
+      throw new Error(`${file.name} pesa ${Math.ceil(file.size / 1024 / 1024)} MB. Máximo permitido: ${Math.floor(maxBytes / 1024 / 1024)} MB.`);
+    }
+    if (options.allowedTypes && !options.allowedTypes.test(file.type || file.name || "")) {
+      throw new Error(`${file.name} no es un formato permitido. Usa imagen o video.`);
+    }
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
     const storagePath = `${folder}/${Date.now()}-${safeName}`;
     const storageRef = ref(storage, storagePath);
     await uploadBytes(storageRef, file);
     const url = await getDownloadURL(storageRef);
-    uploaded.push({ name: file.name, url, type: file.type || "" });
+    uploaded.push({
+      name: file.name,
+      url,
+      type: file.type || "",
+      storagePath,
+      size: file.size,
+      temporary: Boolean(options.temporary),
+      uploadedAt: new Date().toISOString()
+    });
   }
 
   return uploaded;
+}
+
+export async function deleteStorageFiles(files: ReferenceFile[] = []) {
+  await Promise.all((files || [])
+    .filter((file) => file.storagePath)
+    .map(async (file) => {
+      try {
+        await deleteObject(ref(storage, file.storagePath!));
+      } catch (error) {
+        console.warn("No se pudo eliminar archivo temporal", file.storagePath, error);
+      }
+    }));
 }
 
 export async function saveBrand(data: Brand) {

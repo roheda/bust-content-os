@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { ContentRequest, PlatformUser, Production, ReferenceFile, TaskComment, isImageFile, listProductions, listRequests, listUsers, organizationTeam, updateRequest } from "@/lib/data";
+import { ContentRequest, PlatformUser, Production, ReferenceFile, TaskComment, isImageFile, isVideoFile, listProductions, listRequests, listUsers, organizationTeam, updateRequest } from "@/lib/data";
 
 const people = ["Todos", ...organizationTeam.map((member)=>member.name)];
 const areas = ["Todas","Diseño","Audiovisual"];
@@ -603,7 +603,7 @@ function FilePreviewGrid({files,onPreview}:{files:ReferenceFile[];onPreview:(fil
   if(!files?.length)return <p className="mini">Sin archivos.</p>;
   return <div className="preview-grid">
     {files.map((file,index)=><button type="button" className="preview-thumb" key={index} onClick={()=>onPreview(file)}>
-      {isImageFile(file)?<img src={file.url} alt="Referencia"/>:<span>Archivo</span>}
+      {isImageFile(file)?<img src={file.url} alt="Referencia"/>:isVideoFile(file)?<video src={file.url} muted playsInline preload="metadata"/>:<span>Archivo</span>}
     </button>)}
   </div>;
 }
@@ -615,7 +615,7 @@ function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
         <strong>{file.name}</strong>
         <button className="btn red" onClick={onClose}>Cerrar</button>
       </div>
-      {isImageFile(file)?<img src={file.url} alt={file.name}/>:<p>Archivo no previsualizable.</p>}
+      {isImageFile(file)?<img src={file.url} alt={file.name}/>:isVideoFile(file)?<video src={file.url} controls playsInline/>:<p>Archivo no previsualizable.</p>}
     </div>
   </div>;
 }

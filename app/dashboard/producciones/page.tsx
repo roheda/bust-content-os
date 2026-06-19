@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { Brand, ContentRequest, PlatformUser, Production, ReferenceFile, isImageFile, listUniqueBrands, listProductions, listRequests, listUsers, organizationTeam, saveProduction, updateProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
+import { Brand, ContentRequest, PlatformUser, Production, ReferenceFile, isImageFile, isVideoFile, listUniqueBrands, listProductions, listRequests, listUsers, organizationTeam, saveProduction, updateProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
 
 const empty: Production = {
   title: "",
@@ -541,7 +541,7 @@ function ProductionBrief({production,requests}:{production:Production;requests:C
               <h4 style={{margin:"0 0 10px",textTransform:"uppercase",color:"var(--muted)",fontSize:12}}>Referencias visuales</h4>
               {refs.length>0 && <div className="brief-ref-grid">
                 {refs.map((file,i)=><div className="brief-ref" key={i}>
-                  {isImageFile(file)?<img src={file.url} alt="Referencia"/>:<span className="mini">Archivo de referencia</span>}
+                  {isImageFile(file)?<img src={file.url} alt="Referencia"/>:isVideoFile(file)?<video src={file.url} muted playsInline preload="metadata"/>:<span className="mini">Archivo de referencia</span>}
                 </div>)}
               </div>}
               {referenceLinks.map((link,i)=><a className="brief-link" href={link} target="_blank" key={i}>{link}</a>)}
@@ -563,7 +563,7 @@ function ProductionBrief({production,requests}:{production:Production;requests:C
 function FileList({files,onPreview,onRemove}:{files:ReferenceFile[];onPreview:(file:ReferenceFile)=>void;onRemove:(index:number)=>void;}){
   return <div className="ref-grid">
     {(files||[]).map((file,index)=><button type="button" className="ref-thumb" onClick={()=>onPreview(file)} key={index}>
-      {isImageFile(file)?<img src={file.url} alt="Material"/>:<div className="ref-thumb-file">Archivo</div>}
+      {isImageFile(file)?<img src={file.url} alt="Material"/>:isVideoFile(file)?<video src={file.url} muted playsInline preload="metadata"/>:<div className="ref-thumb-file">Archivo</div>}
       <span className="ref-delete" onClick={(event)=>{event.stopPropagation();onRemove(index);}}>Eliminar</span>
     </button>)}
   </div>
@@ -573,7 +573,7 @@ function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
   return <div className="preview-modal" onClick={onClose}>
     <div className="preview-box" onClick={e=>e.stopPropagation()}>
       <div className="preview-actions"><strong>{file.name}</strong><button className="btn red" onClick={onClose}>Cerrar</button></div>
-      {isImageFile(file)?<img src={file.url} alt={file.name}/>:<p>Archivo no previsualizable.</p>}
+      {isImageFile(file)?<img src={file.url} alt={file.name}/>:isVideoFile(file)?<video src={file.url} controls playsInline/>:<p>Archivo no previsualizable.</p>}
     </div>
   </div>
 }
