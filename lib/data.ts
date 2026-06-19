@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -847,6 +848,17 @@ export async function listRequests() {
   const q = query(collection(db, "contentRequests"), orderBy("createdAt", "desc"));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ContentRequest));
+}
+
+export function subscribeRequests(onChange: (items: ContentRequest[]) => void, onError?: (error: unknown) => void) {
+  const q = query(collection(db, "contentRequests"), orderBy("createdAt", "desc"));
+  return onSnapshot(q,
+    (snap) => onChange(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ContentRequest))),
+    (error) => {
+      console.warn("No se pudo escuchar contentRequests en tiempo real", error);
+      onError?.(error);
+    }
+  );
 }
 
 export async function updateRequest(id: string, data: Partial<ContentRequest>) {

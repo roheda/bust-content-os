@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { ContentRequest, TaskComment, listRequests, updateRequest } from "@/lib/data";
+import { ContentRequest, TaskComment, listRequests, subscribeRequests, updateRequest } from "@/lib/data";
 
 const reasons = [
   "Errores ortográficos",
@@ -30,11 +30,15 @@ export default function ApprovalsPage(){
 
   const [finalClientFilter,setFinalClientFilter]=useState("all");
   const [finalBatchFilter,setFinalBatchFilter]=useState("all");
-  const [finalSort,setFinalSort]=useState<"asc"|"desc">("asc");
+  const [finalSortKey,setFinalSortKey]=useState<"task"|"type"|"platforms"|"copyOut"|"publishDate"|"link"|"status">("publishDate");
+  const [finalSortDirection,setFinalSortDirection]=useState<"asc"|"desc">("asc");
   const [finalSelected,setFinalSelected]=useState<string[]>([]);
 
   async function load(){setRequests((await listRequests()).filter(x=>x.status!=="eliminada"))}
-  useEffect(()=>{load()},[]);
+  useEffect(()=>{
+    const unsubscribe = subscribeRequests((items)=>setRequests(items.filter(x=>x.status!=="eliminada")),()=>load());
+    return ()=>unsubscribe();
+  },[]);
 
   const clients = useMemo(()=>{
     const map = new Map<string,string>();
@@ -61,6 +65,44 @@ export default function ApprovalsPage(){
 
   const approvedForCopyOut = useMemo(()=>requests.filter(x=>x.status==="aprobada_pendiente_copyout" || (x.approvalStatus==="aprobada" && x.status!=="finalizada")), [requests]);
   const rejected = useMemo(()=>requests.filter(x=>x.approvalStatus==="rechazada"),[requests]);
+
+  function finalTaskTitle(item:ContentRequest){
+    return item.topic || item.creativeIdea || `${item.contentType || "Pieza"} · ${item.objective || "Objetivo"}`;
+  }
+
+  function finalTypeLabel(item:ContentRequest){
+    return [item.contentType, item.objective].filter(Boolean).join(" · ") || "Sin tipo";
+  }
+
+  function finalPlatformsLabel(item:ContentRequest){
+    return item.platforms?.length ? item.platforms.join(", ") : (item.visualFormat || item.feedPlacement || "Sin plataformas");
+  }
+
+  function finalSortValue(item:ContentRequest){
+    const values = {
+      task: finalTaskTitle(item),
+      type: finalTypeLabel(item),
+      platforms: finalPlatformsLabel(item),
+      copyOut: item.copyOut || "",
+      publishDate: item.publishDate || "",
+      link: item.finalPostLink || "",
+      status: item.status || ""
+    };
+    return String(values[finalSortKey] || "").toLowerCase();
+  }
+
+  function toggleFinalSort(key: typeof finalSortKey){
+    if(finalSortKey===key){
+      setFinalSortDirection(finalSortDirection==="asc"?"desc":"asc");
+      return;
+    }
+    setFinalSortKey(key);
+    setFinalSortDirection("asc");
+  }
+
+  function sortLabel(key: typeof finalSortKey){
+    return finalSortKey===key ? (finalSortDirection==="asc"?" ↑":" ↓") : "";
+  }
 
   function approvedCopyExamples(item:ContentRequest){
     return requests
@@ -92,10 +134,11 @@ export default function ApprovalsPage(){
       (finalClientFilter==="all" || x.clientId===finalClientFilter) &&
       (finalBatchFilter==="all" || (x.batchId||"sin-lote")===finalBatchFilter);
   }).sort((a,b)=>{
-    const av = a.publishDate || "";
-    const bv = b.publishDate || "";
-    return finalSort==="asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-  }),[requests,finalClientFilter,finalBatchFilter,finalSort]);
+    const av = finalSortValue(a);
+    const bv = finalSortValue(b);
+    const result = av.localeCompare(bv, "es", { numeric:true, sensitivity:"base" });
+    return finalSortDirection==="asc" ? result : -result;
+  }),[requests,finalClientFilter,finalBatchFilter,finalSortKey,finalSortDirection]);
 
   const clientsWithFinalized = useMemo(()=>{
     const map = new Map<string,string>();
@@ -393,10 +436,7 @@ export default function ApprovalsPage(){
           <option value="all">Todos los lotes</option>
           {batchesWithFinalized.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
-        <select value={finalSort} onChange={e=>setFinalSort(e.target.value as "asc"|"desc")}>
-          <option value="asc">Publicación ascendente</option>
-          <option value="desc">Publicación descendente</option>
-        </select>
+        <span className="pill">Orden: {finalSortKey} {finalSortDirection==="asc"?"↑":"↓"}</span>
         <button className="btn" onClick={()=>setFinalSelected(finalized.map(x=>x.id!).filter(Boolean))}>Seleccionar todo filtrado</button>
         <button className="btn" onClick={()=>setFinalSelected([])}>Limpiar selección</button>
         <button className="btn blue" onClick={exportFinalized}>Exportar Excel/CSV</button>
@@ -412,12 +452,21 @@ export default function ApprovalsPage(){
           <button className="btn" onClick={()=>toggleGroup(group.items)}>Seleccionar grupo</button>
         </div>
         <div className="finalized-row header">
-          <span></span><span>Tarea</span><span>Responsable</span><span>Publicación</span><span>Link final</span><span>Estado</span>
+          <span></span>
+          <button type="button" onClick={()=>toggleFinalSort("task")}>Tarea{sortLabel("task")}</button>
+          <button type="button" onClick={()=>toggleFinalSort("type")}>Tipo de publicación{sortLabel("type")}</button>
+          <button type="button" onClick={()=>toggleFinalSort("platforms")}>Plataformas{sortLabel("platforms")}</button>
+          <button type="button" onClick={()=>toggleFinalSort("copyOut")}>Copy Out{sortLabel("copyOut")}</button>
+          <button type="button" onClick={()=>toggleFinalSort("publishDate")}>Fecha de publicación{sortLabel("publishDate")}</button>
+          <button type="button" onClick={()=>toggleFinalSort("link")}>Abrir link{sortLabel("link")}</button>
+          <button type="button" onClick={()=>toggleFinalSort("status")}>Estado{sortLabel("status")}</button>
         </div>
         {group.items.map(item=><div className="finalized-row" key={item.id}>
           <input type="checkbox" checked={finalSelected.includes(item.id||"")} onChange={()=>toggleFinalized(item.id||"")}/>
-          <div><strong>{item.contentType} · {item.objective}</strong><br/><span className="mini">{item.copyOut || item.creativeIdea}</span></div>
-          <span>{item.assignedTo||"Sin responsable"}</span>
+          <div><strong>{finalTaskTitle(item)}</strong></div>
+          <span>{finalTypeLabel(item)}</span>
+          <span>{finalPlatformsLabel(item)}</span>
+          <span className="final-copyout">{item.copyOut || "Sin Copy Out"}</span>
           <span>{item.publishDate||"Sin fecha"}</span>
           <span>{item.finalPostLink ? <a href={item.finalPostLink} target="_blank">Abrir link</a> : "Sin link"}</span>
           <span><span className="pill green">{item.status}</span></span>

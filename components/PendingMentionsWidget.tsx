@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ContentRequest, PlatformUser, TaskComment, listRequests, updateRequest } from "@/lib/data";
+import { ContentRequest, PlatformUser, TaskComment, listRequests, subscribeRequests, updateRequest } from "@/lib/data";
 
 type PendingRow = {
   request: ContentRequest;
@@ -98,9 +98,18 @@ export default function PendingMentionsWidget({ activeUser }: { activeUser: Plat
   }
 
   useEffect(() => {
-    load();
-    const timer = window.setInterval(load, 60000);
-    return () => window.clearInterval(timer);
+    setLoading(true);
+    const unsubscribe = subscribeRequests(
+      (items) => {
+        setRequests(items);
+        setLoading(false);
+      },
+      () => {
+        setLoading(false);
+        load();
+      }
+    );
+    return () => unsubscribe();
   }, []);
 
   const rows = useMemo<PendingRow[]>(() => {
