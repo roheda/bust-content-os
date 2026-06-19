@@ -128,9 +128,12 @@ export default function AppShell({
   return <div className="shell">
     <aside className="sidebar" aria-label="Navegación principal">
       <div>
-        <Link href="/dashboard" className="brand-mark" aria-label="Ir al dashboard">
-          <span className="brand-word">BUST</span>
-          <span className="brand-subtitle">Content OS</span>
+        <Link href="/dashboard" className="brand-mark brand-mark-logo" aria-label="Ir al dashboard">
+          <img className="brand-logo-img" src="/brand/bust-logo-dark.svg" alt="BUST" />
+          <span className="brand-os-text">
+            <span className="brand-os-title">Content OS</span>
+            <span className="brand-os-caption">Sistema operativo creativo</span>
+          </span>
         </Link>
         <nav className="nav" aria-label="Módulos">
           {groupedItems.map(group=><div className="nav-group" key={group.label}>

@@ -548,10 +548,17 @@ export default function BustItNowPage() {
     <AppShell active="BUST It Now">
       <main className="min-h-screen bg-zinc-100 text-zinc-950">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
-          <header className="rounded-[2rem] bg-zinc-950 p-6 text-white shadow-xl shadow-zinc-300/60 sm:p-8">
-            <p className="mb-2 text-sm font-semibold uppercase tracking-[0.22em] text-zinc-400">BUST IT NOW</p>
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Generador de piezas</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-300">Selecciona una marca, carga su Brand Brain, reutiliza sus bloques de texto y elige los assets que sí deben viajar al request.</p>
+          <header className="hero generator-apple-hero">
+            <div className="generator-hero-copy">
+              <img className="module-lockup" src="/brand/bust-content-os-lockup.svg" alt="BUST Content OS" />
+              <p className="eyebrow">BUST It Now</p>
+              <h1>Generador de piezas</h1>
+              <p>Selecciona una marca, carga su Brand Brain, reutiliza sus bloques de texto y elige los assets que sí deben viajar al request.</p>
+            </div>
+            <div className="hero-system-pill" aria-hidden="true">
+              <span>AI</span>
+              <strong>Brand Brain</strong>
+            </div>
           </header>
 
           <nav className="flex flex-wrap gap-2">

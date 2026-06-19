@@ -91,9 +91,10 @@ export default function LoginPage(){
   return <main className="login">
     <section className="login-card">
       <div className="login-brand">
-        <p className="eyebrow">BUST Content OS</p>
+        <img className="login-lockup" src="/brand/bust-content-os-lockup-white.svg" alt="BUST Content OS" />
+        <p className="eyebrow">Acceso interno seguro</p>
         <h1 style={{fontSize:44,margin:0}}>Operación de contenido.</h1>
-        <p style={{color:"#cbd5e1",lineHeight:1.7}}>Creador de solicitudes, asignación, producciones, usuarios, permisos y acceso seguro por Firebase Auth.</p>
+        <p style={{color:"#cbd5e1",lineHeight:1.7}}>El sistema operativo creativo de BUST para solicitudes, producción, asignación, aprobación, usuarios y permisos.</p>
       </div>
       <div className="login-form">
         <p className="eyebrow">Acceso interno</p>
