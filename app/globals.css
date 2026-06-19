@@ -1234,3 +1234,143 @@ button:disabled,.btn:disabled{opacity:.45!important;cursor:not-allowed!important
   .hero-system-pill{display:none}
   .module-lockup{width:min(280px,76vw)}
 }
+
+/* v25 · BUST brand palette
+   Colores oficiales: #9EFC7B, #EDEAE6, #343a40, #f8f9fa.
+   Se aplican con contraste accesible: el verde se usa como acento/fondo con texto oscuro. */
+:root{
+  --brand-accent:#9EFC7B;
+  --brand-warm:#EDEAE6;
+  --brand-dark:#343a40;
+  --brand-light:#f8f9fa;
+  --bg:#EDEAE6;
+  --panel:#f8f9fa;
+  --surface:#f8f9fa;
+  --surface-soft:rgba(248,249,250,.84);
+  --surface-muted:#f3f1ed;
+  --ink:#343a40;
+  --ink-strong:#202428;
+  --muted:#667078;
+  --muted-2:#8a9299;
+  --line:rgba(52,58,64,.15);
+  --line-strong:rgba(52,58,64,.24);
+  --blue:#343a40;
+  --blue-soft:rgba(158,252,123,.20);
+  --green:#343a40;
+  --green-soft:rgba(158,252,123,.26);
+  --focus-ring:0 0 0 4px rgba(158,252,123,.42);
+  --shadow-card:0 14px 44px rgba(52,58,64,.07);
+  --shadow-float:0 24px 70px rgba(52,58,64,.18);
+}
+
+body{
+  background:
+    radial-gradient(circle at 12% -10%,rgba(158,252,123,.28),transparent 30%),
+    radial-gradient(circle at 90% 0%,rgba(248,249,250,.78),transparent 31%),
+    var(--brand-warm)!important;
+}
+
+.sidebar{
+  background:rgba(248,249,250,.84)!important;
+  border-right:1px solid rgba(52,58,64,.13)!important;
+}
+
+.brand-os-title,.brand-word,.hero h1,.page-title h1,.card h3,.kpi strong,.detail-title{color:var(--brand-dark)!important}
+.brand-os-caption,.eyebrow,.hero .eyebrow,.page-title .eyebrow,.field label,.table th,.card p,.hero p,.page-title p{color:#667078!important}
+
+.nav a{color:var(--brand-dark)!important}
+.nav a:hover{
+  background:rgba(158,252,123,.18)!important;
+  color:var(--brand-dark)!important;
+}
+.nav a.active{
+  background:linear-gradient(180deg,rgba(158,252,123,.38),rgba(158,252,123,.22))!important;
+  color:var(--brand-dark)!important;
+  box-shadow:inset 0 0 0 1px rgba(52,58,64,.08),0 10px 24px rgba(158,252,123,.18)!important;
+}
+.nav-icon{background:rgba(248,249,250,.82)!important;border-color:rgba(52,58,64,.12)!important;color:inherit!important}
+.user-avatar,.hero-system-pill span{background:linear-gradient(180deg,var(--brand-dark),#202428)!important;color:#fff!important}
+
+.hero,.generator-apple-hero{
+  background:
+    radial-gradient(circle at 90% 8%,rgba(158,252,123,.32),transparent 30%),
+    radial-gradient(circle at 8% 0%,rgba(248,249,250,.9),transparent 28%),
+    linear-gradient(135deg,rgba(248,249,250,.96),rgba(248,249,250,.74))!important;
+  border-color:rgba(52,58,64,.13)!important;
+  color:var(--brand-dark)!important;
+}
+
+.card,.kpi,.month-card,.detail-hero,.modal-card,.production-brief,.brief-request-card,.feedback-panel,.pending-panel,.login-card,.table-wrap{
+  background:rgba(248,249,250,.88)!important;
+  border-color:rgba(52,58,64,.13)!important;
+}
+.card{background:linear-gradient(180deg,rgba(248,249,250,.98),rgba(248,249,250,.82))!important}
+a.card:hover,.card.clickable:hover{border-color:rgba(158,252,123,.72)!important;box-shadow:0 20px 48px rgba(52,58,64,.10)!important}
+
+.btn.blue,.btn.dark,.hero .btn,.view-tabs button.active,.feedback-tabs button.active,.pending-tabs button.active,.status-buttons button.active,.view-switch button.active,.calendar-controls button.active,.bitnow-tabs button.active,.bitnow-exact-tabs button.active,.auth-mode-tabs button.active{
+  background:var(--brand-dark)!important;
+  border-color:var(--brand-dark)!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+}
+.btn:not(.blue):not(.dark):not(.red){background:rgba(248,249,250,.96)!important;color:var(--brand-dark)!important;border-color:rgba(52,58,64,.16)!important}
+.btn:hover:not(:disabled){box-shadow:0 14px 28px rgba(52,58,64,.10)!important}
+
+.badge,.pill.blue,.mention,.calendar-event,.day-dot{
+  background:rgba(158,252,123,.24)!important;
+  color:var(--brand-dark)!important;
+  border-color:rgba(158,252,123,.62)!important;
+}
+.pill.green,.pending-card-top span,.resolved-badge,.db-pill,.feedback-mini-pill.done,.health-good,.alert.green{
+  background:rgba(158,252,123,.36)!important;
+  color:var(--brand-dark)!important;
+  border-color:rgba(158,252,123,.75)!important;
+}
+.chip-btn.selected,.asset-select-card.selected,.perm-toggle.on{
+  background:var(--brand-accent)!important;
+  color:var(--brand-dark)!important;
+  -webkit-text-fill-color:var(--brand-dark)!important;
+  border-color:rgba(52,58,64,.2)!important;
+  box-shadow:0 0 0 3px rgba(158,252,123,.28)!important;
+}
+.ai-inside{
+  background:linear-gradient(180deg,var(--brand-dark),#202428)!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+  border-color:var(--brand-dark)!important;
+}
+
+.field input,.field select,.field textarea,td input,td select,td textarea,.feedback-form input,.feedback-form textarea,.feedback-form select,.sidebar-user-select{
+  background:rgba(248,249,250,.94)!important;
+  border-color:rgba(52,58,64,.16)!important;
+  color:var(--brand-dark)!important;
+}
+.field input:focus,.field select:focus,.field textarea:focus,td input:focus,td select:focus,td textarea:focus{border-color:rgba(158,252,123,.95)!important;box-shadow:var(--focus-ring)!important;background:#fff!important}
+:focus-visible{border-color:rgba(158,252,123,.95)!important;box-shadow:var(--focus-ring)!important}
+
+.table th{background:rgba(237,234,230,.9)!important;color:#667078!important;border-bottom-color:rgba(52,58,64,.18)!important}
+.table tbody tr:hover td{background:rgba(158,252,123,.08)!important}
+.sort-button:hover,.user-config-link{color:var(--brand-dark)!important;text-decoration-color:var(--brand-accent)!important}
+
+.login{background:radial-gradient(circle at 18% 0%,rgba(158,252,123,.34),transparent 30%),radial-gradient(circle at 82% 18%,rgba(248,249,250,.86),transparent 30%),var(--brand-warm)!important}
+.login-brand{background:linear-gradient(150deg,var(--brand-dark),#202428 62%,#26372a)!important;color:#fff!important}
+.login-form{background:linear-gradient(180deg,#f8f9fa,#f4f2ef)!important}
+
+.pending-fab{
+  background:rgba(158,252,123,.96)!important;
+  color:var(--brand-dark)!important;
+  -webkit-text-fill-color:var(--brand-dark)!important;
+  border-color:rgba(52,58,64,.16)!important;
+}
+.feedback-fab{background:rgba(52,58,64,.94)!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
+.pending-card:not(.resolved){border-left-color:var(--brand-accent)!important}
+
+.shared-db-banner,.persona-selector,.request-number-bar{
+  background:linear-gradient(135deg,rgba(158,252,123,.25),rgba(248,249,250,.96))!important;
+  border-color:rgba(158,252,123,.72)!important;
+  color:var(--brand-dark)!important;
+}
+.prompt-preview{background:#202428!important;color:#f8f9fa!important}
+.bar-fill{background:var(--brand-dark)!important}
+
+.sidebar-logout:hover{background:rgba(158,252,123,.22)!important;border-color:rgba(158,252,123,.65)!important;color:var(--brand-dark)!important}

@@ -6,9 +6,9 @@
   </g>
   <g transform="translate(435 22)">
     <rect x="0" y="0" width="116" height="116" rx="32" fill="#FFFFFF"/>
-    <circle cx="58" cy="58" r="37" fill="#111827" opacity="0.96"/>
+    <circle cx="58" cy="58" r="37" fill="#343a40" opacity="0.96"/>
     <path d="M42 58c0-13 7-23 17-23 13 0 21 11 21 23 0 13-8 23-21 23-10 0-17-10-17-23Z" fill="#FFFFFF"/>
-    <path d="M58 35v46M36 58h44" stroke="#111827" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+    <path d="M58 35v46M36 58h44" stroke="#343a40" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
   </g>
   <text x="565" y="72" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, Arial, sans-serif" font-size="15" font-weight="700" fill="#CBD5E1" letter-spacing="2.2">OPERATING</text>
   <text x="565" y="96" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, Arial, sans-serif" font-size="15" font-weight="700" fill="#CBD5E1" letter-spacing="2.2">SYSTEM</text>
