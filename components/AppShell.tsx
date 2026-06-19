@@ -45,6 +45,8 @@ export default function AppShell({
   const [users,setUsers]=useState<PlatformUser[]>([]);
   const [loading,setLoading]=useState(true);
   const [accessError,setAccessError]=useState("");
+  const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
+  const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
 
   useEffect(()=>{
     let mounted=true;
@@ -106,6 +108,21 @@ export default function AppShell({
     return ()=>{mounted=false; unsub();};
   },[pathname,router]);
 
+
+  useEffect(()=>{
+    if(typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("bust-sidebar-collapsed");
+    setSidebarCollapsed(saved === "true");
+  },[]);
+
+  useEffect(()=>{
+    if(typeof window !== "undefined") window.localStorage.setItem("bust-sidebar-collapsed", sidebarCollapsed ? "true" : "false");
+  },[sidebarCollapsed]);
+
+  useEffect(()=>{
+    setMobileMenuOpen(false);
+  },[pathname]);
+
   function chooseUser(id:string){
     const found = users.find(u=>u.id===id) || null;
     setActiveUser(found);
@@ -116,6 +133,10 @@ export default function AppShell({
     await signOut(auth).catch(()=>{});
     if(typeof window !== "undefined") window.localStorage.removeItem("bust-active-user-id");
     router.push("/login");
+  }
+
+  function toggleSidebar(){
+    setSidebarCollapsed((current)=>!current);
   }
 
   const visibleItems = useMemo(()=>items.filter(([, , key])=>canUser(activeUser,key,"view")),[activeUser]);
@@ -132,9 +153,14 @@ export default function AppShell({
     return <div className="shell-loading"><div className="card access-blocked"><p className="eyebrow">Acceso restringido</p><h2>No tienes permisos activos</h2><p>{accessError}</p><button className="btn blue" onClick={logout}>Cerrar sesión</button></div></div>;
   }
 
-  return <div className="shell">
-    <aside className="sidebar" aria-label="Navegación principal">
+  return <div className={`shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${mobileMenuOpen ? "mobile-menu-open" : ""}`}>
+    <button className="mobile-sidebar-toggle" type="button" aria-label={mobileMenuOpen ? "Cerrar menú" : "Abrir menú"} aria-expanded={mobileMenuOpen} onClick={()=>setMobileMenuOpen((current)=>!current)}>
+      <span></span><span></span><span></span>
+    </button>
+    {mobileMenuOpen ? <button className="mobile-sidebar-scrim" type="button" aria-label="Cerrar menú" onClick={()=>setMobileMenuOpen(false)} /> : null}
+    <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`} aria-label="Navegación principal">
       <div>
+        <div className="sidebar-head-row">
         <Link href="/dashboard" className="brand-mark brand-mark-logo" aria-label="Ir al dashboard">
           <img className="brand-logo-img" src="/brand/bust-logo-dark.svg" alt="BUST" />
           <span className="brand-os-text">
@@ -142,6 +168,10 @@ export default function AppShell({
             <span className="brand-os-caption">Sistema operativo creativo</span>
           </span>
         </Link>
+        <button className="sidebar-collapse-btn" type="button" onClick={toggleSidebar} aria-label={sidebarCollapsed ? "Expandir menú" : "Ocultar menú"} title={sidebarCollapsed ? "Expandir menú" : "Ocultar menú"}>
+          <span aria-hidden="true">{sidebarCollapsed ? "→" : "←"}</span>
+        </button>
+        </div>
         <nav className="nav" aria-label="Módulos">
           {groupedItems.map(group=><div className="nav-group" key={group.label}>
             <p className="nav-section-label">{group.label}</p>
