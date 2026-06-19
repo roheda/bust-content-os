@@ -1770,3 +1770,62 @@ a[class*="bg-black"],
 @media(max-width:900px){
   .creator-accordion-body,.creator-material-grid,.creator-compact-grid{grid-template-columns:1fr!important}
 }
+
+
+/* v43 · Creador de Solicitudes: columna derecha compacta */
+.creator-layout{
+  grid-template-columns:minmax(0,1fr) clamp(250px,18vw,320px)!important;
+  gap:18px!important;
+  align-items:start;
+}
+.creator-layout > .grid,
+.creator-layout > aside,
+.creator-layout .card{min-width:0}
+.creator-layout > aside{
+  gap:12px!important;
+  align-self:start;
+}
+.creator-layout > aside .card{
+  padding:16px!important;
+  border-radius:22px!important;
+}
+.creator-layout > aside h3{
+  font-size:14px!important;
+  margin-bottom:10px!important;
+  letter-spacing:.02em;
+}
+.creator-layout > aside .draft-list,
+.creator-layout > aside .batch-reuse-grid{gap:8px!important}
+.creator-layout > aside .draft-item,
+.creator-layout > aside .batch-reuse-card{
+  padding:10px!important;
+  border-radius:14px!important;
+  gap:6px!important;
+}
+.creator-layout > aside .draft-item strong,
+.creator-layout > aside .batch-reuse-card strong{
+  font-size:12.5px!important;
+  line-height:1.25;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.creator-layout > aside .mini{
+  font-size:11px!important;
+  line-height:1.35!important;
+}
+.creator-layout > aside .btn{
+  min-height:36px!important;
+  padding:8px 12px!important;
+  font-size:12px!important;
+}
+.creator-layout > aside .draft-actions{gap:6px!important}
+.creator-layout .creator-accordion-actions{
+  overflow:visible!important;
+  padding-bottom:8px!important;
+}
+@media (max-width:1180px){
+  .creator-layout{grid-template-columns:1fr!important}
+  .creator-layout > aside{grid-template-columns:1fr!important}
+}

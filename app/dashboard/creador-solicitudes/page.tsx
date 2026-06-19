@@ -507,7 +507,7 @@ export default function CreatorPage(){
       <span> Configura costos y tiempos en Configuración → Configuración operativa.</span>
     </div>
 
-    <section className="grid two-col">
+    <section className="grid two-col creator-layout">
       <div className="grid">
         <div className="card">
           <h3>Agregar solicitudes</h3>
