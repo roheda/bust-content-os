@@ -41,15 +41,19 @@ function targetTokens(user: PlatformUser | null | undefined) {
     .filter(Boolean)
     .map((x) => normalize(String(x)));
   const mapped: Record<string, string[]> = {
-    kam: ["keyaccount", "cuenta", "content", "kam"],
+    kam: ["keyaccount", "cuenta", "kam"],
     estrategia: ["estrategia", "content"],
     creativo: ["copy", "creativo", "content"],
-    diseno: ["diseno", "diseño", "content"].map(normalize),
+    diseno: ["diseno", "diseño"].map(normalize),
     audiovisual: ["audiovisual", "video", "produccion"],
-    admin: ["content", "interno", "keyaccount", "diseno", "audiovisual"],
-    master: ["content", "interno", "keyaccount", "diseno", "audiovisual", "cliente"]
+    admin: ["direccion", "admin", "master"],
+    master: ["direccion", "admin", "master"]
   };
   return Array.from(new Set([...raw, ...(mapped[user.roleKey] || [])]));
+}
+
+function isSystemComment(comment: TaskComment) {
+  return normalize(comment.author || "") === "sistema";
 }
 
 function isResolved(comment: TaskComment) {
@@ -58,15 +62,15 @@ function isResolved(comment: TaskComment) {
 
 function matchesUser(row: { comment: TaskComment; request: ContentRequest }, user: PlatformUser | null) {
   if (!user) return { match: false, reason: "" };
-  if (user.isMaster || user.roleKey === "master") {
-    const hasWork = !isResolved(row.comment) && (row.comment.mentions?.length || row.comment.target !== "Interno");
-    return { match: Boolean(hasWork), reason: "Vista Master" };
-  }
   const userMentions = mentionTokens(user);
   const commentMentions = (row.comment.mentions || []).map(normalize);
   const body = normalize(row.comment.body || "");
   const mentionHit = userMentions.some((token) => commentMentions.includes(token) || body.includes(token));
   if (mentionHit) return { match: true, reason: "@mención directa" };
+
+  // Los movimientos automáticos del sistema no deben convertirse en pendiente personal
+  // salvo que mencionen explícitamente a alguien. Esto evita que Master vea todo como pendiente.
+  if (isSystemComment(row.comment) && !commentMentions.length) return { match: false, reason: "" };
 
   const targets = targetTokens(user);
   const target = normalize(row.comment.target || "");
@@ -152,8 +156,8 @@ export default function PendingMentionsWidget({ activeUser }: { activeUser: Plat
       <div className="pending-head">
         <div>
           <p className="eyebrow">@menciones</p>
-          <h3>Pendientes flotantes</h3>
-          <p className="mini">Dudas y comentarios donde te mencionan o van dirigidos a tu área.</p>
+          <h3>Mis pendientes</h3>
+          <p className="mini">Aparecen solo @menciones directas, dudas dirigidas a tu área o rebotes que requieren tu respuesta.</p>
         </div>
         <button className="feedback-close" type="button" onClick={() => setOpen(false)}>✕</button>
       </div>
@@ -181,7 +185,7 @@ export default function PendingMentionsWidget({ activeUser }: { activeUser: Plat
           {!!row.comment.mentions?.length && <div className="pending-mentions">{row.comment.mentions.map((mention) => <span key={mention}>{mention}</span>)}</div>}
           {row.comment.resolvedAt && <p className="mini">Resuelto por {row.comment.resolvedBy || "Usuario"} · {new Date(row.comment.resolvedAt).toLocaleString("es-MX")}</p>}
           <div className="pending-actions">
-            <button type="button" onClick={() => goToTask(row)}>Abrir solicitud</button>
+            <button type="button" onClick={() => goToTask(row)}>Abrir tarea</button>
             {!isResolved(row.comment) && <button type="button" className="done" onClick={() => resolve(row)}>Marcar resuelto</button>}
           </div>
         </article>)}

@@ -145,9 +145,10 @@ export default function ApprovalsPage(){
     const log:TaskComment = {
       id:`${Date.now()}`,
       author:"Sistema",
-      target:"Interno",
-      body:`Rebotado por ${reason}.${noteText}`,
-      mentions:[],
+      target:"Content",
+      body:`Pieza no aprobada / rebotada por ${reason}.${noteText}`,
+      mentions:["@content"],
+      status:"open",
       createdAt:new Date().toISOString()
     };
     const comments = [...(item.comments||[]), log];
@@ -328,7 +329,7 @@ export default function ApprovalsPage(){
 
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         <button className="btn blue" onClick={()=>approve(selected)}>Aprobar / pasar a Copy Out</button>
-        <button className="btn red" onClick={()=>reject(selected)}>No aprobar / rebotar</button>
+        <button className="btn red" onClick={()=>reject(selected)}>No aprobar / devolver</button>
         <button className="btn" onClick={()=>setSelected(null)}>Cerrar</button>
       </div>
 

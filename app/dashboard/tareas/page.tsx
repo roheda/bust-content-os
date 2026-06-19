@@ -95,7 +95,8 @@ export default function TasksPage(){
 
   const mentionsFeed = useMemo(()=>{
     return requests.flatMap(req=>(req.comments||[]).map(c=>({request:req,comment:c})))
-      .filter(row=>row.comment.mentions.length || row.comment.target !== "Interno")
+      .filter(row=>!(row.comment.resolvedAt || row.comment.status==="resolved"))
+      .filter(row=>row.comment.mentions.length || (row.comment.target !== "Interno" && row.comment.author !== "Sistema"))
       .sort((a,b)=>b.comment.createdAt.localeCompare(a.comment.createdAt));
   },[requests]);
 
@@ -304,7 +305,7 @@ export default function TasksPage(){
 
       <aside className="chat-panel">
         <h3>Panel de dudas / menciones</h3>
-        <p className="mini">Comentarios con @menciones o dirigidos a Content / Key Account / áreas.</p>
+        <p className="mini">Aquí aparecen dudas abiertas con @menciones o dirigidas a un área. Los movimientos automáticos no cuentan como pendiente personal.</p>
         {!mentionsFeed.length && <p className="mini">Aún no hay dudas activas.</p>}
         {mentionsFeed.slice(0,30).map(({request,comment})=><button className="chat-item" key={`${request.id}-${comment.id}`} onClick={()=>openTask(request)}>
           <strong>{request.clientName} · {request.contentType}</strong>

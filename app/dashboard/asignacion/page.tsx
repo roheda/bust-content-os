@@ -289,13 +289,27 @@ export default function AssignmentPage(){
   async function rejectRequests(ids:string[], note:string){
     if(!ids.length)return alert("Selecciona al menos una solicitud.");
     if(!note.trim())return alert("Escribe una nota para rebotar la solicitud.");
-    await Promise.all(ids.map(id=>updateRequest(id,{
-      status:"rebotada",
-      rejectionNote:note.trim(),
-      assignedTo:"",
-      assignedArea:"",
-      internalNotes: note.trim()
-    })));
+    await Promise.all(ids.map(id=>{
+      const current = items.find(item=>item.id===id);
+      const comments = [...(current?.comments||[]), {
+        id:`${Date.now()}-${id}`,
+        author:"Sistema",
+        target:"Content",
+        body:`Solicitud rebotada desde Asignación. Motivo: ${note.trim()}`,
+        mentions:["@content"],
+        status:"open" as const,
+        createdAt:new Date().toISOString()
+      }];
+      return updateRequest(id,{
+        status:"rebotada",
+        rejectionNote:note.trim(),
+        rejectedAt:new Date().toISOString(),
+        assignedTo:"",
+        assignedArea:"",
+        internalNotes: note.trim(),
+        comments
+      });
+    }));
     setSelected([]);
     setRejectNote("");
     setRejectModal(false);
@@ -386,11 +400,11 @@ export default function AssignmentPage(){
       </aside>
     </section>
     {rejectModal && <div className="modal-backdrop"><div className="modal-card">
-      <h2>Rebotar solicitudes</h2>
-      <p className="mini">Escribe la razón para que Content pueda corregirlas.</p>
+      <h2>Devolver solicitudes a Content</h2>
+      <p className="mini">Usa esto cuando la solicitud ya avanzó a asignación pero necesita corrección. Si fue un borrador mal creado, elimínalo desde Creador de Solicitudes.</p>
       <div className="field"><label>Nota de rechazo</label><textarea value={rejectNote} onChange={e=>setRejectNote(e.target.value)} placeholder="Ej. Falta material correcto / brief incompleto / no aplica al objetivo."/></div>
       <div style={{display:"flex",gap:12}}>
-        <button className="btn blue" onClick={()=>rejectRequests(selected,rejectNote)}>Rebotar</button>
+        <button className="btn blue" onClick={()=>rejectRequests(selected,rejectNote)}>Devolver a Content</button>
         <button className="btn red" onClick={()=>setRejectModal(false)}>Cancelar</button>
       </div>
     </div></div>}
@@ -565,10 +579,10 @@ function RequestDetail({
       </div>
 
       <div className="danger-zone">
-        <h4>Rebotar solicitud</h4>
-        <p className="mini">Regrésala a Content con una nota clara para corrección.</p>
+        <h4>Devolver a Content</h4>
+        <p className="mini">Úsalo cuando el brief ya llegó a asignación pero necesita corrección. En creación, lo correcto es editar o eliminar el borrador.</p>
         <textarea value={localRejectNote} onChange={e=>setLocalRejectNote(e.target.value)} placeholder="Motivo del rebote"/>
-        <button className="btn red" style={{marginTop:10}} onClick={()=>onReject(item,localRejectNote)}>Rebotar solicitud</button>
+        <button className="btn red" style={{marginTop:10}} onClick={()=>onReject(item,localRejectNote)}>Devolver solicitud</button>
       </div>
     </div>
   </div>;
