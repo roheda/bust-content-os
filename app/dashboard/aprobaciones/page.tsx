@@ -27,6 +27,14 @@ export default function ApprovalsPage(){
 
   const [copyOutDrafts,setCopyOutDrafts]=useState<Record<string,string>>({});
   const [improvingCopyId,setImprovingCopyId]=useState<string|null>(null);
+  const [bulkImprovingCopyOut,setBulkImprovingCopyOut]=useState(false);
+
+  const [copyClientFilter,setCopyClientFilter]=useState("all");
+  const [copyBatchFilter,setCopyBatchFilter]=useState("all");
+  const [copySearch,setCopySearch]=useState("");
+  const [copySortKey,setCopySortKey]=useState<"task"|"type"|"platforms"|"copyOut"|"publishDate"|"link"|"status">("publishDate");
+  const [copySortDirection,setCopySortDirection]=useState<"asc"|"desc">("asc");
+  const [copySelected,setCopySelected]=useState<string[]>([]);
 
   const [finalClientFilter,setFinalClientFilter]=useState("all");
   const [finalBatchFilter,setFinalBatchFilter]=useState("all");
@@ -63,7 +71,18 @@ export default function ApprovalsPage(){
       (!pendingSearch.trim() || text.includes(pendingSearch.trim().toLowerCase()));
   }),[requests,pendingClientFilter,pendingBatchFilter,pendingSearch]);
 
-  const approvedForCopyOut = useMemo(()=>requests.filter(x=>x.status==="aprobada_pendiente_copyout" || (x.approvalStatus==="aprobada" && x.status!=="finalizada")), [requests]);
+  const approvedForCopyOut = useMemo(()=>requests.filter(x=>{
+    if(!(x.status==="aprobada_pendiente_copyout" || (x.approvalStatus==="aprobada" && x.status!=="finalizada")))return false;
+    const text = `${x.clientName} ${x.batchName} ${finalTaskTitle(x)} ${finalTypeLabel(x)} ${finalPlatformsLabel(x)} ${x.copyOut||""} ${x.copyIn||""}`.toLowerCase();
+    return (copyClientFilter==="all" || x.clientId===copyClientFilter) &&
+      (copyBatchFilter==="all" || (x.batchId||"sin-lote")===copyBatchFilter) &&
+      (!copySearch.trim() || text.includes(copySearch.trim().toLowerCase()));
+  }).sort((a,b)=>{
+    const av = copySortValue(a);
+    const bv = copySortValue(b);
+    const result = av.localeCompare(bv, "es", { numeric:true, sensitivity:"base" });
+    return copySortDirection==="asc" ? result : -result;
+  }), [requests,copyClientFilter,copyBatchFilter,copySearch,copySortKey,copySortDirection]);
   const rejected = useMemo(()=>requests.filter(x=>x.approvalStatus==="rechazada"),[requests]);
 
   function finalTaskTitle(item:ContentRequest){
@@ -76,6 +95,32 @@ export default function ApprovalsPage(){
 
   function finalPlatformsLabel(item:ContentRequest){
     return item.platforms?.length ? item.platforms.join(", ") : (item.visualFormat || item.feedPlacement || "Sin plataformas");
+  }
+
+  function copySortValue(item:ContentRequest){
+    const values = {
+      task: finalTaskTitle(item),
+      type: finalTypeLabel(item),
+      platforms: finalPlatformsLabel(item),
+      copyOut: copyOutDrafts[item.id||""] ?? item.copyOut ?? "",
+      publishDate: item.publishDate || "",
+      link: item.finalPostLink || "",
+      status: item.status || ""
+    };
+    return String(values[copySortKey] || "").toLowerCase();
+  }
+
+  function toggleCopySort(key: typeof copySortKey){
+    if(copySortKey===key){
+      setCopySortDirection(copySortDirection==="asc"?"desc":"asc");
+      return;
+    }
+    setCopySortKey(key);
+    setCopySortDirection("asc");
+  }
+
+  function copySortLabel(key: typeof copySortKey){
+    return copySortKey===key ? (copySortDirection==="asc"?" ↑":" ↓") : "";
   }
 
   function finalSortValue(item:ContentRequest){
@@ -139,6 +184,22 @@ export default function ApprovalsPage(){
     const result = av.localeCompare(bv, "es", { numeric:true, sensitivity:"base" });
     return finalSortDirection==="asc" ? result : -result;
   }),[requests,finalClientFilter,finalBatchFilter,finalSortKey,finalSortDirection]);
+
+  const clientsWithCopyOut = useMemo(()=>{
+    const map = new Map<string,string>();
+    requests
+      .filter(x=>x.status==="aprobada_pendiente_copyout" || (x.approvalStatus==="aprobada" && x.status!=="finalizada"))
+      .forEach(x=>map.set(x.clientId||"sin-cliente",x.clientName||"Sin cliente"));
+    return Array.from(map.entries()).map(([id,name])=>({id,name}));
+  },[requests]);
+
+  const batchesWithCopyOut = useMemo(()=>{
+    const map = new Map<string,string>();
+    requests
+      .filter(x=>(x.status==="aprobada_pendiente_copyout" || (x.approvalStatus==="aprobada" && x.status!=="finalizada")) && (copyClientFilter==="all" || x.clientId===copyClientFilter))
+      .forEach(x=>map.set(x.batchId||"sin-lote",x.batchName||"Sin lote"));
+    return Array.from(map.entries()).map(([id,name])=>({id,name}));
+  },[requests,copyClientFilter]);
 
   const clientsWithFinalized = useMemo(()=>{
     const map = new Map<string,string>();
@@ -208,35 +269,40 @@ export default function ApprovalsPage(){
     alert("Tarea rechazada y rebotada");
   }
 
+  async function requestImprovedCopyOut(item:ContentRequest){
+    const currentCopy = (copyOutDrafts[item.id||""] ?? item.copyOut ?? item.copyIn ?? item.creativeIdea ?? "").trim();
+    if(!currentCopy)throw new Error("Escribe una base de copy o revisa que la solicitud tenga idea creativa.");
+    const response = await fetch("/api/improve-copy-out",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        copyDraft:currentCopy,
+        clientName:item.clientName,
+        contentType:item.contentType,
+        objective:item.objective,
+        platforms:item.platforms||[],
+        visualFormat:item.visualFormat||"",
+        feedPlacement:item.feedPlacement||"",
+        creativeIdea:item.creativeIdea||"",
+        copyIn:item.copyIn||"",
+        keyMessage:item.keyMessage||"",
+        cta:item.cta||"",
+        buyerPersonaName:item.buyerPersonaName||"Sin enfoque particular",
+        buyerPersonaContext:buyerPersonaContext(item),
+        successfulCopies:approvedCopyExamples(item)
+      })
+    });
+    const payload = await response.json();
+    if(!response.ok)throw new Error(payload.error||"No se pudo mejorar el Copy Out.");
+    return payload.improvedCopyOut||currentCopy;
+  }
+
   async function improveCopyOut(item:ContentRequest){
     if(!item.id)return;
-    const currentCopy = (copyOutDrafts[item.id] ?? item.copyOut ?? item.copyIn ?? item.creativeIdea ?? "").trim();
-    if(!currentCopy)return alert("Escribe una base de copy o revisa que la solicitud tenga idea creativa.");
     setImprovingCopyId(item.id);
     try{
-      const response = await fetch("/api/improve-copy-out",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          copyDraft:currentCopy,
-          clientName:item.clientName,
-          contentType:item.contentType,
-          objective:item.objective,
-          platforms:item.platforms||[],
-          visualFormat:item.visualFormat||"",
-          feedPlacement:item.feedPlacement||"",
-          creativeIdea:item.creativeIdea||"",
-          copyIn:item.copyIn||"",
-          keyMessage:item.keyMessage||"",
-          cta:item.cta||"",
-          buyerPersonaName:item.buyerPersonaName||"Sin enfoque particular",
-          buyerPersonaContext:buyerPersonaContext(item),
-          successfulCopies:approvedCopyExamples(item)
-        })
-      });
-      const payload = await response.json();
-      if(!response.ok)throw new Error(payload.error||"No se pudo mejorar el Copy Out.");
-      setCopyOutDrafts(prev=>({...prev,[item.id||""]:payload.improvedCopyOut||currentCopy}));
+      const improvedCopyOut = await requestImprovedCopyOut(item);
+      setCopyOutDrafts(prev=>({...prev,[item.id||""]:improvedCopyOut}));
     }catch(error){
       alert(error instanceof Error ? error.message : "No se pudo mejorar el Copy Out.");
     }finally{
@@ -269,6 +335,42 @@ export default function ApprovalsPage(){
     setCopyOutDrafts({...copyOutDrafts,[item.id]:""});
     await load();
     alert("Copy Out guardado y tarea finalizada");
+  }
+
+  function toggleCopySelected(id:string){
+    setCopySelected(copySelected.includes(id) ? copySelected.filter(x=>x!==id) : [...copySelected,id]);
+  }
+
+  function toggleCopyGroup(items:ContentRequest[]){
+    const ids = items.map(x=>x.id!).filter(Boolean);
+    const allSelected = ids.every(id=>copySelected.includes(id));
+    setCopySelected(allSelected ? copySelected.filter(id=>!ids.includes(id)) : Array.from(new Set([...copySelected,...ids])));
+  }
+
+  function toggleAllCopyFiltered(){
+    const ids = approvedForCopyOut.map(x=>x.id!).filter(Boolean);
+    const allSelected = ids.length>0 && ids.every(id=>copySelected.includes(id));
+    setCopySelected(allSelected ? copySelected.filter(id=>!ids.includes(id)) : Array.from(new Set([...copySelected,...ids])));
+  }
+
+  async function improveSelectedCopyOut(){
+    const rows = approvedForCopyOut.filter(x=>copySelected.includes(x.id||""));
+    if(!rows.length)return alert("Selecciona al menos una pieza para generar Copy Out con IA.");
+    setBulkImprovingCopyOut(true);
+    try{
+      const updates:Record<string,string> = {};
+      for(const item of rows){
+        if(!item.id)continue;
+        const improved = await requestImprovedCopyOut(item);
+        updates[item.id]=improved;
+      }
+      setCopyOutDrafts(prev=>({...prev,...updates}));
+      alert(`Copy Out generado para ${Object.keys(updates).length} pieza(s). Revisa antes de guardar y finalizar.`);
+    }catch(error){
+      alert(error instanceof Error ? error.message : "No se pudo generar Copy Out con IA.");
+    }finally{
+      setBulkImprovingCopyOut(false);
+    }
   }
 
   function toggleFinalized(id:string){
@@ -392,34 +494,60 @@ export default function ApprovalsPage(){
 
     <section className="card" style={{marginTop:20}}>
       <h3>Aprobadas para Copy Out</h3>
-      <p className="mini">Una vez aprobada la pieza, captura el copy final que se usará para publicación. Puedes mejorarlo con IA usando el contexto de la solicitud y los copys finalizados del cliente. Al guardar Copy Out, también se conserva como base de aprendizaje para futuras mejoras.</p>
+      <p className="mini">Captura el Copy Out final. Puedes seleccionar varias piezas y generar propuesta con IA usando el contexto de cada post.</p>
 
-      {groupedCopyOut.map(group=><div className="finalized-group" key={`${group.clientName}-${group.batchName}`}>
+      <div className="finalized-toolbar copyout-toolbar">
+        <select value={copyClientFilter} onChange={e=>{setCopyClientFilter(e.target.value);setCopyBatchFilter("all");setCopySelected([]);}}>
+          <option value="all">Todos los clientes</option>
+          {clientsWithCopyOut.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+        <select value={copyBatchFilter} onChange={e=>{setCopyBatchFilter(e.target.value);setCopySelected([]);}}>
+          <option value="all">Todos los lotes</option>
+          {batchesWithCopyOut.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+        <input value={copySearch} onChange={e=>setCopySearch(e.target.value)} placeholder="Buscar por tarea, cliente, copy..."/>
+        <button className="btn" onClick={()=>{setCopyClientFilter("all");setCopyBatchFilter("all");setCopySearch("");setCopySelected([]);}}>Limpiar</button>
+        <button className="btn" onClick={toggleAllCopyFiltered}>{copySelected.length ? "Limpiar selección" : "Seleccionar filtradas"}</button>
+        {copySelected.length>0 && <button className="btn blue" onClick={improveSelectedCopyOut} disabled={bulkImprovingCopyOut}>{bulkImprovingCopyOut ? "Generando..." : `Generar con IA (${copySelected.length})`}</button>}
+        <span className="pill">{copySelected.length} seleccionada(s)</span>
+      </div>
+
+      {groupedCopyOut.map(group=><div className="finalized-group copyout-group" key={`${group.clientName}-${group.batchName}`}>
         <div className="finalized-group-title">
           <div>
             <h3>{group.clientName}</h3>
             <p className="mini">{group.batchName} · {group.items.length} aprobada(s)</p>
           </div>
+          <button className="btn" onClick={()=>toggleCopyGroup(group.items)}>Seleccionar grupo</button>
         </div>
-        {group.items.map(item=><div className="copyout-card copyout-compact" key={item.id}>
-          <div className="copyout-compact-head">
-            <div>
-              <strong>{item.contentType} · {item.objective}</strong>
-              <p className="mini">Responsable: {item.assignedTo||"Sin responsable"} · Publica: {item.publishDate||"Sin fecha"} · IA usa {approvedCopyExamples(item).length} copy(s) previos</p>
-            </div>
-            {item.finalPostLink ? <a className="btn" href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : <span className="pill amber">Sin link</span>}
-          </div>
-          <div className="copyout-inline-editor">
+        <div className="copyout-row header">
+          <span></span>
+          <button type="button" onClick={()=>toggleCopySort("task")}>Tarea{copySortLabel("task")}</button>
+          <button type="button" onClick={()=>toggleCopySort("type")}>Tipo de publicación{copySortLabel("type")}</button>
+          <button type="button" onClick={()=>toggleCopySort("platforms")}>Plataformas{copySortLabel("platforms")}</button>
+          <button type="button" onClick={()=>toggleCopySort("copyOut")}>Copy Out{copySortLabel("copyOut")}</button>
+          <button type="button" onClick={()=>toggleCopySort("publishDate")}>Fecha{copySortLabel("publishDate")}</button>
+          <button type="button" onClick={()=>toggleCopySort("link")}>Link{copySortLabel("link")}</button>
+          <span>Acciones</span>
+        </div>
+        {group.items.map(item=><div className="copyout-row" key={item.id}>
+          <input type="checkbox" checked={copySelected.includes(item.id||"")} onChange={()=>toggleCopySelected(item.id||"")}/>
+          <div><strong>{finalTaskTitle(item)}</strong><p className="mini">IA usa {approvedCopyExamples(item).length} copy(s) previos</p></div>
+          <span>{finalTypeLabel(item)}</span>
+          <span>{finalPlatformsLabel(item)}</span>
+          <div className="copyout-cell">
             <textarea value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Copy Out final"/>
-            <button className="btn ai-only-button" type="button" aria-label="Mejorar copy con AI" title="Mejorar copy con AI" onClick={()=>improveCopyOut(item)} disabled={improvingCopyId===item.id}>
+            <button className="btn ai-only-button" type="button" aria-label="Mejorar copy con AI" title="Mejorar copy con AI" onClick={()=>improveCopyOut(item)} disabled={improvingCopyId===item.id || bulkImprovingCopyOut}>
               <span className="ai-inside-badge" aria-hidden="true"><span className="spark-main">✦</span><span className="spark-mini">✦</span><span>AI</span></span>
             </button>
-            <button className="btn blue" onClick={()=>saveCopyOut(item)}>Guardar y finalizar</button>
           </div>
+          <span>{item.publishDate||"Sin fecha"}</span>
+          <span>{item.finalPostLink ? <a href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : <span className="pill amber">Sin link</span>}</span>
+          <button className="btn blue" onClick={()=>saveCopyOut(item)}>Guardar</button>
         </div>)}
       </div>)}
 
-      {!approvedForCopyOut.length && <p className="mini">No hay piezas aprobadas pendientes de Copy Out.</p>}
+      {!approvedForCopyOut.length && <p className="mini">No hay piezas aprobadas pendientes de Copy Out con esos filtros.</p>}
     </section>
 
     {requests.filter(x=>x.status==="finalizada").length>0 && <section className="card" style={{marginTop:20}}>
