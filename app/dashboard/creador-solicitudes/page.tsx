@@ -597,20 +597,36 @@ function toggleArrayValue(values:string[]|undefined, value:string){
 }
 
 function BuyerPersonaSelector({request,buyerPersonas,onSelect}:{request:ContentRequest;buyerPersonas:ClientBuyerPersona[];onSelect:(persona?:ClientBuyerPersona)=>void;}){
-  function selectPersona(id:string){
-    const persona = buyerPersonas.find(p=>(p.id || p.name)===id);
+  const personas = (buyerPersonas || []).filter((persona) => persona?.name);
+  const selectedId = request.buyerPersonaId || "";
+
+  function handleSelect(id:string){
+    if(!id){
+      onSelect(undefined);
+      return;
+    }
+    const persona = personas.find((p)=>(p.id || p.name)===id);
     onSelect(persona);
   }
+
   return <div className="persona-selector full">
     <div className="post-info-title">Buyer persona de esta solicitud</div>
-    <div className="chip-group">
-      <button type="button" className={!request.buyerPersonaId?"chip-btn selected":"chip-btn"} onClick={()=>onSelect(undefined)}>Sin enfoque particular</button>
-      {(buyerPersonas||[]).filter(p=>p.name).map((persona,index)=>{
-        const id = persona.id || persona.name || String(index);
-        return <button type="button" className={request.buyerPersonaId===id || request.buyerPersonaName===persona.name ? "chip-btn selected":"chip-btn"} key={id} onClick={()=>selectPersona(id)}>{persona.name}</button>;
-      })}
-    </div>
-    {request.buyerPersonaId && request.buyerPersonaSnapshot?.description ? <p className="mini persona-help">{request.buyerPersonaSnapshot.description}</p> : <p className="mini persona-help">La IA usará el contexto general de la marca si no eliges un buyer persona.</p>}
+    <p className="mini persona-help">Elige a quién va dirigida esta pieza. Si no aplica, deja la opción general de marca.</p>
+    {personas.length ? (
+      <div className="field persona-field">
+        <label>Enfoque de audiencia</label>
+        <select value={selectedId} onChange={(event)=>handleSelect(event.target.value)}>
+          <option value="">Sin enfoque particular</option>
+          {personas.map((persona,index)=>{
+            const id = persona.id || persona.name || String(index);
+            return <option key={id} value={id}>{persona.name}</option>;
+          })}
+        </select>
+      </div>
+    ) : (
+      <div className="persona-empty">Este cliente todavía no tiene buyer personas configurados. La solicitud usará el contexto general de la marca.</div>
+    )}
+    {request.buyerPersonaId && request.buyerPersonaSnapshot?.description ? <p className="mini persona-help">{request.buyerPersonaSnapshot.description}</p> : <p className="mini persona-help">Si eliges uno, la IA enfocará la idea creativa hacia ese perfil.</p>}
   </div>;
 }
 
@@ -633,7 +649,10 @@ function CreativeIdeaField({value,onChange,onImprove,busy}:{value:string;onChang
   return <div className="field full creative-field">
     <label>Idea creativa</label>
     <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder="Describe la idea base de la pieza. Luego puedes mejorarla con IA."/>
-    <button type="button" className="btn ai-inside" onClick={onImprove} disabled={busy}>{busy?"Mejorando...":"Perfeccionar con IA"}</button>
+    <button type="button" className="btn ai-inside" onClick={onImprove} disabled={busy}>
+      <span className="ai-inside-badge" aria-hidden="true"><span className="spark-main">✦</span><span className="spark-mini">✦</span><span>AI</span></span>
+      <span>{busy?"Mejorando idea...":"Mejorar idea con AI"}</span>
+    </button>
   </div>;
 }
 

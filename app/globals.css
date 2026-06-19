@@ -1374,3 +1374,12 @@ a.card:hover,.card.clickable:hover{border-color:rgba(158,252,123,.72)!important;
 .bar-fill{background:var(--brand-dark)!important}
 
 .sidebar-logout:hover{background:rgba(158,252,123,.22)!important;border-color:rgba(158,252,123,.65)!important;color:var(--brand-dark)!important}
+
+
+.persona-field{margin-top:8px}
+.persona-field label{display:block;margin-bottom:8px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#667085}
+.persona-empty{margin-top:10px;border:1px dashed rgba(52,58,64,.2);background:rgba(248,249,250,.88);border-radius:16px;padding:14px;color:#667085;font-size:14px;line-height:1.45}
+.ai-inside{display:inline-flex;align-items:center;gap:10px;padding-left:12px;padding-right:16px}
+.ai-inside-badge{position:relative;display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:34px;padding:0 10px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);font-size:12px;font-weight:900;letter-spacing:.06em;gap:6px}
+.ai-inside-badge .spark-main{font-size:13px;line-height:1;transform:translateY(-1px)}
+.ai-inside-badge .spark-mini{position:absolute;left:8px;top:4px;font-size:8px;line-height:1;opacity:.92}
