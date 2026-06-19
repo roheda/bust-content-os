@@ -547,7 +547,7 @@ export default function BustItNowPage() {
   return (
     <AppShell active="BUST It Now">
       <main className="min-h-screen bg-zinc-100 text-zinc-950">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
+        <div className="flex w-full flex-col gap-8">
           <header className="hero generator-apple-hero">
             <div className="generator-hero-copy">
               <p className="eyebrow">BUST It Now</p>

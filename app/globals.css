@@ -1383,3 +1383,17 @@ a.card:hover,.card.clickable:hover{border-color:rgba(158,252,123,.72)!important;
 .ai-inside-badge{position:relative;display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:34px;padding:0 10px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);font-size:12px;font-weight:900;letter-spacing:.06em;gap:6px}
 .ai-inside-badge .spark-main{font-size:13px;line-height:1;transform:translateY(-1px)}
 .ai-inside-badge .spark-mini{position:absolute;left:8px;top:4px;font-size:8px;line-height:1;opacity:.92}
+
+
+/* v28 · Legibilidad de botones claros */
+button[class*="bg-white"]:not([class*="text-white"]):not([class*="text-red"]):not([class*="text-emerald"]):not([class*="text-amber"]):not([class*="text-blue"]),
+a[class*="bg-white"]:not([class*="text-white"]):not([class*="text-red"]):not([class*="text-emerald"]):not([class*="text-amber"]):not([class*="text-blue"]),
+button[class*="bg-zinc-50"]:not([class*="text-white"]):not([class*="text-red"]):not([class*="text-emerald"]):not([class*="text-amber"]):not([class*="text-blue"]),
+a[class*="bg-zinc-50"]:not([class*="text-white"]):not([class*="text-red"]):not([class*="text-emerald"]):not([class*="text-amber"]):not([class*="text-blue"]),
+button[class*="bg-zinc-100"]:not([class*="text-white"]):not([class*="text-red"]):not([class*="text-emerald"]):not([class*="text-amber"]):not([class*="text-blue"]),
+a[class*="bg-zinc-100"]:not([class*="text-white"]):not([class*="text-red"]):not([class*="text-emerald"]):not([class*="text-amber"]):not([class*="text-blue"]),
+button[class*="bg-slate-50"]:not([class*="text-white"]):not([class*="text-red"]):not([class*="text-emerald"]):not([class*="text-amber"]):not([class*="text-blue"]),
+a[class*="bg-slate-50"]:not([class*="text-white"]):not([class*="text-red"]):not([class*="text-emerald"]):not([class*="text-amber"]):not([class*="text-blue"]){
+  color:var(--brand-dark)!important;
+  -webkit-text-fill-color:var(--brand-dark)!important;
+}
