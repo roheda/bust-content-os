@@ -93,6 +93,33 @@ function uniqueDisplayNames(names: string[]){
     .sort((a,b)=>a.localeCompare(b,"es",{sensitivity:"base"}));
 }
 
+const assignmentStatusOptions = [
+  { value: "all", label: "Todos los estados" },
+  { value: "lista_asignacion", label: "Lista para asignación / Material listo" },
+  { value: "pendiente_produccion", label: "Pendiente producción" },
+  { value: "produccion_programada", label: "Producción programada" },
+  { value: "material_listo", label: "Material listo" },
+  { value: "bloqueada", label: "Bloqueada" },
+  { value: "asignada", label: "Asignada" },
+  { value: "en_ejecucion", label: "En ejecución" },
+  { value: "en_revision", label: "En revisión" },
+  { value: "pendiente_aprobacion", label: "Pendiente aprobación" },
+  { value: "aprobada_pendiente_copyout", label: "Aprobada sin Copy Out" },
+  { value: "rebotada", label: "Rebotada" },
+  { value: "lista_programar", label: "Lista para programar" },
+  { value: "programada", label: "Programada" },
+  { value: "publicada", label: "Publicada" },
+  { value: "finalizada", label: "Finalizada" },
+  { value: "cancelada", label: "Cancelada" },
+  { value: "eliminada", label: "Eliminada" }
+];
+
+function statusMatchesFilter(item: ContentRequest, selectedStatus: string) {
+  if (selectedStatus === "all") return true;
+  const operationalStatus = getOperationalStatus(item);
+  return operationalStatus === selectedStatus || item.status === selectedStatus;
+}
+
 export default function AssignmentPage(){
   const [items,setItems]=useState<ContentRequest[]>([]);
   const [brands,setBrands]=useState<Brand[]>([]);
@@ -171,7 +198,7 @@ export default function AssignmentPage(){
 
   const filtered=useMemo(()=>items.filter(item=>{
     const op=getOperationalStatus(item);
-    return (client==="all"||item.clientId===client) && (area==="all"||item.suggestedArea===area||item.assignedArea===area) && (status==="all"||op===status);
+    return (client==="all"||item.clientId===client) && (area==="all"||item.suggestedArea===area||item.assignedArea===area) && statusMatchesFilter(item,status);
   }).sort((a,b)=>String(sortValue(a,sort.key)).localeCompare(String(sortValue(b,sort.key)),"es",{numeric:true})*(sort.direction==="asc"?1:-1)),[items,client,area,status,sort]);
 
   const assignableFiltered = useMemo(()=>filtered.filter(canAssignRequest),[filtered]);
@@ -306,19 +333,14 @@ export default function AssignmentPage(){
       <select value={client} onChange={e=>setClient(e.target.value)}><option value="all">Todos los clientes</option>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>
       <select value={area} onChange={e=>setArea(e.target.value)}><option value="all">Todas las áreas</option>{areas.map(x=><option key={x}>{x}</option>)}</select>
       <select value={status} onChange={e=>setStatus(e.target.value)}>
-        <option value="all">Todos los estados</option>
-        <option value="lista_asignacion">Lista para asignación / Material listo</option>
-        <option value="pendiente_produccion">Pendiente producción</option>
-        <option value="bloqueada">Bloqueada</option>
-        <option value="rebotada">Rebotada</option>
-        <option value="asignada">Asignada</option>
+        {assignmentStatusOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       <button className="btn" onClick={load}>Actualizar</button>
     </div>
 
     {selected.length>0 && <div className="bulk-actions">
       <span className="pill">{selected.length} seleccionada(s)</span>{selectedBlockedCount>0 && <span className="pill amber">{selectedBlockedCount} no asignable(s)</span>}{selectedAssignableCount>0 && <span className="pill green">{selectedAssignableCount} lista(s)</span>}
-      <select value={bulkAssignee} onChange={e=>setBulkAssignee(e.target.value)} disabled={!bulkArea} title={bulkArea ? `Solo aparecen personas de ${bulkArea}` : "Selecciona solicitudes de una sola área"}><option value="">{bulkArea ? `Asignar seleccionadas a ${bulkArea}...` : "Selecciona una sola área"}</option>{bulkTeamOptions.map(name=><option key={name}>{name}</option>)}</select>
+      <select className="assignment-person-select assignment-bulk-select" value={bulkAssignee} onChange={e=>setBulkAssignee(e.target.value)} disabled={!bulkArea} title={bulkArea ? `Solo aparecen personas de ${bulkArea}` : "Selecciona solicitudes de una sola área"}><option value="">{bulkArea ? `Asignar seleccionadas a ${bulkArea}...` : "Selecciona una sola área"}</option>{bulkTeamOptions.map(name=><option key={name}>{name}</option>)}</select>
       <button className="btn blue" onClick={assignSelected} disabled={!bulkArea}>Asignar seleccionadas</button>
       <button className="btn" onClick={()=>setRejectModal(true)}>Rebotar seleccionadas</button>
       <button className="btn red" onClick={()=>setDeleteModal(true)}>Eliminar seleccionadas</button>
@@ -342,11 +364,11 @@ export default function AssignmentPage(){
               <td><StatusPill status={op}/>{!assignable && <p className="mini warn-text">{getAssignBlockReason(item)}</p>}</td>
               <td>{item.suggestedArea}</td>
               <td>
-                <select value={item.assignedArea||item.suggestedArea||"Diseño"} onChange={e=>item.id&&update(item.id,{assignedArea:e.target.value,assignedTo:""})}>{assignableProductionAreas.map(x=><option key={x}>{x}</option>)}</select>
+                <select className="assignment-area-select" value={item.assignedArea||item.suggestedArea||"Diseño"} onChange={e=>item.id&&update(item.id,{assignedArea:e.target.value,assignedTo:""})}>{assignableProductionAreas.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
-                <select value={rowTeamOptions.includes(item.assignedTo||"") ? item.assignedTo||"" : ""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})} title={`Solo aparecen personas de ${rowArea}`}><option value="">Sin asignar</option>{rowTeamOptions.map(x=><option key={x}>{x}</option>)}</select>
+                <select className="assignment-person-select" value={rowTeamOptions.includes(item.assignedTo||"") ? item.assignedTo||"" : ""} onChange={e=>item.id&&update(item.id,{assignedTo:e.target.value})} title={`Solo aparecen personas de ${rowArea}`}><option value="">Sin asignar</option>{rowTeamOptions.map(x=><option key={x}>{x}</option>)}</select>
                 <br/><br/>
-                <select value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select>
+                <select className="assignment-priority-select" value={item.priority||"Media"} onChange={e=>item.id&&update(item.id,{priority:e.target.value})}>{priorities.map(x=><option key={x}>{x}</option>)}</select>
               </td>
               <td><button className="btn blue" disabled={!assignable} title={assignable ? "Asignar" : getAssignBlockReason(item)} onClick={()=>assign(item)}>Asignar</button><br/><br/><button className="btn" onClick={()=>{setEditing(item);setDetailDraft({assignedArea:item.assignedArea||item.suggestedArea,assignedTo:item.assignedTo||"",priority:item.priority||"Media",internalNotes:item.internalNotes||""})}}>Detalle</button></td>
             </tr>
@@ -515,20 +537,20 @@ function RequestDetail({
       <div className="form-grid">
         <div className="field">
           <label>Área</label>
-          <select value={detailArea} onChange={e=>setDraft({...draft,assignedArea:e.target.value,assignedTo:""})}>
+          <select className="assignment-area-select" value={detailArea} onChange={e=>setDraft({...draft,assignedArea:e.target.value,assignedTo:""})}>
             {assignableProductionAreas.map(x=><option key={x}>{x}</option>)}
           </select>
         </div>
         <div className="field">
           <label>Responsable</label>
-          <select value={validDetailAssignee ? draft.assignedTo||item.assignedTo||"" : ""} onChange={e=>setDraft({...draft,assignedTo:e.target.value})}>
+          <select className="assignment-person-select" value={validDetailAssignee ? draft.assignedTo||item.assignedTo||"" : ""} onChange={e=>setDraft({...draft,assignedTo:e.target.value})}>
             <option value="">Sin asignar</option>
             {detailTeamOptions.map(x=><option key={x}>{x}</option>)}
           </select>
         </div>
         <div className="field">
           <label>Prioridad</label>
-          <select value={draft.priority||item.priority||"Media"} onChange={e=>setDraft({...draft,priority:e.target.value})}>
+          <select className="assignment-priority-select" value={draft.priority||item.priority||"Media"} onChange={e=>setDraft({...draft,priority:e.target.value})}>
             {priorities.map(x=><option key={x}>{x}</option>)}
           </select>
         </div>
@@ -603,10 +625,13 @@ function getAssignBlockReason(item:ContentRequest){
 }
 
 function StatusPill({status}:{status:string}){
+  const option = assignmentStatusOptions.find(item=>item.value===status);
+  if(status==="eliminada")return <span className="pill red">Eliminada</span>;
   if(status==="bloqueada")return <span className="pill red">Bloqueada</span>;
-  if(status==="pendiente_produccion")return <span className="pill orange">Pendiente producción</span>;
-  if(status==="lista_asignacion")return <span className="pill green">Lista para asignar</span>;
-  if(status==="asignada")return <span className="pill blue">Asignada</span>;
-  if(status==="rebotada")return <span className="pill red">Rebotada</span>;
-  return <span className="pill">{status}</span>;
+  if(status==="pendiente_produccion" || status==="produccion_programada")return <span className="pill orange">{option?.label || status}</span>;
+  if(status==="lista_asignacion" || status==="material_listo")return <span className="pill green">{option?.label || "Lista para asignar"}</span>;
+  if(status==="asignada" || status==="en_ejecucion" || status==="en_revision")return <span className="pill blue">{option?.label || status}</span>;
+  if(status==="rebotada" || status==="cancelada")return <span className="pill red">{option?.label || status}</span>;
+  if(status==="finalizada" || status==="publicada")return <span className="pill green">{option?.label || status}</span>;
+  return <span className="pill">{option?.label || status}</span>;
 }

@@ -1445,3 +1445,70 @@ button[class*="bg-white"][disabled],button[class*="bg-zinc-50"][disabled],button
 .copyout-ai-panel .btn{gap:10px;white-space:nowrap;background:rgba(248,249,250,.98)!important;color:var(--brand-dark)!important;-webkit-text-fill-color:var(--brand-dark)!important;border-color:rgba(52,58,64,.18)!important}
 .copyout-ai-panel .ai-inside-badge{background:var(--brand-dark)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;border-color:rgba(52,58,64,.18)!important}
 @media(max-width:780px){.copyout-ai-panel{align-items:stretch;flex-direction:column}.copyout-ai-panel .btn{width:100%}}
+
+
+/* v35 · Selectores legibles, dropdowns amplios y botones con contraste */
+select{
+  min-height:44px;
+  text-overflow:ellipsis;
+}
+.toolbar select,
+.field select,
+td select,
+.assignment-person-select,
+.assignment-area-select,
+.assignment-priority-select{
+  min-width:160px;
+  max-width:100%;
+  padding-right:34px!important;
+  color:var(--brand-dark)!important;
+  -webkit-text-fill-color:var(--brand-dark)!important;
+  background-color:rgba(248,249,250,.96)!important;
+}
+.assignment-person-select{min-width:220px!important;width:220px!important;}
+.assignment-area-select{min-width:150px!important;width:150px!important;}
+.assignment-priority-select{min-width:140px!important;width:140px!important;}
+.assignment-bulk-select{min-width:280px!important;width:auto!important;}
+.table td{vertical-align:top;}
+.draft-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+button:disabled,
+.btn:disabled,
+button[disabled],
+.btn[disabled]{
+  background:rgba(248,249,250,.86)!important;
+  border-color:rgba(52,58,64,.18)!important;
+  color:rgba(52,58,64,.64)!important;
+  -webkit-text-fill-color:rgba(52,58,64,.64)!important;
+  opacity:1!important;
+  cursor:not-allowed!important;
+  box-shadow:none!important;
+}
+button[class*="bg-white"],
+a[class*="bg-white"],
+button[class*="bg-zinc-50"],
+a[class*="bg-zinc-50"],
+button[class*="bg-zinc-100"],
+a[class*="bg-zinc-100"]{
+  color:var(--brand-dark)!important;
+  -webkit-text-fill-color:var(--brand-dark)!important;
+}
+button[class*="bg-zinc-950"],
+a[class*="bg-zinc-950"],
+button[class*="bg-zinc-900"],
+a[class*="bg-zinc-900"],
+button[class*="bg-black"],
+a[class*="bg-black"],
+.btn.blue,
+.btn.dark{
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+}
+.brand-logo-img{
+  width:116px!important;
+  max-height:54px!important;
+  object-fit:contain!important;
+  object-position:left center!important;
+}
+@media(max-width:900px){
+  .assignment-person-select,.assignment-area-select,.assignment-priority-select,.assignment-bulk-select{width:100%!important;min-width:100%!important;}
+}

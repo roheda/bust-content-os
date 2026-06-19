@@ -73,7 +73,10 @@ export default function CreatorPage(){
     setBatches(loadedBatches);
     setCostRules(loadedRules);
     setClientOverrides(loadedOverrides);
-    if(!clientId && loadedBrands[0]?.id)setClientId(loadedBrands[0].id);
+    if(!clientId && loadedBrands[0]?.id){
+      setClientId(loadedBrands[0].id);
+      if(!draftName)setDraftName(`${loadedBrands[0].name} · Creado ${new Date().toLocaleDateString("es-MX", { day:"2-digit", month:"2-digit", year:"numeric" })}`);
+    }
   }
 
   useEffect(()=>{load()},[]);
@@ -101,6 +104,24 @@ export default function CreatorPage(){
     const d = new Date(date + "T00:00:00");
     d.setDate(d.getDate()+days);
     return d.toISOString().slice(0,10);
+  }
+
+  function creationDateLabel(){
+    return new Date().toLocaleDateString("es-MX", { day:"2-digit", month:"2-digit", year:"numeric" });
+  }
+
+  function defaultBatchName(clientName = client?.name || "Cliente"){
+    return `${clientName} · Creado ${creationDateLabel()}`;
+  }
+
+  function isAutoBatchName(name:string){
+    return !name || / · (Lote|Creado) /.test(name);
+  }
+
+  function handleClientChange(nextClientId:string){
+    const selectedClient = brands.find(brand=>brand.id===nextClientId);
+    setClientId(nextClientId);
+    if(selectedClient && isAutoBatchName(draftName)) setDraftName(defaultBatchName(selectedClient.name));
   }
 
   function hydrate(req: ContentRequest, source:string): ContentRequest{
@@ -223,7 +244,7 @@ export default function CreatorPage(){
 
   async function saveDraft(){
     if(!client?.id)return alert("Selecciona cliente");
-    const name = draftName || `${client.name} · Lote ${new Date().toLocaleDateString("es-MX")}`;
+    const name = draftName || defaultBatchName(client.name);
     setBusy(true);
     try{
       if(currentDraftId){
@@ -279,7 +300,7 @@ export default function CreatorPage(){
 
   function generateAI(){
     if(!client?.id)return alert("Selecciona cliente");
-    if(!draftName)setDraftName(`${client.name} · Lote ${new Date().toLocaleDateString("es-MX")}`);
+    if(!draftName)setDraftName(defaultBatchName(client.name));
     const typeList=split(types), goalList=split(goals), themeList=split(themes);
 
     const generated = Array.from({length:Math.max(1,aiCount)}).map((_,i)=>{
@@ -316,7 +337,7 @@ export default function CreatorPage(){
   function addManual(){
     if(!client?.id)return alert("Selecciona cliente");
     if(!manual.creativeIdea)return alert("Agrega idea creativa");
-    if(!draftName)setDraftName(`${client.name} · Lote ${new Date().toLocaleDateString("es-MX")}`);
+    if(!draftName)setDraftName(defaultBatchName(client.name));
     setItems([...items,hydrate(manual,"manual")]);
     setManual(emptyRequest);
   }
@@ -396,7 +417,7 @@ export default function CreatorPage(){
 
   async function publishBatch(){
     if(!client?.id)return alert("Selecciona cliente");
-    const name = draftName || `${client.name} · Lote ${new Date().toLocaleDateString("es-MX")}`;
+    const name = draftName || defaultBatchName(client.name);
     if(!batchDueDate)return alert("Define la fecha límite del lote.");
     if(!validateBatch())return;
     setBusy(true);
@@ -416,7 +437,12 @@ export default function CreatorPage(){
     const ok = window.confirm("¿Seguro que quieres eliminar este borrador? Esta acción no afecta solicitudes ya enviadas.");
     if (!ok) return;
     await deletePlannerDraft(id);
-    window.location.reload();
+    if (currentDraftId === id) {
+      setCurrentDraftId("");
+      setItems([]);
+      setDraftName(client?.name ? defaultBatchName(client.name) : "");
+    }
+    await load();
   }
 
   return <AppShell active="Creador de Solicitudes">
@@ -455,7 +481,7 @@ export default function CreatorPage(){
       <div className="grid">
         <div className="card">
           <h3>Agregar solicitudes</h3>
-          <div className="field"><label>Cliente</label><select value={clientId} onChange={e=>setClientId(e.target.value)}>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+          <div className="field"><label>Cliente</label><select value={clientId} onChange={e=>handleClientChange(e.target.value)}>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
 
           <h3>IA automática</h3>
           <div className="form-grid">
@@ -536,7 +562,10 @@ export default function CreatorPage(){
             {drafts.map(draft=><div className="draft-item" key={draft.id}>
               <strong>{draft.name}</strong>
               <span className="mini">{draft.clientName} · {draft.items?.length||0} solicitudes · Límite: {draft.batchDueDate||"Sin fecha"} · {draft.status}</span>
-              <button className="btn" onClick={()=>openDraft(draft)}>Abrir</button>
+              <div className="draft-actions">
+                <button className="btn" onClick={()=>openDraft(draft)}>Abrir</button>
+                <button className="btn red" onClick={()=>removeDraft(draft.id)}>Eliminar</button>
+              </div>
             </div>)}
             {!drafts.length && <p className="mini">Aún no hay borradores.</p>}
           </div>

@@ -699,8 +699,21 @@ export function canAssignRequest(item: Partial<ContentRequest>) {
 }
 
 export function getOperationalStatus(item: ContentRequest) {
-  if (item.status === "rebotada") return "rebotada";
-  if (item.status === "asignada") return "asignada";
+  const directStatuses = [
+    "eliminada",
+    "finalizada",
+    "aprobada_pendiente_copyout",
+    "pendiente_aprobacion",
+    "publicada",
+    "programada",
+    "lista_programar",
+    "en_revision",
+    "en_ejecucion",
+    "rebotada",
+    "asignada",
+    "cancelada"
+  ];
+  if (directStatuses.includes(item.status || "")) return item.status || "lista_asignacion";
   if (item.status === "material_listo" && hasMaterial(item)) return "lista_asignacion";
   if (item.requiresProduction && canAssignRequest(item)) return "lista_asignacion";
   if (item.requiresProduction) return item.productionId ? "produccion_programada" : "pendiente_produccion";
