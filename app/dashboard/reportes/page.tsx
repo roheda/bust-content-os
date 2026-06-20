@@ -386,8 +386,9 @@ function statusLabel(status:string){
     asignada:"Asignada",
     en_revision:"En revisión",
     rebotada:"Rebotada",
-    pendiente_aprobacion:"En aprobación",
-    aprobada_pendiente_copyout:"Aprobada sin Copy Out",
+    pendiente_aprobacion:"Aprobación Content",
+    pendiente_aprobacion_kam:"Aprobación KAM",
+    aprobada_pendiente_copyout:"En Contenidos",
     finalizada:"Finalizada",
     material_listo:"Material listo",
     lista_asignacion:"Lista asignación",
@@ -404,7 +405,7 @@ function calculateTotals(items:ContentRequest[], productions:Production[]){
   const finished = items.filter(x=>x.status==="finalizada").length;
   const assigned = items.filter(x=>x.status==="asignada").length;
   const inReview = items.filter(x=>x.status==="en_revision" || x.status==="rebotada").length;
-  const inApproval = items.filter(x=>x.status==="pendiente_aprobacion").length;
+  const inApproval = items.filter(x=>["pendiente_aprobacion","pendiente_aprobacion_kam"].includes(x.status||"")).length;
   const rejected = items.filter(x=>x.approvalStatus==="rechazada" || x.status==="rebotada").length;
   const copyOutPending = items.filter(x=>x.status==="aprobada_pendiente_copyout").length;
   const unassigned = items.filter(x=>!x.assignedTo && ["lista_asignacion","material_listo","asignada"].includes(x.status||"")).length;
@@ -450,7 +451,7 @@ function calculatePeople(items:ContentRequest[]):PersonMetric[]{
       assigned: list.length,
       overdue: list.filter(isOverdue).length,
       finished: list.filter(x=>x.status==="finalizada").length,
-      inApproval: list.filter(x=>x.status==="pendiente_aprobacion").length,
+      inApproval: list.filter(x=>["pendiente_aprobacion","pendiente_aprobacion_kam"].includes(x.status||"")).length,
       rejected: list.filter(x=>x.status==="rebotada" || x.approvalStatus==="rechazada").length,
       avgDaysToApproval: approvalDurations.length ? Math.round(approvalDurations.reduce((a,b)=>a+b,0)/approvalDurations.length) : 0
     };
@@ -479,11 +480,11 @@ function countBy(items:ContentRequest[], fn:(item:ContentRequest)=>string){
 function buildBottlenecks(items:ContentRequest[]){
   return [
     {label:"Tareas vencidas",count:items.filter(isOverdue).length},
-    {label:"Pendientes de aprobación",count:items.filter(x=>x.status==="pendiente_aprobacion").length},
-    {label:"Aprobadas sin Copy Out",count:items.filter(x=>x.status==="aprobada_pendiente_copyout").length},
+    {label:"Pendientes de aprobación",count:items.filter(x=>["pendiente_aprobacion","pendiente_aprobacion_kam"].includes(x.status||"")).length},
+    {label:"En Contenidos",count:items.filter(x=>x.status==="aprobada_pendiente_copyout").length},
     {label:"Rebotadas",count:items.filter(x=>x.status==="rebotada" || x.approvalStatus==="rechazada").length},
     {label:"Sin responsable",count:items.filter(x=>!x.assignedTo).length},
-    {label:"Sin link final",count:items.filter(x=>["pendiente_aprobacion","aprobada_pendiente_copyout","finalizada"].includes(x.status||"") && !x.finalPostLink).length}
+    {label:"Sin link final",count:items.filter(x=>["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","finalizada"].includes(x.status||"") && !x.finalPostLink).length}
   ];
 }
 

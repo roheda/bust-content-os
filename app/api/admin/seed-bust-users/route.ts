@@ -20,7 +20,7 @@ type SeedUser = {
 };
 
 const platformModules = [
-  "dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones","reportes","configuracion","usuarios"
+  "dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones","contenidos","reportes","configuracion","usuarios"
 ];
 
 const fullActions: PermissionAction[] = ["view","create","edit","delete","approve","assign","billing","generate","configure"];
@@ -53,13 +53,14 @@ function permissionsFor(roleKey: string): PermissionMatrix {
     matrixFor(["usuarios"], ["configure"])
   );
   if (roleKey === "kam") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones"], ["view"]),
+    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones","contenidos"], ["view"]),
     matrixFor(["creador","generador"], ["create","edit","generate"]),
-    matrixFor(["aprobaciones"], ["approve"])
+    matrixFor(["aprobaciones"], ["approve"]),
+    matrixFor(["contenidos"], ["edit"])
   );
   if (roleKey === "creativo") return mergeMatrices(
-    matrixFor(["dashboard","creador","tareas","generador"], ["view"]),
-    matrixFor(["creador","tareas","generador"], ["edit","generate"])
+    matrixFor(["dashboard","creador","tareas","generador","contenidos"], ["view"]),
+    matrixFor(["creador","tareas","generador","contenidos"], ["edit","generate"])
   );
   if (roleKey === "diseno_lead") return mergeMatrices(
     matrixFor(["dashboard","asignacion","tareas","generador","aprobaciones"], ["view"]),
@@ -72,14 +73,17 @@ function permissionsFor(roleKey: string): PermissionMatrix {
     matrixFor(["tareas","generador"], ["edit","generate"])
   );
   if (roleKey === "content_lead") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","asignacion","tareas","generador","aprobaciones","reportes"], ["view"]),
+    matrixFor(["dashboard","clientes","creador","asignacion","tareas","generador","aprobaciones","contenidos","reportes"], ["view"]),
     matrixFor(["creador","tareas","generador"], ["create","edit","generate"]),
     matrixFor(["asignacion"], ["assign","edit"]),
-    matrixFor(["aprobaciones"], ["approve"])
+    matrixFor(["aprobaciones"], ["approve"]),
+    matrixFor(["contenidos"], ["edit","generate"])
   );
   if (roleKey === "content") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","tareas","generador","aprobaciones"], ["view"]),
-    matrixFor(["creador","tareas","generador"], ["create","edit","generate"])
+    matrixFor(["dashboard","clientes","creador","tareas","generador","aprobaciones","contenidos"], ["view"]),
+    matrixFor(["creador","tareas","generador"], ["create","edit","generate"]),
+    matrixFor(["aprobaciones"], ["approve"]),
+    matrixFor(["contenidos"], ["edit"])
   );
   if (roleKey === "audiovisual") return mergeMatrices(
     matrixFor(["dashboard","producciones","tareas","aprobaciones"], ["view"]),

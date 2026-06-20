@@ -31,6 +31,9 @@ export const requestStates = [
   "programada",
   "publicada",
   "bloqueada",
+  "pendiente_aprobacion_kam",
+  "aprobada_pendiente_copyout",
+  "finalizada",
   "cancelada"
 ];
 
@@ -114,7 +117,8 @@ export const platformModules: PlatformModule[] = [
   { key: "producciones", label: "Producciones", route: "/dashboard/producciones", description: "Programar y administrar producciones." },
   { key: "tareas", label: "Tareas", route: "/dashboard/tareas", description: "Operación diaria y avance de entregables." },
   { key: "generador", label: "BUST It Now", route: "/dashboard/generador", description: "Generación de imágenes, briefs y consumo IA." },
-  { key: "aprobaciones", label: "Aprobaciones", route: "/dashboard/aprobaciones", description: "Revisión, aprobación y rechazos." },
+  { key: "aprobaciones", label: "Aprobaciones", route: "/dashboard/aprobaciones", description: "Doble aprobación: Content y KAM antes de publicar." },
+  { key: "contenidos", label: "Contenidos", route: "/dashboard/contenidos", description: "Copy final, links, exportación y cierre de publicaciones." },
   { key: "reportes", label: "Reportes", route: "/dashboard/reportes", description: "Reportes operativos, costos y balance de facturación.", sensitive: true },
   { key: "configuracion", label: "Configuración", route: "/dashboard/configuracion", description: "Costos, tiempos y reglas operativas.", sensitive: true },
   { key: "usuarios", label: "Usuarios", route: "/dashboard/usuarios", description: "Usuarios, permisos, clientes visibles y roles.", sensitive: true }
@@ -124,9 +128,12 @@ export const roleTemplates = [
   { key: "master", label: "Master", description: "Control total del sistema, usuarios, facturación, configuración y generación." },
   { key: "admin", label: "Administrador", description: "Opera todo el sistema excepto eliminar usuarios master." },
   { key: "direccion", label: "Dirección", description: "Visión completa, reportes, facturación y aprobaciones." },
-  { key: "kam", label: "KAM / Cuenta", description: "Clientes asignados, solicitudes, aprobaciones y seguimiento." },
+  { key: "kam", label: "KAM / Cuenta", description: "Clientes asignados, solicitudes, aprobación KAM y seguimiento." },
+  { key: "content_lead", label: "Jefe de Content", description: "Aprueba como Content, asigna operación y supervisa contenidos." },
+  { key: "content", label: "Content", description: "Crea solicitudes, programa contenidos y participa en revisión Content." },
   { key: "estrategia", label: "Estrategia", description: "Planeación, briefs, solicitudes y revisión de contenido." },
-  { key: "creativo", label: "Creativo / Copy", description: "Crea y edita solicitudes, copies y briefs." },
+  { key: "creativo", label: "Creativo / Copy", description: "Crea solicitudes, redacta copy final y gestiona Contenidos." },
+  { key: "diseno_lead", label: "Jefe de Diseño", description: "Asigna y revisa carga del área de diseño." },
   { key: "diseno", label: "Diseño", description: "Ve y actualiza tareas de diseño y BUST It Now." },
   { key: "audiovisual", label: "Audiovisual", description: "Ve producciones, tareas y entregables audiovisuales." },
   { key: "cliente", label: "Cliente", description: "Acceso limitado a revisión/aprobación de su marca." }
@@ -163,23 +170,45 @@ export function getRoleTemplatePermissions(roleKey: string): PermissionMatrix {
     matrixFor(["usuarios"], ["configure"])
   );
   if (roleKey === "direccion") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones","reportes"], ["view"]),
+    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones","contenidos","reportes"], ["view"]),
     matrixFor(["aprobaciones"], ["approve"]),
+    matrixFor(["contenidos"], ["edit"]),
     matrixFor(["reportes"], ["billing"]),
     matrixFor(["generador"], ["generate"])
   );
   if (roleKey === "kam") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones"], ["view"]),
+    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones","contenidos"], ["view"]),
     matrixFor(["creador","generador"], ["create","edit","generate"]),
-    matrixFor(["aprobaciones"], ["approve"])
+    matrixFor(["aprobaciones"], ["approve"]),
+    matrixFor(["contenidos"], ["edit"])
+  );
+  if (roleKey === "content_lead") return mergeMatrices(
+    matrixFor(["dashboard","clientes","creador","asignacion","tareas","generador","aprobaciones","contenidos","reportes"], ["view"]),
+    matrixFor(["creador","tareas","generador"], ["create","edit","generate"]),
+    matrixFor(["asignacion"], ["assign","edit"]),
+    matrixFor(["aprobaciones"], ["approve"]),
+    matrixFor(["contenidos"], ["edit","generate"])
+  );
+  if (roleKey === "content") return mergeMatrices(
+    matrixFor(["dashboard","clientes","creador","tareas","generador","aprobaciones","contenidos"], ["view"]),
+    matrixFor(["creador","tareas","generador"], ["create","edit","generate"]),
+    matrixFor(["aprobaciones"], ["approve"]),
+    matrixFor(["contenidos"], ["edit"])
   );
   if (roleKey === "estrategia") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","tareas","generador","aprobaciones"], ["view"]),
-    matrixFor(["creador","generador"], ["create","edit","generate"])
+    matrixFor(["dashboard","clientes","creador","tareas","generador","aprobaciones","contenidos"], ["view"]),
+    matrixFor(["creador","generador"], ["create","edit","generate"]),
+    matrixFor(["contenidos"], ["edit"])
   );
   if (roleKey === "creativo") return mergeMatrices(
-    matrixFor(["dashboard","creador","tareas","generador"], ["view"]),
-    matrixFor(["creador","tareas","generador"], ["edit","generate"])
+    matrixFor(["dashboard","creador","tareas","generador","contenidos"], ["view"]),
+    matrixFor(["creador","tareas","generador","contenidos"], ["edit","generate"])
+  );
+  if (roleKey === "diseno_lead") return mergeMatrices(
+    matrixFor(["dashboard","asignacion","tareas","generador","aprobaciones"], ["view"]),
+    matrixFor(["asignacion"], ["assign","edit"]),
+    matrixFor(["tareas","generador"], ["edit","generate"]),
+    matrixFor(["aprobaciones"], ["approve"])
   );
   if (roleKey === "diseno") return mergeMatrices(
     matrixFor(["dashboard","tareas","generador","aprobaciones"], ["view"]),
@@ -199,7 +228,11 @@ export function getRoleTemplatePermissions(roleKey: string): PermissionMatrix {
 export function canUser(user: Partial<PlatformUser> | null | undefined, moduleKey: string, action: PermissionAction = "view") {
   if (!user) return true;
   if (user.isMaster || user.roleKey === "master") return true;
-  return Boolean(user.permissions?.[moduleKey]?.[action]);
+  const explicitModule = user.permissions?.[moduleKey];
+  if (explicitModule && typeof explicitModule[action] !== "undefined") return Boolean(explicitModule[action]);
+  // Fallback para módulos nuevos agregados después de crear usuarios existentes.
+  // Respeta permisos personalizados existentes; solo completa módulos faltantes con el alcance base del rol.
+  return Boolean(getRoleTemplatePermissions(user.roleKey || "kam")?.[moduleKey]?.[action]);
 }
 
 export function canAccessClient(user: Partial<PlatformUser> | null | undefined, clientId?: string) {
@@ -715,6 +748,7 @@ export function getOperationalStatus(item: ContentRequest) {
     "eliminada",
     "finalizada",
     "aprobada_pendiente_copyout",
+    "pendiente_aprobacion_kam",
     "pendiente_aprobacion",
     "publicada",
     "programada",

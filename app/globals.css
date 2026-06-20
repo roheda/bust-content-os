@@ -1968,3 +1968,18 @@ a[class*="bg-black"],
 .copy-icon-button{width:32px;height:32px;border-radius:10px;border:1px solid rgba(208,213,221,.95);background:#fff;color:var(--brand-dark);display:grid;place-items:center;cursor:pointer;font-size:17px;font-weight:900;box-shadow:0 8px 18px rgba(15,23,42,.06);transition:background .15s ease,border-color .15s ease,transform .15s ease}
 .copy-icon-button:hover{background:rgba(158,252,123,.18);border-color:rgba(158,252,123,.7);transform:translateY(-1px)}
 .copy-icon-button span{line-height:1;transform:translateY(-1px)}
+
+
+/* v49 · aprobaciones limpias y módulo Contenidos */
+.approvals-row{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(180px,1.25fr) minmax(120px,.65fr) minmax(120px,.65fr) minmax(120px,.65fr) minmax(92px,.45fr) minmax(90px,.45fr) minmax(120px,.6fr) minmax(90px,.45fr);gap:12px;align-items:center;border-top:1px solid var(--line);padding:11px 0;min-height:62px;max-height:76px;overflow:hidden}
+.approvals-row.header{min-height:42px;max-height:42px;font-size:12px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+.approvals-row.header button{border:0;background:transparent;color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important;padding:0;text-align:left;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;cursor:pointer}
+.approvals-row.header button:hover{color:var(--brand-dark)!important;-webkit-text-fill-color:var(--brand-dark)!important}
+.approvals-row>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.approvals-row a{font-weight:900;color:#111827;text-decoration:underline;text-underline-offset:3px}
+.contenidos-row,.contenidos-header{grid-template-columns:32px minmax(130px,.65fr) minmax(170px,1fr) minmax(110px,.52fr) minmax(110px,.52fr) minmax(360px,1.55fr) minmax(88px,.42fr) minmax(88px,.42fr) minmax(106px,.5fr) minmax(170px,.8fr)!important}
+.contenidos-row{min-height:92px;max-height:104px;overflow:visible}
+.contenidos-header{min-height:42px!important;max-height:42px!important;overflow:hidden!important}
+.content-actions-cell{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0;overflow:visible!important;white-space:nowrap!important}
+.content-actions-cell .btn{padding-inline:12px;min-height:36px;font-size:12px}
+@media(max-width:1200px){.approvals-row,.contenidos-row,.contenidos-header{grid-template-columns:28px minmax(180px,1fr)!important;align-items:start}.approvals-row.header,.contenidos-header{display:none}.approvals-row>span,.approvals-row>button,.contenidos-row>span,.contenidos-row>div,.contenidos-row>.copyout-cell{grid-column:2/-1}.content-actions-cell{grid-column:2/-1;flex-wrap:wrap}}

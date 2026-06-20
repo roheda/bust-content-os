@@ -59,13 +59,13 @@ export default function TasksPage(){
   },[requests]);
 
   const filtered = useMemo(()=>requests.filter(x=>{
-    const taskStates = ["asignada","en_revision","rebotada","pendiente_aprobacion","finalizada"].includes(x.status || "") && x.status !== "eliminada";
+    const taskStates = ["asignada","en_revision","rebotada","pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","finalizada"].includes(x.status || "") && x.status !== "eliminada";
     const overdue = isOverdue(x);
     const workflowOk =
       workflowFilter==="all" ? true :
-      workflowFilter==="pending" ? ["asignada","en_revision","rebotada","pendiente_aprobacion","aprobada_pendiente_copyout"].includes(x.status||"") :
+      workflowFilter==="pending" ? ["asignada","en_revision","rebotada","pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout"].includes(x.status||"") :
       workflowFilter==="active" ? ["asignada","en_revision"].includes(x.status||"") :
-      workflowFilter==="approval" ? x.status==="pendiente_aprobacion" :
+      workflowFilter==="approval" ? ["pendiente_aprobacion","pendiente_aprobacion_kam"].includes(x.status||"") :
       workflowFilter==="rejected" ? x.status==="rebotada" :
       workflowFilter==="finished" ? x.status==="finalizada" :
       true;
@@ -495,7 +495,9 @@ function statusLabel(status:string){
     asignada: "Asignada",
     en_revision: "En revisión",
     rebotada: "Rebotada",
-    pendiente_aprobacion: "En aprobación",
+    pendiente_aprobacion: "Aprobación Content",
+    pendiente_aprobacion_kam: "Aprobación KAM",
+    aprobada_pendiente_copyout: "En Contenidos",
     aprobada: "Aprobada",
     finalizada: "Finalizada"
   };
