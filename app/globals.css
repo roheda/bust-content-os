@@ -1935,7 +1935,7 @@ a[class*="bg-black"],
 }
 
 
-/* v47 · lectura completa al pasar el mouse */
+/* v48 · tooltip solo para campo Copy Out editable */
 .text-tooltip-anchor{position:relative;min-width:0;cursor:help}
 .text-tooltip-floating{
   position:fixed;
@@ -1961,5 +1961,10 @@ a[class*="bg-black"],
 }
 .copyout-cell.text-tooltip-anchor{overflow:visible!important;max-height:none!important}
 .copyout-cell.text-tooltip-anchor textarea{height:64px!important;min-height:64px!important;max-height:64px!important;resize:none!important;overflow:auto!important}
-.final-copyout.text-tooltip-anchor{cursor:help}
 @media(max-width:760px){.text-tooltip-floating{display:none}}
+
+
+.final-copyout-cell{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:center;min-width:0;max-height:44px;overflow:hidden}
+.copy-icon-button{width:32px;height:32px;border-radius:10px;border:1px solid rgba(208,213,221,.95);background:#fff;color:var(--brand-dark);display:grid;place-items:center;cursor:pointer;font-size:17px;font-weight:900;box-shadow:0 8px 18px rgba(15,23,42,.06);transition:background .15s ease,border-color .15s ease,transform .15s ease}
+.copy-icon-button:hover{background:rgba(158,252,123,.18);border-color:rgba(158,252,123,.7);transform:translateY(-1px)}
+.copy-icon-button span{line-height:1;transform:translateY(-1px)}

@@ -42,6 +42,7 @@ export default function ApprovalsPage(){
   const [finalSortKey,setFinalSortKey]=useState<"task"|"type"|"platforms"|"copyOut"|"publishDate"|"link"|"status">("publishDate");
   const [finalSortDirection,setFinalSortDirection]=useState<"asc"|"desc">("asc");
   const [finalSelected,setFinalSelected]=useState<string[]>([]);
+  const [copiedCopyId,setCopiedCopyId]=useState<string|null>(null);
 
   async function load(){setRequests((await listRequests()).filter(x=>x.status!=="eliminada"))}
   useEffect(()=>{
@@ -384,6 +385,28 @@ export default function ApprovalsPage(){
     setFinalSelected(allSelected ? finalSelected.filter(id=>!ids.includes(id)) : Array.from(new Set([...finalSelected,...ids])));
   }
 
+  async function copyFinalCopyOut(item:ContentRequest){
+    const value = (item.copyOut || "").trim();
+    if(!value)return alert("Esta pieza no tiene Copy Out para copiar.");
+    try{
+      await navigator.clipboard.writeText(value);
+      setCopiedCopyId(item.id || null);
+      window.setTimeout(()=>setCopiedCopyId(current=>current===item.id ? null : current),1400);
+    }catch{
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setCopiedCopyId(item.id || null);
+      window.setTimeout(()=>setCopiedCopyId(current=>current===item.id ? null : current),1400);
+    }
+  }
+
   function exportFinalized(){
     const rows = (finalSelected.length ? finalized.filter(x=>finalSelected.includes(x.id||"")) : finalized);
     if(!rows.length)return alert("No hay tareas para exportar.");
@@ -533,18 +556,17 @@ export default function ApprovalsPage(){
         </div>
         {group.items.map(item=><div className="copyout-row" key={item.id}>
           <input type="checkbox" checked={copySelected.includes(item.id||"")} onChange={()=>toggleCopySelected(item.id||"")}/>
-          <TextTooltip as="div" className="list-truncate-cell" text={`${finalTaskTitle(item)}
-IA usa ${approvedCopyExamples(item).length} copy(s) previos`}><strong>{finalTaskTitle(item)}</strong><p className="mini">IA usa {approvedCopyExamples(item).length} copy(s) previos</p></TextTooltip>
-          <TextTooltip className="list-truncate-cell" text={finalTypeLabel(item)}>{finalTypeLabel(item)}</TextTooltip>
-          <TextTooltip className="list-truncate-cell" text={finalPlatformsLabel(item)}>{finalPlatformsLabel(item)}</TextTooltip>
+          <div className="list-truncate-cell"><strong>{finalTaskTitle(item)}</strong><p className="mini">IA usa {approvedCopyExamples(item).length} copy(s) previos</p></div>
+          <span className="list-truncate-cell">{finalTypeLabel(item)}</span>
+          <span className="list-truncate-cell">{finalPlatformsLabel(item)}</span>
           <TextTooltip as="div" className="copyout-cell" text={copyOutDrafts[item.id||""] ?? item.copyOut ?? "Sin Copy Out"}>
             <textarea rows={2} value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Copy Out final"/>
             <button className="btn ai-only-button" type="button" aria-label="Mejorar copy con AI" title="Mejorar copy con AI" onClick={()=>improveCopyOut(item)} disabled={improvingCopyId===item.id || bulkImprovingCopyOut}>
               <span className="ai-inside-badge" aria-hidden="true"><span className="spark-main">✦</span><span className="spark-mini">✦</span><span>AI</span></span>
             </button>
           </TextTooltip>
-          <TextTooltip className="list-truncate-cell" text={item.publishDate||"Sin fecha"}>{item.publishDate||"Sin fecha"}</TextTooltip>
-          <TextTooltip className="list-truncate-cell" text={item.finalPostLink||"Sin link"}>{item.finalPostLink ? <a href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : <span className="pill amber">Sin link</span>}</TextTooltip>
+          <span className="list-truncate-cell">{item.publishDate||"Sin fecha"}</span>
+          <span className="list-truncate-cell">{item.finalPostLink ? <a href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : <span className="pill amber">Sin link</span>}</span>
           <button className="btn blue" onClick={()=>saveCopyOut(item)}>Guardar</button>
         </div>)}
       </div>)}
@@ -591,12 +613,17 @@ IA usa ${approvedCopyExamples(item).length} copy(s) previos`}><strong>{finalTask
         </div>
         {group.items.map(item=><div className="finalized-row" key={item.id}>
           <input type="checkbox" checked={finalSelected.includes(item.id||"")} onChange={()=>toggleFinalized(item.id||"")}/>
-          <TextTooltip as="div" className="list-truncate-cell" text={finalTaskTitle(item)}><strong>{finalTaskTitle(item)}</strong></TextTooltip>
-          <TextTooltip className="list-truncate-cell" text={finalTypeLabel(item)}>{finalTypeLabel(item)}</TextTooltip>
-          <TextTooltip className="list-truncate-cell" text={finalPlatformsLabel(item)}>{finalPlatformsLabel(item)}</TextTooltip>
-          <TextTooltip className="final-copyout" text={item.copyOut || "Sin Copy Out"}>{item.copyOut || "Sin Copy Out"}</TextTooltip>
-          <TextTooltip className="list-truncate-cell" text={item.publishDate||"Sin fecha"}>{item.publishDate||"Sin fecha"}</TextTooltip>
-          <TextTooltip className="list-truncate-cell" text={item.finalPostLink||"Sin link"}>{item.finalPostLink ? <a href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : "Sin link"}</TextTooltip>
+          <div className="list-truncate-cell"><strong>{finalTaskTitle(item)}</strong></div>
+          <span className="list-truncate-cell">{finalTypeLabel(item)}</span>
+          <span className="list-truncate-cell">{finalPlatformsLabel(item)}</span>
+          <div className="final-copyout-cell">
+            <span className="final-copyout">{item.copyOut || "Sin Copy Out"}</span>
+            <button className="copy-icon-button" type="button" aria-label="Copiar Copy Out" title="Copiar Copy Out" onClick={()=>copyFinalCopyOut(item)}>
+              <span aria-hidden="true">{copiedCopyId===item.id ? "✓" : "⧉"}</span>
+            </button>
+          </div>
+          <span className="list-truncate-cell">{item.publishDate||"Sin fecha"}</span>
+          <span className="list-truncate-cell">{item.finalPostLink ? <a href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : "Sin link"}</span>
           <span><span className="pill green">{item.status}</span></span>
         </div>)}
       </div>)}
@@ -609,9 +636,9 @@ IA usa ${approvedCopyExamples(item).length} copy(s) previos`}><strong>{finalTask
       <div className="table-wrap"><table className="table">
         <thead><tr><th>Tarea</th><th>Motivo</th><th>Notas</th><th>Estado</th></tr></thead>
         <tbody>{rejected.slice(0,20).map(item=><tr key={item.id}>
-          <td><TextTooltip text={`${item.clientName} · ${item.contentType}`}><strong>{item.clientName} · {item.contentType}</strong></TextTooltip></td>
-          <td><TextTooltip text={item.approvalRejectionReason||"Sin motivo"}><span className="pill red">{item.approvalRejectionReason}</span></TextTooltip></td>
-          <td><TextTooltip text={item.approvalNotes||"Sin notas"}>{item.approvalNotes}</TextTooltip></td>
+          <td><strong>{item.clientName} · {item.contentType}</strong></td>
+          <td><span className="pill red">{item.approvalRejectionReason}</span></td>
+          <td>{item.approvalNotes}</td>
           <td>{item.status}</td>
         </tr>)}</tbody>
       </table></div>
