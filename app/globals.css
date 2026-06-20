@@ -1887,3 +1887,49 @@ a[class*="bg-black"],
   .shell.sidebar-collapsed .sidebar-logout{width:100%;height:auto;padding:10px 12px;font-size:12px}
   .shell.sidebar-collapsed .sidebar-logout::before{content:none}
 }
+
+
+/* v46 · filas uniformes en vistas tipo lista */
+.list-truncate-cell,
+.finalized-row > div,
+.finalized-row > span,
+.copyout-row > div:not(.copyout-cell),
+.copyout-row > span{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.list-truncate-cell strong,
+.finalized-row strong,
+.copyout-row strong,
+.list-truncate-cell .mini,
+.copyout-row .mini{
+  display:block;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.copyout-row.header{min-height:42px!important;max-height:42px!important;overflow:hidden}
+.copyout-cell{min-width:0;max-height:76px;overflow:hidden}
+.copyout-cell textarea{width:100%;box-sizing:border-box}
+.finalized-row{min-height:58px;max-height:72px;overflow:hidden;align-items:center!important}
+.finalized-row.header{min-height:42px;max-height:42px}
+.final-copyout{max-height:38px!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal!important}
+.table tbody tr{height:58px}
+.table:not(.creator-request-table):not(.permission-table):not(.material-links-table) td{
+  max-width:360px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  vertical-align:middle!important;
+}
+.table:not(.creator-request-table):not(.permission-table):not(.material-links-table) td:has(input),
+.table:not(.creator-request-table):not(.permission-table):not(.material-links-table) td:has(select),
+.table:not(.creator-request-table):not(.permission-table):not(.material-links-table) td:has(textarea),
+.table:not(.creator-request-table):not(.permission-table):not(.material-links-table) td:has(button){
+  white-space:normal;
+  overflow:visible;
+  text-overflow:clip;
+}

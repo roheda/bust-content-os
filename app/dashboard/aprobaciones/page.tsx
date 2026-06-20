@@ -532,11 +532,11 @@ export default function ApprovalsPage(){
         </div>
         {group.items.map(item=><div className="copyout-row" key={item.id}>
           <input type="checkbox" checked={copySelected.includes(item.id||"")} onChange={()=>toggleCopySelected(item.id||"")}/>
-          <div><strong>{finalTaskTitle(item)}</strong><p className="mini">IA usa {approvedCopyExamples(item).length} copy(s) previos</p></div>
-          <span>{finalTypeLabel(item)}</span>
-          <span>{finalPlatformsLabel(item)}</span>
+          <div className="list-truncate-cell"><strong>{finalTaskTitle(item)}</strong><p className="mini">IA usa {approvedCopyExamples(item).length} copy(s) previos</p></div>
+          <span className="list-truncate-cell">{finalTypeLabel(item)}</span>
+          <span className="list-truncate-cell">{finalPlatformsLabel(item)}</span>
           <div className="copyout-cell">
-            <textarea rows={2} maxLength={600} value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Copy Out final · máx. 600 caracteres"/>
+            <textarea rows={2} value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Copy Out final"/>
             <button className="btn ai-only-button" type="button" aria-label="Mejorar copy con AI" title="Mejorar copy con AI" onClick={()=>improveCopyOut(item)} disabled={improvingCopyId===item.id || bulkImprovingCopyOut}>
               <span className="ai-inside-badge" aria-hidden="true"><span className="spark-main">✦</span><span className="spark-mini">✦</span><span>AI</span></span>
             </button>
@@ -589,12 +589,12 @@ export default function ApprovalsPage(){
         </div>
         {group.items.map(item=><div className="finalized-row" key={item.id}>
           <input type="checkbox" checked={finalSelected.includes(item.id||"")} onChange={()=>toggleFinalized(item.id||"")}/>
-          <div><strong>{finalTaskTitle(item)}</strong></div>
-          <span>{finalTypeLabel(item)}</span>
-          <span>{finalPlatformsLabel(item)}</span>
+          <div className="list-truncate-cell"><strong>{finalTaskTitle(item)}</strong></div>
+          <span className="list-truncate-cell">{finalTypeLabel(item)}</span>
+          <span className="list-truncate-cell">{finalPlatformsLabel(item)}</span>
           <span className="final-copyout">{item.copyOut || "Sin Copy Out"}</span>
-          <span>{item.publishDate||"Sin fecha"}</span>
-          <span>{item.finalPostLink ? <a href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : "Sin link"}</span>
+          <span className="list-truncate-cell">{item.publishDate||"Sin fecha"}</span>
+          <span className="list-truncate-cell">{item.finalPostLink ? <a href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : "Sin link"}</span>
           <span><span className="pill green">{item.status}</span></span>
         </div>)}
       </div>)}
