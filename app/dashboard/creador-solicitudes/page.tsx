@@ -123,8 +123,18 @@ export default function CreatorPage(){
 
   function handleClientChange(nextClientId:string){
     const selectedClient = brands.find(brand=>brand.id===nextClientId);
+    const hasWorkInProgress = items.length > 0 || currentDraftId || manual.creativeIdea?.trim() || manual.copyIn?.trim();
+    if(hasWorkInProgress){
+      const ok = window.confirm("Cambiar de cliente limpiará el lote actual para evitar mezclar solicitudes de otro cliente. ¿Continuar?");
+      if(!ok)return;
+    }
     setClientId(nextClientId);
-    if(selectedClient && isAutoBatchName(draftName)) setDraftName(defaultBatchName(selectedClient.name));
+    setCurrentDraftId("");
+    setItems([]);
+    setExpandedItemIndex(null);
+    setManual(emptyRequest);
+    setBatchDueDate("");
+    if(selectedClient) setDraftName(defaultBatchName(selectedClient.name));
   }
 
   function hydrate(req: ContentRequest, source:string): ContentRequest{

@@ -14,7 +14,8 @@ import {
   listUniqueBrands,
   saveGeneratedImageRecord,
   updateGeneratedImageRecord,
-  updateGenerationRequest
+  updateGenerationRequest,
+  uploadGeneratedImageDataUrl
 } from "@/lib/data";
 
 type LogoOverlayXY = {
@@ -150,8 +151,8 @@ export default function GenerationRequestPage() {
       .filter((record) => record.requestId === requestId)
       .sort((a, b) => Number(a.variantIndex || 0) - Number(b.variantIndex || 0))
       .map((record) => {
-        const original = record.originalImageDataUrl || record.imageDataUrl || record.imageUrl || "";
-        const final = record.finalImageDataUrl || (record.logoOverlayApplied ? record.imageDataUrl : "");
+        const original = record.originalImageUrl || record.originalImageDataUrl || record.imageUrl || record.imageDataUrl || "";
+        const final = record.finalImageUrl || record.finalImageDataUrl || (record.logoOverlayApplied ? (record.imageUrl || record.imageDataUrl) : "");
         return {
           id: record.id,
           base64: cleanBase64(original),
@@ -320,17 +321,20 @@ export default function GenerationRequestPage() {
       for (let index = 0; index < (payload.imagesBase64 || []).length; index++) {
         const base64 = cleanBase64(payload.imagesBase64[index]);
         const dataUrl = dataUrlFromBase64(base64);
+        const stored = await uploadGeneratedImageDataUrl(requestId, dataUrl, `variant-${index + 1}`);
         const ref: any = await saveGeneratedImageRecord({
           requestId,
           clientId: request.clientId,
           clientName: request.clientName,
-          imageDataUrl: dataUrl,
-          originalImageDataUrl: dataUrl,
+          imageUrl: stored.imageUrl,
+          storagePath: stored.storagePath,
+          originalImageUrl: stored.imageUrl,
+          originalStoragePath: stored.storagePath,
           model: payload.executedModel || selectedModel,
           variantIndex: index + 1,
           logoOverlayApplied: false,
           status: "generated"
-        });
+        } as any);
         images.push({
           id: ref?.id || `${Date.now()}-${index}`,
           base64,
@@ -402,9 +406,14 @@ export default function GenerationRequestPage() {
       );
 
       if (image.id) {
+        const storedFinal = await uploadGeneratedImageDataUrl(requestId, finalDataUrl, `variant-${imageIndex + 1}-logo`);
         await updateGeneratedImageRecord(image.id, {
-          imageDataUrl: finalDataUrl,
-          finalImageDataUrl: finalDataUrl,
+          imageUrl: storedFinal.imageUrl,
+          storagePath: storedFinal.storagePath,
+          finalImageUrl: storedFinal.imageUrl,
+          finalStoragePath: storedFinal.storagePath,
+          finalImageDataUrl: "",
+          imageDataUrl: "",
           logoOverlayApplied: true,
           logoOverlay,
           status: "generated_with_logo"
@@ -435,9 +444,17 @@ export default function GenerationRequestPage() {
     );
 
     if (image.id) {
+      const originalIsRemote = isRemoteImageSource(originalBase64);
+      const restored = originalIsRemote
+        ? { imageUrl: originalBase64, storagePath: "" }
+        : await uploadGeneratedImageDataUrl(requestId, dataUrlFromBase64(originalBase64), `variant-${imageIndex + 1}-restored`);
       await updateGeneratedImageRecord(image.id, {
-        imageDataUrl: dataUrlFromBase64(originalBase64),
+        imageUrl: restored.imageUrl,
+        storagePath: restored.storagePath,
+        finalImageUrl: "",
+        finalStoragePath: "",
         finalImageDataUrl: "",
+        imageDataUrl: "",
         logoOverlayApplied: false,
         status: "generated"
       });

@@ -1339,6 +1339,20 @@ export async function getGenerationRequest(id: string) {
   return { id: snap.id, ...snap.data() } as GenerationRequest;
 }
 
+export async function uploadGeneratedImageDataUrl(requestId: string, dataUrl: string, label = "generated") {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const contentType = blob.type || "image/png";
+  const extension = contentType.includes("jpeg") ? "jpg" : contentType.includes("webp") ? "webp" : "png";
+  const safeRequest = String(requestId || "request").replace(/[^a-zA-Z0-9._-]/g, "-");
+  const safeLabel = String(label || "generated").replace(/[^a-zA-Z0-9._-]/g, "-");
+  const storagePath = `generated-images/${safeRequest}/${Date.now()}-${safeLabel}.${extension}`;
+  const storageRef = ref(storage, storagePath);
+  await uploadBytes(storageRef, blob, { contentType });
+  const imageUrl = await getDownloadURL(storageRef);
+  return { imageUrl, storagePath, size: blob.size, contentType };
+}
+
 export async function saveGeneratedImageRecord(item: {
   requestId: string;
   clientId: string;
@@ -1346,6 +1360,10 @@ export async function saveGeneratedImageRecord(item: {
   imageDataUrl?: string;
   imageUrl?: string;
   storagePath?: string;
+  finalImageUrl?: string;
+  finalStoragePath?: string;
+  originalImageUrl?: string;
+  originalStoragePath?: string;
   model?: string;
   variantIndex?: number;
   logoOverlayApplied?: boolean;

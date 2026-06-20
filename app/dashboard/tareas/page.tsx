@@ -22,7 +22,7 @@ export default function TasksPage(){
   const [person,setPerson]=useState("Todos");
   const [area,setArea]=useState("Todas");
   const [statusFilter,setStatusFilter]=useState("all");
-  const [workflowFilter,setWorkflowFilter]=useState("active");
+  const [workflowFilter,setWorkflowFilter]=useState("pending");
   const [overdueFilter,setOverdueFilter]=useState("all");
   const [selected,setSelected]=useState<ContentRequest|null>(null);
   const [comment,setComment]=useState("");
@@ -63,6 +63,7 @@ export default function TasksPage(){
     const overdue = isOverdue(x);
     const workflowOk =
       workflowFilter==="all" ? true :
+      workflowFilter==="pending" ? ["asignada","en_revision","rebotada","pendiente_aprobacion","aprobada_pendiente_copyout"].includes(x.status||"") :
       workflowFilter==="active" ? ["asignada","en_revision"].includes(x.status||"") :
       workflowFilter==="approval" ? x.status==="pendiente_aprobacion" :
       workflowFilter==="rejected" ? x.status==="rebotada" :
@@ -285,6 +286,7 @@ export default function TasksPage(){
 
     <div className="calendar-controls">
       {view==="calendario" && <>
+        <span className="calendar-current-label">{formatCalendarLabel(cursor, calendarMode)}</span>
         <button className={calendarMode==="semana"?"active":""} onClick={()=>setCalendarMode("semana")}>Semana</button>
         <button className={calendarMode==="mes"?"active":""} onClick={()=>setCalendarMode("mes")}>Mes</button>
         <button onClick={()=>move(-1)}>← Anterior</button>
@@ -294,6 +296,7 @@ export default function TasksPage(){
       <select value={person} onChange={e=>setPerson(e.target.value)}>{people.map(x=><option key={x}>{x}</option>)}</select>
       <select value={area} onChange={e=>setArea(e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select>
       <select value={workflowFilter} onChange={e=>setWorkflowFilter(e.target.value)}>
+        <option value="pending">Pendientes</option>
         <option value="active">Activas</option>
         <option value="approval">En aprobación</option>
         <option value="rejected">Rebotadas</option>
@@ -537,6 +540,16 @@ function getMonthDays(date:Date){
     x.setDate(start.getDate()+i);
     return x;
   });
+}
+
+
+function formatCalendarLabel(date: Date, mode: "semana" | "mes") {
+  const formatter = new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" });
+  if (mode === "mes") return formatter.format(date).replace(/^./, (c) => c.toUpperCase());
+  const days = getWeekDays(date);
+  const start = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short" }).format(days[0]);
+  const end = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(days[6]);
+  return `Semana ${start} – ${end}`;
 }
 
 function WeekView({days,tasksByDate,onOpen}:{days:Date[];tasksByDate:Record<string,ContentRequest[]>;onOpen:(item:ContentRequest)=>void}){

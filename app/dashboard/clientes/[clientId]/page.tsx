@@ -107,13 +107,13 @@ export default function ClientBrandBrainPage(){
   }
 
   async function analyzeWebsite(){
-    if(!form.website.trim())return alert("Agrega el sitio web del cliente.");
+    if(!form.website.trim() && !form.instagram.trim())return alert("Agrega el sitio web o Instagram del cliente.");
     setAnalyzing(true);
     try{
       const response = await fetch("/api/analyze-client-website",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({website:form.website,currentClient:{...client,...form,buyerPersonas}})
+        body:JSON.stringify({website:form.website, instagram:form.instagram, currentClient:{...client,...form,buyerPersonas}})
       });
       const payload = await response.json();
       if(!response.ok)throw new Error(payload?.error || "No se pudo analizar el sitio web.");
@@ -123,6 +123,7 @@ export default function ClientBrandBrainPage(){
         name:ctx.name || current.name,
         industry:ctx.industry || current.industry,
         website:ctx.website || current.website,
+        instagram:ctx.instagram || current.instagram,
         brandDescription:ctx.brandDescription || current.brandDescription,
         tone:ctx.tone || current.tone,
         brandPersonality:ctx.brandPersonality || current.brandPersonality,
@@ -208,7 +209,7 @@ export default function ClientBrandBrainPage(){
           <div className="brief-box">
             <h4>Autollenado con IA desde sitio web</h4>
             <p className="mini">Lee el sitio, identifica oferta, región, tono, pilares, ángulos y buyer personas. Revisa el resultado antes de guardar.</p>
-            <button type="button" className="btn dark" onClick={analyzeWebsite} disabled={analyzing}>{analyzing?"Analizando sitio...":"Analizar sitio con IA"}</button>
+            <button type="button" className="btn dark" onClick={analyzeWebsite} disabled={analyzing}>{analyzing?"Analizando fuente...":"Analizar web/Instagram con IA"}</button>
           </div>
           <div className="field"><label>Descripción de marca</label><textarea value={form.brandDescription} onChange={e=>set("brandDescription",e.target.value)}/></div>
           <div className="client-profile-grid"><div className="field"><label>Tono</label><input value={form.tone} onChange={e=>set("tone",e.target.value)}/></div><div className="field"><label>Personalidad de marca</label><input value={form.brandPersonality} onChange={e=>set("brandPersonality",e.target.value)}/></div></div>

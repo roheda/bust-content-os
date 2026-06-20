@@ -57,6 +57,7 @@ export default function ClientsPage(){
   const [name,setName]=useState("");
   const [industry,setIndustry]=useState("");
   const [website,setWebsite]=useState("");
+  const [instagram,setInstagram]=useState("");
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [analyzing,setAnalyzing]=useState(false);
@@ -74,7 +75,7 @@ export default function ClientsPage(){
     const response = await fetch("/api/analyze-client-website",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({website: currentClient.website, currentClient})
+      body:JSON.stringify({website: currentClient.website, instagram: (currentClient as any).instagram, currentClient})
     });
     const payload = await response.json();
     if(!response.ok) throw new Error(payload?.error || "No se pudo analizar el sitio web.");
@@ -83,7 +84,7 @@ export default function ClientsPage(){
 
   async function createClient(runAnalysis=false){
     if(!name.trim())return alert("Escribe el nombre del cliente.");
-    if(runAnalysis && !website.trim())return alert("Agrega el sitio web para analizarlo con IA.");
+    if(runAnalysis && !website.trim() && !instagram.trim())return alert("Agrega sitio web o Instagram para analizarlo con IA.");
     setSaving(true);
     setAnalyzing(runAnalysis);
     try{
@@ -91,6 +92,7 @@ export default function ClientsPage(){
         name:name.trim(),
         industry:industry.trim(),
         website:website.trim(),
+        instagram:instagram.trim(),
         status:"active",
         tone:"",
         audience:"",
@@ -110,11 +112,11 @@ export default function ClientsPage(){
       if(runAnalysis){
         const context = await analyzeWebsite(baseBrand);
         await updateBrand(ref.id, makeBrandUpdateFromAnalysis({...context, name: context.name || baseBrand.name}));
-        setMessage("Cliente creado y Brand Brain generado con IA desde su sitio web. Revisa y ajusta antes de operar.");
+        setMessage("Cliente creado y Brand Brain generado con IA desde su fuente digital. Revisa y ajusta antes de operar.");
       }else{
         setMessage("Cliente creado. Ya puedes configurar su Brand Brain, sitio web, buyer personas y assets.");
       }
-      setName(""); setIndustry(""); setWebsite("");
+      setName(""); setIndustry(""); setWebsite(""); setInstagram("");
       await load();
     }catch(error){
       alert(error instanceof Error ? error.message : "No se pudo crear el cliente.");
@@ -138,9 +140,10 @@ export default function ClientsPage(){
         <div className="field"><label>Nombre del cliente</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Ej. Acerofertas"/></div>
         <div className="field"><label>Giro o categoría</label><input value={industry} onChange={e=>setIndustry(e.target.value)} placeholder="Ej. Acero, restaurante, inmobiliaria"/></div>
         <div className="field"><label>Sitio web</label><input value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://cliente.com"/></div>
+        <div className="field"><label>Instagram</label><input value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="@cliente o https://instagram.com/cliente"/></div>
         <div className="brief-box">
           <h4>Alta inteligente</h4>
-          <p className="mini">Si agregas sitio web, la IA puede llenar descripción, tono, oferta, contexto regional, pilares, ángulos y 3–4 buyer personas iniciales.</p>
+          <p className="mini">Si agregas sitio web o Instagram, la IA puede llenar descripción, tono, oferta, contexto regional, pilares, ángulos y 3–4 buyer personas iniciales.</p>
         </div>
         {message && <div className="feedback-item done"><p>{message}</p></div>}
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>

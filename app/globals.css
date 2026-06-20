@@ -1867,3 +1867,23 @@ a[class*="bg-black"],
   .sidebar.open{transform:translateX(0);box-shadow:0 24px 80px rgba(15,23,42,.2)}
   .sidebar-collapse-btn{display:none}
 }
+
+/* v45 · ajustes pre-manual: calendario, copyout, responsive estable y ancho real */
+.calendar-current-label{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:999px;background:#fff;border:1px solid var(--line);font-weight:950;color:var(--brand-dark);text-transform:capitalize;white-space:nowrap}
+.copyout-cell textarea{height:64px!important;min-height:64px!important;max-height:64px!important;resize:none!important;overflow:auto!important}
+.copyout-row{align-items:start!important;min-height:92px}
+.shell.sidebar-collapsed .main{max-width:none!important;width:100%!important;margin:0!important}
+.shell.sidebar-collapsed .hero,.shell.sidebar-collapsed .card,.shell.sidebar-collapsed .table-wrap{width:100%}
+@media (max-width: 1000px){
+  .shell,.shell.sidebar-collapsed{display:block!important;grid-template-columns:1fr!important}
+  .main,.shell.sidebar-collapsed .main{max-width:none!important;width:100%!important;margin:0!important;padding:72px 16px 30px!important}
+  .sidebar{display:flex!important;position:fixed!important;left:0;top:0;bottom:0;height:100dvh!important;width:min(86vw,320px)!important;z-index:120!important;transform:translateX(-104%)!important;transition:transform .2s ease,box-shadow .2s ease!important;overflow:auto!important}
+  .sidebar.open{transform:translateX(0)!important;box-shadow:0 24px 80px rgba(15,23,42,.22)!important}
+  .mobile-sidebar-toggle{display:flex!important;position:fixed!important;top:14px!important;left:14px!important;z-index:130!important}
+  .mobile-sidebar-scrim{display:block!important;position:fixed!important;inset:0!important;z-index:118!important;background:rgba(15,23,42,.26)!important}
+  .sidebar-collapse-btn{display:none!important}
+  .shell.sidebar-collapsed .brand-os-text,.shell.sidebar-collapsed .nav-section-label,.shell.sidebar-collapsed .nav-label,.shell.sidebar-collapsed .user-profile-row div,.shell.sidebar-collapsed .sidebar-user-select,.shell.sidebar-collapsed .session-note,.shell.sidebar-collapsed .user-config-link{display:initial}
+  .shell.sidebar-collapsed .nav a{justify-content:flex-start}
+  .shell.sidebar-collapsed .sidebar-logout{width:100%;height:auto;padding:10px 12px;font-size:12px}
+  .shell.sidebar-collapsed .sidebar-logout::before{content:none}
+}

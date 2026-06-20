@@ -536,7 +536,7 @@ export default function ApprovalsPage(){
           <span>{finalTypeLabel(item)}</span>
           <span>{finalPlatformsLabel(item)}</span>
           <div className="copyout-cell">
-            <textarea value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Copy Out final"/>
+            <textarea rows={2} maxLength={600} value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Copy Out final · máx. 600 caracteres"/>
             <button className="btn ai-only-button" type="button" aria-label="Mejorar copy con AI" title="Mejorar copy con AI" onClick={()=>improveCopyOut(item)} disabled={improvingCopyId===item.id || bulkImprovingCopyOut}>
               <span className="ai-inside-badge" aria-hidden="true"><span className="spark-main">✦</span><span className="spark-mini">✦</span><span>AI</span></span>
             </button>

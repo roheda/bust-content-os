@@ -18,6 +18,18 @@ function normalizeUrl(input: string) {
   return `https://${raw}`;
 }
 
+function normalizeInstagramInput(input: string) {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  if (/instagram\.com/i.test(raw)) return normalizeUrl(raw);
+  const handle = raw.replace(/^@/, "").replace(/[^a-zA-Z0-9._]/g, "");
+  return handle ? `https://www.instagram.com/${handle}/` : "";
+}
+
+function isInstagramUrl(url: string) {
+  return /(^https?:\/\/)?(www\.)?instagram\.com\//i.test(url || "");
+}
+
 function cleanText(value: string) {
   return String(value || "")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -141,31 +153,49 @@ async function callOpenAI(prompt: string) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const website = normalizeUrl(body.website);
+    const rawWebsite = String(body.website || "").trim();
+    const rawInstagram = String(body.instagram || body.currentClient?.instagram || "").trim();
+    const website = rawWebsite ? normalizeUrl(rawWebsite) : normalizeInstagramInput(rawInstagram);
     const currentClient = body.currentClient || {};
-    if (!website) return NextResponse.json({ error: "Agrega el sitio web del cliente." }, { status: 400 });
+    if (!website) return NextResponse.json({ error: "Agrega sitio web o Instagram del cliente." }, { status: 400 });
 
-    const home = await fetchPage(website);
-    if (!home.ok && !home.html) return NextResponse.json({ error: "No se pudo leer el sitio web." }, { status: 422 });
+    let pages: { url: string; html: string }[] = [];
+    let scraped = "";
+    let sourceType = isInstagramUrl(website) ? "instagram" : "website";
 
-    const links = getRelevantLinks(home.html, home.url);
-    const pages = [{ url: home.url, html: home.html }];
-    for (const link of links) {
-      try {
-        const page = await fetchPage(link);
-        if (page.html) pages.push({ url: page.url, html: page.html });
-      } catch {}
+    if (sourceType === "instagram") {
+      scraped = [
+        `FUENTE: Instagram`,
+        `PERFIL: ${website}`,
+        `NOMBRE CAPTURADO: ${currentClient.name || ""}`,
+        `GIRO CAPTURADO: ${currentClient.industry || ""}`,
+        `DESCRIPCIÓN ACTUAL: ${currentClient.brandDescription || currentClient.brandNotes || ""}`,
+        `TONO ACTUAL: ${currentClient.tone || ""}`,
+        `CONTEXTO ACTUAL: ${JSON.stringify(currentClient).slice(0, 12000)}`
+      ].join("\n");
+    } else {
+      const home = await fetchPage(website);
+      if (!home.ok && !home.html) return NextResponse.json({ error: "No se pudo leer el sitio web." }, { status: 422 });
+
+      const links = getRelevantLinks(home.html, home.url);
+      pages = [{ url: home.url, html: home.html }];
+      for (const link of links) {
+        try {
+          const page = await fetchPage(link);
+          if (page.html) pages.push({ url: page.url, html: page.html });
+        } catch {}
+      }
+
+      scraped = pages.map((page, index) => {
+        const meta = extractMeta(page.html);
+        const text = cleanText(page.html).slice(0, index === 0 ? 9000 : 4000);
+        return `URL: ${page.url}\nTITLE: ${meta.title}\nDESCRIPTION: ${meta.description}\nTEXT: ${text}`;
+      }).join("\n\n---\n\n").slice(0, 26000);
     }
-
-    const scraped = pages.map((page, index) => {
-      const meta = extractMeta(page.html);
-      const text = cleanText(page.html).slice(0, index === 0 ? 9000 : 4000);
-      return `URL: ${page.url}\nTITLE: ${meta.title}\nDESCRIPTION: ${meta.description}\nTEXT: ${text}`;
-    }).join("\n\n---\n\n").slice(0, 26000);
 
     const prompt = `Actúa como un estratega senior de contenido, planner y content manager para una agencia de marketing en México.
 
-Tu tarea es analizar el sitio web de un cliente y devolver un JSON que ayude a crear su ficha en BUST Content OS. Usa el sitio como fuente principal y complementa con los datos previamente capturados si existen. No inventes datos duros que el sitio no sustente; cuando tengas incertidumbre, redacta como inferencia estratégica.
+Tu tarea es analizar la fuente digital de un cliente —sitio web o perfil de Instagram— y devolver un JSON que ayude a crear su ficha en BUST Content OS. Usa la fuente entregada como guía principal y complementa con los datos previamente capturados si existen. No inventes datos duros que el sitio no sustente; cuando tengas incertidumbre, redacta como inferencia estratégica.
 
 Devuelve SOLO JSON válido con esta estructura exacta:
 {
@@ -209,7 +239,9 @@ Reglas:
 Datos previos del cliente:
 ${JSON.stringify(currentClient, null, 2)}
 
-Contenido leído del sitio:
+Tipo de fuente: ${sourceType}
+
+Contenido o contexto leído de la fuente:
 ${scraped}`;
 
     const output = await callOpenAI(prompt);
@@ -239,8 +271,9 @@ ${scraped}`;
       buyerPersonas: sanitizePersonas(json.buyerPersonas),
       recommendedPlatforms: sanitizeArray(json.recommendedPlatforms),
       analysisNotes: String(json.analysisNotes || "").trim(),
-      website: home.url || website,
-      pagesRead: pages.map((p) => p.url)
+      website: sourceType === "instagram" ? (currentClient.website || "") : website,
+      instagram: sourceType === "instagram" ? website : (currentClient.instagram || ""),
+      pagesRead: sourceType === "instagram" ? [website] : pages.map((p) => p.url)
     };
 
     return NextResponse.json({ context: result });
