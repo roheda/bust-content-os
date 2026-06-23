@@ -564,6 +564,8 @@ export type Production = {
   materialLinks?: string;
   materialLinksByRequest?: Record<string, string>;
   materialFiles?: ReferenceFile[];
+  materialDueDate?: string;
+  materialDeliveredAt?: string;
   status: string;
 };
 

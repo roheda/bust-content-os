@@ -16,7 +16,7 @@ export default function TasksPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [productions,setProductions]=useState<Production[]>([]);
   const [users,setUsers]=useState<PlatformUser[]>([]);
-  const [view,setView]=useState<"calendario"|"lista"|"persona">("calendario");
+  const [view,setView]=useState<"calendario"|"lista"|"persona"|"eficiencia">("calendario");
   const [calendarMode,setCalendarMode]=useState<"semana"|"mes">("semana");
   const [cursor,setCursor]=useState(new Date());
   const [person,setPerson]=useState("Todos");
@@ -282,6 +282,7 @@ export default function TasksPage(){
       <button className={view==="calendario"?"active":""} onClick={()=>setView("calendario")}>Calendario</button>
       <button className={view==="lista"?"active":""} onClick={()=>setView("lista")}>Lista de tareas</button>
       <button className={view==="persona"?"active":""} onClick={()=>setView("persona")}>Por persona</button>
+      <button className={view==="eficiencia"?"active":""} onClick={()=>setView("eficiencia")}>Eficiencia IA</button>
     </div>
 
     <div className="calendar-controls">
@@ -292,6 +293,7 @@ export default function TasksPage(){
         <button onClick={()=>move(-1)}>← Anterior</button>
         <button onClick={()=>setCursor(new Date())}>Hoy</button>
         <button onClick={()=>move(1)}>Siguiente →</button>
+        <span className="mini workdays-note">Solo días hábiles. Sábados y domingos no se programan.</span>
       </>}
       <select value={person} onChange={e=>setPerson(e.target.value)}>{people.map(x=><option key={x}>{x}</option>)}</select>
       <select value={area} onChange={e=>setArea(e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select>
@@ -327,6 +329,7 @@ export default function TasksPage(){
 
         {view==="lista" && <ListView tasks={filtered} onOpen={openTask}/>}
         {view==="persona" && <PersonView tasks={filtered} onOpen={openTask}/>}
+        {view==="eficiencia" && <EfficiencyView tasks={filtered} onOpen={openTask}/>}
       </div>
 
     </section>
@@ -524,7 +527,7 @@ function getWeekDays(date:Date){
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate()+diff);
-  return Array.from({length:7}).map((_,i)=>{
+  return Array.from({length:5}).map((_,i)=>{
     const x = new Date(d);
     x.setDate(d.getDate()+i);
     return x;
@@ -541,7 +544,7 @@ function getMonthDays(date:Date){
     const x = new Date(start);
     x.setDate(start.getDate()+i);
     return x;
-  });
+  }).filter(day=>day.getDay() !== 0 && day.getDay() !== 6);
 }
 
 
@@ -550,7 +553,7 @@ function formatCalendarLabel(date: Date, mode: "semana" | "mes") {
   if (mode === "mes") return formatter.format(date).replace(/^./, (c) => c.toUpperCase());
   const days = getWeekDays(date);
   const start = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short" }).format(days[0]);
-  const end = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(days[6]);
+  const end = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(days[days.length-1]);
   return `Semana ${start} – ${end}`;
 }
 
@@ -568,7 +571,7 @@ function MonthView({days,cursor,tasksByDate,onOpen}:{days:Date[];cursor:Date;tas
 
 function DayBox({date,tasks,onOpen,muted=false,variant}:{date:Date;tasks:ContentRequest[];onOpen:(item:ContentRequest)=>void;muted?:boolean;variant:"week"|"month"}){
   const label = date.toLocaleDateString("es-MX",{weekday:"short"});
-  return <div className={variant==="week"?"week-day":"month-day"} style={{opacity:muted?.55:1}}>
+  return <div className={variant==="week"?"week-day":"month-day"} style={{opacity:muted ? .55 : 1}}>
     <div className="day-title"><strong>{label} {date.getDate()}</strong><span>{tasks.length}</span></div>
     {tasks.map(task=><TaskChip task={task} onOpen={onOpen} key={task.id}/>)}
   </div>;
@@ -602,6 +605,86 @@ function PersonView({tasks,onOpen}:{tasks:ContentRequest[];onOpen:(item:ContentR
       {items.map(task=><TaskChip task={task} onOpen={onOpen} key={task.id}/>)}
     </div>)}
   </div>;
+}
+
+function EfficiencyView({tasks,onOpen}:{tasks:ContentRequest[];onOpen:(item:ContentRequest)=>void}){
+  const actionable = tasks.filter(task=>!["finalizada","pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout"].includes(task.status||""));
+  const ranked = actionable.map(task=>({task,score:efficiencyScore(task),reason:efficiencyReason(task)})).sort((a,b)=>b.score-a.score || getTaskDate(a.task).localeCompare(getTaskDate(b.task))).slice(0,12);
+  const groupedByType = actionable.reduce((acc:Record<string,ContentRequest[]>,task)=>{
+    const key = `${task.assignedArea || task.suggestedArea || "Sin área"} · ${task.contentType || "Sin tipo"}`;
+    acc[key]=acc[key]||[];
+    acc[key].push(task);
+    return acc;
+  },{});
+  const risks = actionable.filter(task=>isOverdue(task) || (task.priority||"")==="Urgente" || !task.finalPostLink && task.status==="en_revision").slice(0,6);
+  return <div className="efficiency-panel">
+    <div className="efficiency-hero card">
+      <p className="eyebrow">Asistente operativo</p>
+      <h3>Orden sugerido de trabajo</h3>
+      <p className="mini">Esta vista ayuda a Diseño y Audiovisual a decidir qué trabajar primero según vencimiento, prioridad, estado y bloqueos. Es una guía para mejorar foco, no reemplaza criterio del líder.</p>
+    </div>
+    <div className="grid two-col">
+      <section className="card">
+        <h3>Haz primero</h3>
+        {ranked.map(({task,reason},index)=><button className="efficiency-task" type="button" key={task.id} onClick={()=>onOpen(task)}>
+          <span className="efficiency-rank">{index+1}</span>
+          <div><strong>{task.clientName} · {task.contentType}</strong><p>{reason}</p><span className="mini text-clamp-1">{task.creativeIdea || task.copyIn || "Sin detalle"}</span></div>
+        </button>)}
+        {!ranked.length && <p className="mini">No hay tareas activas por priorizar.</p>}
+      </section>
+      <section className="card">
+        <h3>Bloques de trabajo sugeridos</h3>
+        {Object.entries(groupedByType).slice(0,8).map(([key,items])=><div className="efficiency-block" key={key}>
+          <strong>{key}</strong>
+          <span>{items.length} pieza(s). Conviene trabajarlas juntas para reducir cambios de contexto.</span>
+        </div>)}
+        {!Object.keys(groupedByType).length && <p className="mini">Sin bloques sugeridos.</p>}
+      </section>
+    </div>
+    <section className="card">
+      <h3>Riesgos a revisar</h3>
+      <div className="table-wrap"><table className="table"><thead><tr><th>Tarea</th><th>Responsable</th><th>Fecha operativa</th><th>Riesgo</th></tr></thead><tbody>
+        {risks.map(task=><tr key={task.id}><td><strong>{task.clientName}</strong><br/><span className="mini text-clamp-1">{task.contentType} · {task.objective}</span></td><td>{task.assignedTo||"Sin asignar"}</td><td>{getTaskDate(task)||"Sin fecha"}</td><td>{efficiencyReason(task)}</td></tr>)}
+      </tbody></table></div>
+      {!risks.length && <p className="mini">No hay riesgos fuertes con los filtros actuales.</p>}
+    </section>
+  </div>;
+}
+
+function efficiencyScore(task:ContentRequest){
+  let score = 0;
+  if(isOverdue(task)) score += 100;
+  if((task.priority||"") === "Urgente") score += 60;
+  if((task.priority||"") === "Alta") score += 35;
+  if(task.status === "rebotada") score += 45;
+  if(task.status === "en_revision") score += 25;
+  const date = getTaskDate(task);
+  if(date){
+    const today = new Date();
+    const due = new Date(`${date}T12:00:00`);
+    const days = Math.ceil((due.getTime()-today.getTime())/86400000);
+    if(days <= 0) score += 40;
+    else if(days <= 1) score += 30;
+    else if(days <= 3) score += 18;
+    else if(days <= 5) score += 8;
+  }else score += 10;
+  return score;
+}
+
+function efficiencyReason(task:ContentRequest){
+  if(isOverdue(task)) return "Vencida: atender o justificar hoy.";
+  if(task.status === "rebotada") return "Rebotada: corregir antes de tomar nuevas piezas.";
+  if((task.priority||"") === "Urgente") return "Urgente: priorizar en el primer bloque del día.";
+  if(task.status === "en_revision" && !task.finalPostLink) return "En revisión sin link final: cerrar entregable.";
+  const date = getTaskDate(task);
+  if(date){
+    const today = new Date();
+    const due = new Date(`${date}T12:00:00`);
+    const days = Math.ceil((due.getTime()-today.getTime())/86400000);
+    if(days <= 1) return "Entrega próxima: conviene cerrar hoy.";
+    if(days <= 3) return "Entrega cercana: avanzar antes de que se vuelva urgente.";
+  }
+  return "Buen candidato para agrupar por cliente/tipo.";
 }
 
 function splitLinks(value:string){

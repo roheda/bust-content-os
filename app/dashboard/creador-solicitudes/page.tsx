@@ -109,6 +109,30 @@ export default function CreatorPage(){
     return d.toISOString().slice(0,10);
   }
 
+  function isWeekendDate(value?:string){
+    if(!value)return false;
+    const d = new Date(`${value}T12:00:00`);
+    const day = d.getDay();
+    return day === 0 || day === 6;
+  }
+
+  function nextBusinessDate(value:string){
+    if(!value)return value;
+    const d = new Date(`${value}T12:00:00`);
+    while(d.getDay() === 0 || d.getDay() === 6){
+      d.setDate(d.getDate()+1);
+    }
+    return d.toISOString().slice(0,10);
+  }
+
+  function setBusinessDate(setter:(value:string)=>void, value:string, label="fecha"){
+    if(value && isWeekendDate(value)){
+      alert(`La ${label} no puede ser sábado o domingo. Elige un día hábil.`);
+      return;
+    }
+    setter(value);
+  }
+
   function creationDateLabel(){
     return new Date().toLocaleDateString("es-MX", { day:"2-digit", month:"2-digit", year:"numeric" });
   }
@@ -151,7 +175,13 @@ export default function CreatorPage(){
     };
   }
 
-  function setManualField(k:keyof ContentRequest, v:any){setManual({...manual,[k]:v})}
+  function setManualField(k:keyof ContentRequest, v:any){
+    if(k === "publishDate" && v && isWeekendDate(v)){
+      alert("La fecha de publicación no puede ser sábado o domingo. Elige un día hábil.");
+      return;
+    }
+    setManual({...manual,[k]:v});
+  }
 
   function clientContext(){
     if(!client)return "";
@@ -343,7 +373,7 @@ export default function CreatorPage(){
         keyMessage:must,
         copyIn:"Copy inicial pendiente de ajustar.",
         cta:"Enviar WhatsApp / Solicitar información",
-        publishDate:startDate?addDays(startDate,i*interval):""
+        publishDate:startDate?nextBusinessDate(addDays(startDate,i*interval)):""
       },"auto");
     });
 
@@ -361,6 +391,10 @@ export default function CreatorPage(){
   }
 
   function updateItem(index:number,k:keyof ContentRequest,v:any){
+    if(k === "publishDate" && v && isWeekendDate(v)){
+      alert("La fecha de publicación no puede ser sábado o domingo. Elige un día hábil.");
+      return;
+    }
     const next=[...items];
     const updated = {...next[index],[k]:v};
     if(k==="contentType" || k==="publishDate" || k==="requiresProduction"){
@@ -453,6 +487,9 @@ export default function CreatorPage(){
     if(!client?.id)return alert("Selecciona cliente");
     const name = draftName || defaultBatchName(client.name);
     if(!batchDueDate)return alert("Define la fecha límite del lote.");
+    if(isWeekendDate(batchDueDate))return alert("La fecha límite del lote no puede ser sábado o domingo.");
+    const weekendItem = items.find(item=>item.publishDate && isWeekendDate(item.publishDate));
+    if(weekendItem)return alert("Hay una solicitud con fecha en sábado o domingo. Ajusta las fechas antes de enviar el lote.");
     if(!validateBatch())return;
     setBusy(true);
     try{
@@ -503,7 +540,7 @@ export default function CreatorPage(){
       </div>
       <div className="field" style={{margin:0}}>
         <label>Fecha límite del lote</label>
-        <input type="date" value={batchDueDate} onChange={e=>setBatchDueDate(e.target.value)}/>
+        <input type="date" value={batchDueDate} onChange={e=>setBusinessDate(setBatchDueDate,e.target.value,"fecha límite del lote")}/>
       </div>
       <button className="btn blue" onClick={saveDraft}>Guardar borrador</button>
       <button className="btn dark" onClick={publishBatch} disabled={busy}>{busy?"Cargando referencias...":"Aprobar lote y enviar a Asignación"}</button>
@@ -526,7 +563,7 @@ export default function CreatorPage(){
           <h3>IA automática</h3>
           <div className="form-grid">
             <div className="field"><label>Cuántas</label><input type="number" value={aiCount} onChange={e=>setAiCount(Number(e.target.value))}/></div>
-            <div className="field"><label>Primera fecha</label><input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/></div>
+            <div className="field"><label>Primera fecha</label><input type="date" value={startDate} onChange={e=>setBusinessDate(setStartDate,e.target.value,"primera fecha")}/></div>
             <div className="field"><label>Cada cuántos días</label><input type="number" value={interval} onChange={e=>setInterval(Number(e.target.value))}/></div>
             <div className="field"><label>Tipos</label><input value={types} onChange={e=>setTypes(e.target.value)}/></div>
             <div className="field"><label>Objetivos</label><input value={goals} onChange={e=>setGoals(e.target.value)}/></div>

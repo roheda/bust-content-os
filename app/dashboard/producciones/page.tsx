@@ -24,6 +24,8 @@ const empty: Production = {
   materialLinks: "",
   materialLinksByRequest: {},
   materialFiles: [],
+  materialDueDate: "",
+  materialDeliveredAt: "",
   status: "programada"
 };
 
@@ -107,6 +109,28 @@ export default function ProductionsPage(){
     return `${h?`${h} h`:""}${h&&m?" ":""}${m?`${m} min`:""}` || "0 min";
   }
 
+  function isWeekendDate(value?:string){
+    if(!value)return false;
+    const date = new Date(`${value}T12:00:00`);
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  }
+
+  function safeProductionDate(k:keyof Production, value:string){
+    if(value && isWeekendDate(value)){
+      alert("No se pueden programar producciones ni entregas de material en sábado o domingo. Elige un día hábil.");
+      return;
+    }
+    set(k,value);
+  }
+
+  function materialDueStatus(production:Production){
+    if(production.status === "material_entregado") return {label:"Entregado", tone:"green"};
+    if(!production.materialDueDate) return {label:"Sin fecha", tone:"orange"};
+    const today = new Date().toISOString().slice(0,10);
+    return production.materialDueDate < today ? {label:"Vencida", tone:"red"} : {label:"En tiempo", tone:"blue"};
+  }
+
   const teamOptions = useMemo(()=>{
     const fromUsers = users.map(user=>toTitleCase(user.name||"")).filter(Boolean);
     const fallback = organizationTeam.map(user=>toTitleCase(user.name));
@@ -148,7 +172,7 @@ export default function ProductionsPage(){
 
   const filteredProductions = useMemo(()=>{
     const rows = productions.filter(x=>{
-      const text = `${x.title} ${x.clientName} ${x.location} ${x.locations||""} ${x.producer} ${x.team} ${x.notes}`.toLowerCase();
+      const text = `${x.title} ${x.clientName} ${x.location} ${x.locations||""} ${x.producer} ${x.team} ${x.notes} ${x.materialDueDate||""}`.toLowerCase();
       const hasGeneralMaterial = Boolean((x.materialLinks||"").trim()) || Boolean((x.materialFiles||[]).length);
       const hasAnyPostMaterial = Boolean(Object.values(x.materialLinksByRequest||{}).some(v=>String(v||"").trim()));
       const hasMaterial = hasGeneralMaterial || hasAnyPostMaterial;
@@ -165,6 +189,7 @@ export default function ProductionsPage(){
       if(key==="producer")return row.producer || "";
       if(key==="status")return row.status || "";
       if(key==="requests")return row.requestIds?.length || 0;
+      if(key==="materialDueDate")return row.materialDueDate || "";
       return row.scheduledDate || "";
     });
   },[productions,prodClientFilter,prodStatusFilter,prodProducerFilter,prodMaterialFilter,prodStartDate,prodEndDate,prodSearch,productionSort]);
@@ -195,7 +220,8 @@ export default function ProductionsPage(){
   }
 
   async function submit(){
-    if(!form.title||!form.scheduledDate||!form.startTime||!form.endTime||!(form.locations||form.location)||!form.producer||!(form.teamMembers||[]).length||!form.objective||!form.requirements||!form.shotList)return alert("Todos los campos de la producción son obligatorios.");
+    if(!form.title||!form.scheduledDate||!form.materialDueDate||!form.startTime||!form.endTime||!(form.locations||form.location)||!form.producer||!(form.teamMembers||[]).length||!form.objective||!form.requirements||!form.shotList)return alert("Todos los campos de la producción son obligatorios, incluida la fecha límite para completar materiales.");
+    if(isWeekendDate(form.scheduledDate) || isWeekendDate(form.materialDueDate))return alert("La producción y la entrega de materiales deben programarse en días hábiles, no sábado ni domingo.");
     const ref = await saveProduction(form);
     await Promise.all(form.requestIds.map(id=>updateRequest(id,{productionId:ref.id,productionName:form.title,status:"produccion_programada"})));
     setSelected([]);
@@ -255,7 +281,7 @@ export default function ProductionsPage(){
       return;
     }
     const nextStatus = "material_entregado";
-    await updateProduction(editing.id,{...editing,status:nextStatus});
+    await updateProduction(editing.id,{...editing,status:nextStatus,materialDeliveredAt:new Date().toISOString()});
     await Promise.all((editing.requestIds||[]).map(id=>{
       const req = requests.find(x=>x.id===id);
       const individualLink = (editing.materialLinksByRequest||{})[id] || "";
@@ -344,9 +370,10 @@ export default function ProductionsPage(){
 
     <section className="card" style={{marginTop:24}}>
       <h3>Calendario de producciones</h3>
-      <table className="table"><thead><tr><th><SortButton label="Producción" active={productionSort.key==="title"} direction={productionSort.direction} onClick={()=>toggleProductionSort("title")}/></th><th><SortButton label="Cliente" active={productionSort.key==="client"} direction={productionSort.direction} onClick={()=>toggleProductionSort("client")}/></th><th><SortButton label="Fecha" active={productionSort.key==="scheduledDate"} direction={productionSort.direction} onClick={()=>toggleProductionSort("scheduledDate")}/></th><th><SortButton label="Responsable" active={productionSort.key==="producer"} direction={productionSort.direction} onClick={()=>toggleProductionSort("producer")}/></th><th>Material</th><th><SortButton label="Solicitudes" active={productionSort.key==="requests"} direction={productionSort.direction} onClick={()=>toggleProductionSort("requests")}/></th><th><SortButton label="Estado" active={productionSort.key==="status"} direction={productionSort.direction} onClick={()=>toggleProductionSort("status")}/></th><th>Brief</th></tr></thead><tbody>{filteredProductions.map(p=>{
+      <table className="table"><thead><tr><th><SortButton label="Producción" active={productionSort.key==="title"} direction={productionSort.direction} onClick={()=>toggleProductionSort("title")}/></th><th><SortButton label="Cliente" active={productionSort.key==="client"} direction={productionSort.direction} onClick={()=>toggleProductionSort("client")}/></th><th><SortButton label="Fecha" active={productionSort.key==="scheduledDate"} direction={productionSort.direction} onClick={()=>toggleProductionSort("scheduledDate")}/></th><th><SortButton label="Vence material" active={productionSort.key==="materialDueDate"} direction={productionSort.direction} onClick={()=>toggleProductionSort("materialDueDate")}/></th><th><SortButton label="Responsable" active={productionSort.key==="producer"} direction={productionSort.direction} onClick={()=>toggleProductionSort("producer")}/></th><th>Material</th><th><SortButton label="Solicitudes" active={productionSort.key==="requests"} direction={productionSort.direction} onClick={()=>toggleProductionSort("requests")}/></th><th><SortButton label="Estado" active={productionSort.key==="status"} direction={productionSort.direction} onClick={()=>toggleProductionSort("status")}/></th><th>Brief</th></tr></thead><tbody>{filteredProductions.map(p=>{
         const hasMaterial = Boolean((p.materialLinks||"").trim()) || Boolean((p.materialFiles||[]).length) || Boolean(Object.values(p.materialLinksByRequest||{}).some(v=>String(v||"").trim()));
-        return <tr key={p.id}><td><strong>{p.title}</strong><br/><span className="mini">{(p.locations||p.location)||"Sin locaciones"}</span></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.producer||"Sin responsable"}</td><td>{hasMaterial?<span className="pill green">Con material</span>:<span className="pill orange">Sin material</span>}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar links</button> <button className="btn" onClick={()=>setBrief(p)}>Exportar brief</button></td></tr>
+        const dueStatus = materialDueStatus(p);
+        return <tr key={p.id}><td><strong>{p.title}</strong><br/><span className="mini">{(p.locations||p.location)||"Sin locaciones"}</span></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.materialDueDate || "Sin fecha"}<br/><span className={`pill ${dueStatus.tone}`}>{dueStatus.label}</span></td><td>{p.producer||"Sin responsable"}</td><td>{hasMaterial?<span className="pill green">Con material</span>:<span className="pill orange">Sin material</span>}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar links</button> <button className="btn" onClick={()=>setBrief(p)}>Exportar brief</button></td></tr>
       })}</tbody></table>
       {!filteredProductions.length && <p className="mini">No hay producciones con esos filtros.</p>}
     </section>
@@ -361,7 +388,7 @@ export default function ProductionsPage(){
 
     {editing && <section className="card production-material-inline" style={{marginTop:24}}>
       <h2>Completar material de producción</h2>
-      <p className="mini">{editing.title} · {editing.clientName}</p>
+      <p className="mini">{editing.title} · {editing.clientName} · Límite material: {editing.materialDueDate || "Sin fecha"}</p>
       <div className="production-material-box">
         <div className="field">
           <label>Link general del material producido *</label>
@@ -406,7 +433,8 @@ export default function ProductionsPage(){
       <div className="form-grid">
         <div className="field full"><label>Título *</label><input value={form.title} onChange={e=>set("title",e.target.value)}/></div>
         <div className="field"><label>Cliente</label><input value={form.clientName} disabled/></div>
-        <div className="field"><label>Fecha producción *</label><input type="date" value={form.scheduledDate} onChange={e=>set("scheduledDate",e.target.value)}/></div>
+        <div className="field"><label>Fecha producción *</label><input type="date" value={form.scheduledDate} onChange={e=>safeProductionDate("scheduledDate",e.target.value)}/></div>
+        <div className="field"><label>Fecha límite de materiales *</label><input type="date" value={form.materialDueDate||""} onChange={e=>safeProductionDate("materialDueDate",e.target.value)}/><span className="mini">Día máximo para completar links de material.</span></div>
         <div className="field"><label>Hora de inicio *</label><input type="time" step="1800" value={form.startTime} onChange={e=>set("startTime",e.target.value)}/></div>
         <div className="field"><label>Duración *</label><select value={String(form.durationMinutes||120)} onChange={e=>set("durationMinutes" as keyof Production, Number(e.target.value))}>{[30,60,90,120,150,180,210,240,300,360,420,480].map(minutes=><option key={minutes} value={minutes}>{durationLabel(minutes)}</option>)}</select></div>
         <div className="field"><label>Hora de finalización</label><input value={form.endTime||""} disabled placeholder="Se calcula sola"/></div>
@@ -459,6 +487,7 @@ function ProductionBrief({production,requests}:{production:Production;requests:C
 
     <div className="brief-meta-grid">
       <div className="brief-meta"><span>Fecha</span><strong>{production.scheduledDate||"Sin fecha"}</strong></div>
+      <div className="brief-meta"><span>Límite material</span><strong>{production.materialDueDate||"Sin fecha"}</strong></div>
       <div className="brief-meta"><span>Horario</span><strong>{production.startTime||"--"} - {production.endTime||"--"}</strong></div>
       <div className="brief-meta"><span>Locaciones</span><strong>{(production.locations||production.location)||"Sin locaciones"}</strong></div>
       <div className="brief-meta"><span>Responsable</span><strong>{production.producer||"Sin responsable"}</strong></div>

@@ -364,8 +364,8 @@ textarea{min-height:82px}
 .calendar-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:16px 0}
 .calendar-controls button,.calendar-controls select{border:1px solid var(--line);border-radius:999px;background:#fff;padding:10px 14px;font-weight:900}
 .calendar-controls button.active{background:#111827;color:#fff;border-color:#111827}
-.week-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
-.month-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.week-calendar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.month-calendar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
 .week-day,.month-day{border:1px solid var(--line);border-radius:18px;background:#fff;min-height:210px;padding:12px;display:grid;align-content:start;gap:8px}
 .month-day{min-height:132px;padding:10px}
 .day-title{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:900}
@@ -1983,3 +1983,16 @@ a[class*="bg-black"],
 .content-actions-cell{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0;overflow:visible!important;white-space:nowrap!important}
 .content-actions-cell .btn{padding-inline:12px;min-height:36px;font-size:12px}
 @media(max-width:1200px){.approvals-row,.contenidos-row,.contenidos-header{grid-template-columns:28px minmax(180px,1fr)!important;align-items:start}.approvals-row.header,.contenidos-header{display:none}.approvals-row>span,.approvals-row>button,.contenidos-row>span,.contenidos-row>div,.contenidos-row>.copyout-cell{grid-column:2/-1}.content-actions-cell{grid-column:2/-1;flex-wrap:wrap}}
+
+
+/* v50 · calendario laboral y eficiencia operativa */
+.workdays-note{align-self:center;color:#667085;font-weight:800}
+.efficiency-panel{display:grid;gap:18px}
+.efficiency-hero{background:linear-gradient(135deg,#fff,rgba(158,252,123,.12))}
+.efficiency-task{width:100%;border:1px solid var(--line);background:#fff;border-radius:18px;padding:12px;display:grid;grid-template-columns:38px 1fr;gap:12px;text-align:left;align-items:start;margin-bottom:10px;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.efficiency-task:hover{transform:translateY(-1px);box-shadow:0 16px 32px rgba(15,23,42,.08);border-color:rgba(158,252,123,.7)}
+.efficiency-task p{margin:2px 0 4px;color:#344054;font-weight:800}
+.efficiency-rank{width:34px;height:34px;border-radius:13px;background:var(--brand-green);display:grid;place-items:center;font-weight:950;color:var(--brand-dark)}
+.efficiency-block{border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:10px;background:rgba(255,255,255,.74)}
+.efficiency-block strong{display:block;margin-bottom:4px}.efficiency-block span{font-size:12px;color:#667085;font-weight:750}
+@media(max-width:900px){.week-calendar,.month-calendar{grid-template-columns:1fr!important}.efficiency-task{grid-template-columns:32px 1fr}}
