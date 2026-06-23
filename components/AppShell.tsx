@@ -25,9 +25,9 @@ const moduleIcons: Record<string, string> = {
 };
 
 const moduleGroups = [
-  { label: "Operación", keys: ["dashboard", "clientes", "creador", "asignacion", "producciones", "tareas"] },
-  { label: "IA y revisión", keys: ["ia_operativa", "generador", "aprobaciones", "contenidos"] },
-  { label: "Dirección", keys: ["reportes", "configuracion", "usuarios"] }
+  { label: "Operación", keys: ["dashboard", "clientes", "creador", "asignacion", "producciones", "tareas", "aprobaciones", "contenidos"] },
+  { label: "IA", keys: ["ia_operativa", "generador"] },
+  { label: "Administración", keys: ["reportes", "configuracion", "usuarios"] }
 ];
 
 const items = platformModules.map((module) => [module.label, module.route, module.key, module.description] as const);
