@@ -595,6 +595,7 @@ export default function CreatorPage(){
                     <span>{item.suggestedArea || "Sin área"}</span>
                     <span>{item.publishDate || "Sin fecha"}</span>
                     {item.requiresProduction ? <span>Producción</span> : <span>{item.materialAvailable ? "Material listo" : "Sin material"}</span>}
+                    <span className={briefCompleteness(item)>=80 ? "pill green" : briefCompleteness(item)>=60 ? "pill yellow" : "pill red"}>Brief {briefCompleteness(item)}/100</span>
                     {error ? <span className="pill red">Pendiente</span> : <span className="pill green">Lista</span>}
                     <span className="summary-chevron">{expanded?"Ocultar":"Editar"}</span>
                   </div>
@@ -610,6 +611,7 @@ export default function CreatorPage(){
                     </div>
                     <BuyerPersonaSelector request={item} buyerPersonas={client?.buyerPersonas || []} onSelect={(persona)=>updateItemPersona(index, persona)}/>
                     <PostInfoSelector request={item} onChange={(k,v)=>updateItem(index,k,v)}/>
+                    <BriefScoreCard request={item}/>
                   </section>
 
                   <section className="creator-section">
@@ -711,6 +713,46 @@ function RequestForm({request,buyerPersonas,onPersonaChange,onChange,onUpload,on
   </div>
 }
 
+
+function briefCompleteness(item:ContentRequest){
+  const checks = [
+    item.clientName,
+    item.contentType,
+    item.objective,
+    item.suggestedArea,
+    item.publishDate,
+    item.creativeIdea && item.creativeIdea.length > 40,
+    item.copyIn || item.keyMessage,
+    item.platforms?.length,
+    item.visualFormat || item.feedPlacement,
+    item.requiresProduction ? item.productionNotes : (item.materialAvailable || item.materialLinks)
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
+function briefMissingFields(item:ContentRequest){
+  const missing:string[] = [];
+  if(!item.contentType) missing.push("tipo");
+  if(!item.objective) missing.push("objetivo");
+  if(!item.suggestedArea) missing.push("área");
+  if(!item.publishDate) missing.push("fecha");
+  if(!item.creativeIdea || item.creativeIdea.length < 40) missing.push("idea clara");
+  if(!item.copyIn && !item.keyMessage) missing.push("copy/mensaje");
+  if(!item.platforms?.length) missing.push("plataformas");
+  if(item.requiresProduction && !item.productionNotes) missing.push("notas producción");
+  if(!item.requiresProduction && !item.materialAvailable && !item.materialLinks) missing.push("material/link");
+  return missing;
+}
+
+function BriefScoreCard({request}:{request:ContentRequest}){
+  const score = briefCompleteness(request);
+  const missing = briefMissingFields(request);
+  return <div className="brief-score-mini">
+    <div><strong>Brief Score {score}/100</strong><span>La IA usa esto para prevenir rebotes.</span></div>
+    <span className={score>=80?"pill green":score>=60?"pill yellow":"pill red"}>{score>=80?"Sólido":score>=60?"Mejorable":"Riesgo"}</span>
+    {!!missing.length && <p>Falta: {missing.join(", ")}</p>}
+  </div>;
+}
 
 const platformOptions = ["Instagram","Facebook","TikTok"];
 const formatOptions = ["Vertical 9:16","Cuadrado 1:1","Carrusel Feed","Horizontal 16:9","Story 9:16"];

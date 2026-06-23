@@ -116,6 +116,7 @@ export const platformModules: PlatformModule[] = [
   { key: "asignacion", label: "Asignación", route: "/dashboard/asignacion", description: "Distribuir piezas por persona, área y prioridad." },
   { key: "producciones", label: "Producciones", route: "/dashboard/producciones", description: "Programar y administrar producciones." },
   { key: "tareas", label: "Tareas", route: "/dashboard/tareas", description: "Operación diaria y avance de entregables." },
+  { key: "ia_operativa", label: "IA Operativa", route: "/dashboard/planeador-ia", description: "Brief score, aprendizaje del equipo, priorización y riesgos operativos." },
   { key: "generador", label: "BUST It Now", route: "/dashboard/generador", description: "Generación de imágenes, briefs y consumo IA." },
   { key: "aprobaciones", label: "Aprobaciones", route: "/dashboard/aprobaciones", description: "Doble aprobación: Content y KAM antes de publicar." },
   { key: "contenidos", label: "Contenidos", route: "/dashboard/contenidos", description: "Copy final, links, exportación y cierre de publicaciones." },
@@ -170,52 +171,52 @@ export function getRoleTemplatePermissions(roleKey: string): PermissionMatrix {
     matrixFor(["usuarios"], ["configure"])
   );
   if (roleKey === "direccion") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones","contenidos","reportes"], ["view"]),
+    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","ia_operativa","generador","aprobaciones","contenidos","reportes"], ["view"]),
     matrixFor(["aprobaciones"], ["approve"]),
     matrixFor(["contenidos"], ["edit"]),
     matrixFor(["reportes"], ["billing"]),
     matrixFor(["generador"], ["generate"])
   );
   if (roleKey === "kam") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","generador","aprobaciones","contenidos"], ["view"]),
+    matrixFor(["dashboard","clientes","creador","asignacion","producciones","tareas","ia_operativa","generador","aprobaciones","contenidos"], ["view"]),
     matrixFor(["creador","generador"], ["create","edit","generate"]),
     matrixFor(["aprobaciones"], ["approve"]),
     matrixFor(["contenidos"], ["edit"])
   );
   if (roleKey === "content_lead") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","asignacion","tareas","generador","aprobaciones","contenidos","reportes"], ["view"]),
+    matrixFor(["dashboard","clientes","creador","asignacion","tareas","ia_operativa","generador","aprobaciones","contenidos","reportes"], ["view"]),
     matrixFor(["creador","tareas","generador"], ["create","edit","generate"]),
     matrixFor(["asignacion"], ["assign","edit"]),
     matrixFor(["aprobaciones"], ["approve"]),
     matrixFor(["contenidos"], ["edit","generate"])
   );
   if (roleKey === "content") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","tareas","generador","aprobaciones","contenidos"], ["view"]),
+    matrixFor(["dashboard","clientes","creador","tareas","ia_operativa","generador","aprobaciones","contenidos"], ["view"]),
     matrixFor(["creador","tareas","generador"], ["create","edit","generate"]),
     matrixFor(["aprobaciones"], ["approve"]),
     matrixFor(["contenidos"], ["edit"])
   );
   if (roleKey === "estrategia") return mergeMatrices(
-    matrixFor(["dashboard","clientes","creador","tareas","generador","aprobaciones","contenidos"], ["view"]),
+    matrixFor(["dashboard","clientes","creador","tareas","ia_operativa","generador","aprobaciones","contenidos"], ["view"]),
     matrixFor(["creador","generador"], ["create","edit","generate"]),
     matrixFor(["contenidos"], ["edit"])
   );
   if (roleKey === "creativo") return mergeMatrices(
-    matrixFor(["dashboard","creador","tareas","generador","contenidos"], ["view"]),
+    matrixFor(["dashboard","creador","tareas","ia_operativa","generador","contenidos"], ["view"]),
     matrixFor(["creador","tareas","generador","contenidos"], ["edit","generate"])
   );
   if (roleKey === "diseno_lead") return mergeMatrices(
-    matrixFor(["dashboard","asignacion","tareas","generador","aprobaciones"], ["view"]),
+    matrixFor(["dashboard","asignacion","tareas","ia_operativa","generador","aprobaciones"], ["view"]),
     matrixFor(["asignacion"], ["assign","edit"]),
     matrixFor(["tareas","generador"], ["edit","generate"]),
     matrixFor(["aprobaciones"], ["approve"])
   );
   if (roleKey === "diseno") return mergeMatrices(
-    matrixFor(["dashboard","tareas","generador","aprobaciones"], ["view"]),
+    matrixFor(["dashboard","tareas","ia_operativa","generador","aprobaciones"], ["view"]),
     matrixFor(["tareas","generador"], ["edit","generate"])
   );
   if (roleKey === "audiovisual") return mergeMatrices(
-    matrixFor(["dashboard","producciones","tareas","aprobaciones"], ["view"]),
+    matrixFor(["dashboard","producciones","tareas","ia_operativa","aprobaciones"], ["view"]),
     matrixFor(["producciones","tareas"], ["edit"])
   );
   if (roleKey === "cliente") return mergeMatrices(

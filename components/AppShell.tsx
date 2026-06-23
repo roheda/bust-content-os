@@ -15,6 +15,7 @@ const moduleIcons: Record<string, string> = {
   asignacion: "↗",
   producciones: "◉",
   tareas: "✓",
+  ia_operativa: "◌",
   generador: "✦",
   aprobaciones: "●",
   contenidos: "▣",
@@ -25,7 +26,7 @@ const moduleIcons: Record<string, string> = {
 
 const moduleGroups = [
   { label: "Operación", keys: ["dashboard", "clientes", "creador", "asignacion", "producciones", "tareas"] },
-  { label: "IA y revisión", keys: ["generador", "aprobaciones", "contenidos"] },
+  { label: "IA y revisión", keys: ["ia_operativa", "generador", "aprobaciones", "contenidos"] },
   { label: "Dirección", keys: ["reportes", "configuracion", "usuarios"] }
 ];
 
