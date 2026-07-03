@@ -37,6 +37,23 @@ type GeneratedLocalImage = {
   logoOverlayApplied?: boolean;
 };
 
+type EditableTextLayer = {
+  id: string;
+  text: string;
+  role: string;
+  enabled: boolean;
+  xPercent: number;
+  yPercent: number;
+  widthPercent: number;
+  sizePercent: number;
+  color: string;
+  backgroundColor: string;
+  backgroundEnabled: boolean;
+  align: "left" | "center" | "right";
+  weight: number;
+  uppercase: boolean;
+};
+
 const models = [
   { id: "gemini-3-pro-image", label: "Gemini Pro Imagen · profesional · aprox $2.50 MXN/img" },
   { id: "gemini-3.1-flash-image", label: "Gemini 3.1 Flash Imagen · balanceado · aprox $1.90 MXN/img" },
@@ -109,6 +126,75 @@ function formatStatus(status?: string) {
   return status || "brief_ready";
 }
 
+function defaultLayerFromBlock(block: any, index: number): EditableTextLayer {
+  const role = String(block?.role || "free");
+  const priority = String(block?.priority || "medium");
+  const roleDefaults: Record<string, Partial<EditableTextLayer>> = {
+    headline: { xPercent: 50, yPercent: 18, widthPercent: 78, sizePercent: 8.2, color: "#ffffff", align: "center", weight: 900, uppercase: false },
+    subheadline: { xPercent: 50, yPercent: 28, widthPercent: 74, sizePercent: 4.8, color: "#ffffff", align: "center", weight: 700 },
+    claim: { xPercent: 50, yPercent: 36, widthPercent: 70, sizePercent: 4.4, color: "#ffffff", align: "center", weight: 800 },
+    badge: { xPercent: 50, yPercent: 12, widthPercent: 42, sizePercent: 3.4, color: "#111827", backgroundEnabled: true, backgroundColor: "#9EFC7B", align: "center", weight: 900 },
+    bullet: { xPercent: 50, yPercent: 43, widthPercent: 70, sizePercent: 4.2, color: "#f97316", align: "center", weight: 900 },
+    price: { xPercent: 50, yPercent: 48, widthPercent: 60, sizePercent: 6.8, color: "#ffffff", align: "center", weight: 900 },
+    promotion: { xPercent: 50, yPercent: 44, widthPercent: 68, sizePercent: 4.8, color: "#f97316", align: "center", weight: 900 },
+    cta: { xPercent: 50, yPercent: 78, widthPercent: 54, sizePercent: 4.4, color: "#ffffff", backgroundEnabled: true, backgroundColor: "#f97316", align: "center", weight: 900 },
+    date: { xPercent: 50, yPercent: 86, widthPercent: 70, sizePercent: 3.2, color: "#ffffff", align: "center", weight: 600 },
+    location: { xPercent: 50, yPercent: 88, widthPercent: 70, sizePercent: 3.0, color: "#ffffff", align: "center", weight: 600 },
+    disclaimer: { xPercent: 50, yPercent: 94, widthPercent: 82, sizePercent: 2.6, color: "#ffffff", align: "center", weight: 500 },
+    free: { xPercent: 50, yPercent: Math.min(88, 22 + index * 10), widthPercent: 72, sizePercent: 3.8, color: "#ffffff", align: "center", weight: 700 }
+  };
+  const fallbackSize = priority === "high" ? 5.4 : priority === "low" ? 2.8 : 4.0;
+  return {
+    id: String(block?.id || `layer-${index}-${Date.now()}`),
+    text: String(block?.text || ""),
+    role,
+    enabled: true,
+    xPercent: 50,
+    yPercent: Math.min(92, 18 + index * 9),
+    widthPercent: 72,
+    sizePercent: fallbackSize,
+    color: "#ffffff",
+    backgroundColor: "#111827",
+    backgroundEnabled: false,
+    align: "center",
+    weight: priority === "high" ? 900 : priority === "low" ? 500 : 700,
+    uppercase: false,
+    ...roleDefaults[role]
+  } as EditableTextLayer;
+}
+
+function buildDefaultTextLayers(blocks?: any[]): EditableTextLayer[] {
+  return (blocks || []).filter((block) => String(block?.text || "").trim()).map((block, index) => defaultLayerFromBlock(block, index));
+}
+
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const testLine = line ? `${line} ${word}` : word;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
 export default function GenerationRequestPage() {
   const { requestId } = useParams<{ requestId: string }>();
 
@@ -128,6 +214,9 @@ export default function GenerationRequestPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [assetCategoryFilter, setAssetCategoryFilter] = useState("all");
+  const [textEditorOpen, setTextEditorOpen] = useState(false);
+  const [textLayers, setTextLayers] = useState<EditableTextLayer[]>([]);
+  const [downloadTextLoading, setDownloadTextLoading] = useState(false);
 
   const [logoOverlay, setLogoOverlay] = useState<LogoOverlayXY>({
     enabled: false,
@@ -143,6 +232,7 @@ export default function GenerationRequestPage() {
   async function load() {
     const found = await getGenerationRequest(requestId);
     setRequest(found);
+    setTextLayers(Array.isArray((found as any)?.editableTextLayers) && (found as any).editableTextLayers.length ? (found as any).editableTextLayers : buildDefaultTextLayers((found as any)?.textBlocks));
 
     const [generatedRecords, brands] = await Promise.all([listGeneratedImageRecords(), listUniqueBrands()]);
     setAllGeneratedRecords(generatedRecords);
@@ -463,6 +553,77 @@ export default function GenerationRequestPage() {
     setSuccess("Logo quitado. La descarga vuelve a usar la imagen original.");
   }
 
+
+  function updateTextLayer(id: string, patch: Partial<EditableTextLayer>) {
+    setTextLayers((current) => current.map((layer) => layer.id === id ? { ...layer, ...patch } : layer));
+  }
+
+  async function saveEditableTextLayers() {
+    await updateGenerationRequest(requestId, { editableTextLayers: textLayers } as any);
+    setSuccess("Capas de texto guardadas en el brief.");
+    await load();
+  }
+
+  async function downloadEditedTextImage(imageIndex = selectedImageIndex) {
+    const image = generatedImages[imageIndex];
+    if (!image) return alert("Primero genera una imagen.");
+    setDownloadTextLoading(true);
+    setError("");
+    try {
+      const source = dataUrlFromBase64(image.finalBase64 || image.base64);
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("No se pudo cargar la imagen para exportar."));
+        img.src = source;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("No se pudo preparar el lienzo.");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const enabledLayers = textLayers.filter((layer) => layer.enabled && layer.text.trim());
+      for (const layer of enabledLayers) {
+        const text = layer.uppercase ? layer.text.toUpperCase() : layer.text;
+        const fontSize = Math.max(10, Math.round(canvas.width * (Number(layer.sizePercent || 4) / 100)));
+        const maxWidth = canvas.width * (Number(layer.widthPercent || 70) / 100);
+        const x = canvas.width * (Number(layer.xPercent || 50) / 100);
+        const y = canvas.height * (Number(layer.yPercent || 50) / 100);
+        ctx.font = `${Number(layer.weight || 700)} ${fontSize}px Arial, Helvetica, sans-serif`;
+        ctx.textAlign = layer.align;
+        ctx.textBaseline = "middle";
+        const lines = wrapCanvasText(ctx, text, maxWidth);
+        const lineHeight = fontSize * 1.15;
+        const totalHeight = lines.length * lineHeight;
+        let boxX = x;
+        if (layer.align === "center") boxX = x - maxWidth / 2;
+        if (layer.align === "right") boxX = x - maxWidth;
+        if (layer.backgroundEnabled) {
+          const padX = fontSize * 0.65;
+          const padY = fontSize * 0.45;
+          const boxY = y - totalHeight / 2 - padY;
+          ctx.fillStyle = layer.backgroundColor || "#111827";
+          roundRectPath(ctx, boxX - padX, boxY, maxWidth + padX * 2, totalHeight + padY * 2, fontSize * 0.8);
+          ctx.fill();
+        }
+        ctx.fillStyle = layer.color || "#ffffff";
+        lines.forEach((line, lineIndex) => {
+          ctx.fillText(line, x, y - totalHeight / 2 + lineHeight / 2 + lineIndex * lineHeight, maxWidth);
+        });
+      }
+      const link = document.createElement("a");
+      link.download = `${request.clientName}-variante-${imageIndex + 1}-texto-editable.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo exportar la imagen con texto editable.");
+    } finally {
+      setDownloadTextLoading(false);
+    }
+  }
+
   const selectedImageForLogo = generatedImages[selectedImageIndex];
   const selectedVisibleImage = selectedImageForLogo ? (selectedImageForLogo.finalBase64 || selectedImageForLogo.base64) : "";
 
@@ -498,6 +659,7 @@ export default function GenerationRequestPage() {
                 <InfoBox label="Objetivo" value={request.goal} />
                 <InfoBox label="Formato" value={request.format} />
                 <InfoBox label="Tipo" value={request.contentType} />
+                <InfoBox label="Modo de texto" value={(request as any).textRenderMode === "editable-layers" ? "Texto editable por BUST It Now" : "IA escribe el texto"} />
                 <InfoBox label="Modelo actual" value={models.find((model) => model.id === selectedModel)?.label || selectedModel} />
               </div>
 
@@ -622,6 +784,7 @@ export default function GenerationRequestPage() {
                             <button type="button" onClick={() => { setSelectedImageIndex(index); updateLogoOverlay({ enabled: true }); setIsLogoModalOpen(true); }} className="inline-flex h-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-950">Insertar logo</button>
                             <a download={downloadName} href={dataUrlFromBase64(visibleImage)} className="inline-flex h-11 items-center justify-center rounded-2xl bg-zinc-950 px-4 text-sm font-semibold text-white">Descargar</a>
                           </div>
+                          <button type="button" onClick={() => { setSelectedImageIndex(index); setTextEditorOpen(true); }} className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800">Editar texto</button>
                           {image.logoOverlayApplied ? (
                             <button type="button" onClick={() => removeLogoFromSelectedImage(index)} className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-950">Quitar logo</button>
                           ) : null}
@@ -635,6 +798,100 @@ export default function GenerationRequestPage() {
           </section>
         </div>
       </main>
+
+      {textEditorOpen ? (
+        <div className="fixed inset-0 z-50 overflow-auto bg-black/70 p-4 backdrop-blur-sm sm:p-8">
+          <section className="mx-auto grid max-w-7xl gap-6 rounded-[2rem] bg-white p-5 text-zinc-950 shadow-2xl lg:grid-cols-[1.12fr_0.88fr] sm:p-8">
+            <div>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">Editor de texto</p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-tight">Capas editables del brief</h2>
+                  <p className="mt-2 text-sm leading-6 text-zinc-600">Usa los mismos bloques de texto del brief. En modo “Texto editable” la imagen base debe venir sin letras; en modo IA puedes usarlo para montar una versión corregida encima.</p>
+                </div>
+                <button type="button" onClick={() => setTextEditorOpen(false)} className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-950">Cerrar</button>
+              </div>
+              <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-4">
+                {generatedImages.map((image, index) => (
+                  <button key={image.id} type="button" onClick={() => setSelectedImageIndex(index)} className={`overflow-hidden rounded-2xl border-2 p-1 transition ${selectedImageIndex === index ? "border-emerald-500 ring-4 ring-emerald-200" : "border-zinc-200 hover:border-emerald-400"}`}>
+                    <img src={dataUrlFromBase64(image.finalBase64 || image.base64)} alt={`Variante ${index + 1}`} className="aspect-square w-full rounded-xl object-cover" />
+                  </button>
+                ))}
+              </div>
+              <div className="mt-5 overflow-hidden rounded-[1.7rem] border border-zinc-200 bg-zinc-100">
+                {selectedVisibleImage ? (
+                  <div className="relative mx-auto max-w-3xl">
+                    <img src={dataUrlFromBase64(selectedVisibleImage)} alt="Previsualización con texto editable" className="w-full" />
+                    {textLayers.filter((layer) => layer.enabled && layer.text.trim()).map((layer) => (
+                      <div
+                        key={layer.id}
+                        className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-pre-line px-3 py-2 leading-tight drop-shadow-lg"
+                        style={{
+                          left: `${layer.xPercent}%`,
+                          top: `${layer.yPercent}%`,
+                          width: `${layer.widthPercent}%`,
+                          color: layer.color,
+                          background: layer.backgroundEnabled ? layer.backgroundColor : "transparent",
+                          borderRadius: layer.backgroundEnabled ? "999px" : "0",
+                          textAlign: layer.align,
+                          fontWeight: layer.weight,
+                          fontSize: `clamp(12px, ${layer.sizePercent * 0.42}vw, 72px)`,
+                          textTransform: layer.uppercase ? "uppercase" : "none"
+                        }}
+                      >
+                        {layer.text}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex min-h-80 items-center justify-center p-8 text-center text-sm text-zinc-500">No hay imagen seleccionada.</div>
+                )}
+              </div>
+            </div>
+
+            <aside className="space-y-5">
+              <div className="rounded-[1.7rem] border border-zinc-200 bg-zinc-50 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Modo recomendado</p>
+                <p className="mt-2 text-sm leading-6 text-zinc-700">{(request as any).textRenderMode === "editable-layers" ? "Este brief está preparado para imagen base sin texto + capas editables." : "Este brief fue generado con texto IA. Puedes superponer capas, pero el texto pegado en la imagen no se borra automáticamente."}</p>
+              </div>
+
+              <div className="max-h-[62vh] space-y-4 overflow-auto pr-1">
+                {textLayers.map((layer) => (
+                  <div key={layer.id} className="rounded-[1.4rem] border border-zinc-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <strong className="text-sm text-zinc-950">{layer.role}</strong>
+                      <label className="flex items-center gap-2 text-xs font-semibold text-zinc-600"><input type="checkbox" checked={layer.enabled} onChange={(event) => updateTextLayer(layer.id, { enabled: event.target.checked })} /> Visible</label>
+                    </div>
+                    <textarea value={layer.text} onChange={(event) => updateTextLayer(layer.id, { text: event.target.value })} className="mt-3 min-h-20 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-zinc-950" />
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <MiniRange label="X" value={layer.xPercent} min={0} max={100} onChange={(value) => updateTextLayer(layer.id, { xPercent: value })} />
+                      <MiniRange label="Y" value={layer.yPercent} min={0} max={100} onChange={(value) => updateTextLayer(layer.id, { yPercent: value })} />
+                      <MiniRange label="Ancho" value={layer.widthPercent} min={20} max={100} onChange={(value) => updateTextLayer(layer.id, { widthPercent: value })} />
+                      <MiniRange label="Tamaño" value={layer.sizePercent} min={1.6} max={12} step={0.2} onChange={(value) => updateTextLayer(layer.id, { sizePercent: value })} />
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <label className="text-xs font-semibold text-zinc-600">Color<input type="color" value={layer.color} onChange={(event) => updateTextLayer(layer.id, { color: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-white" /></label>
+                      <label className="text-xs font-semibold text-zinc-600">Fondo<input type="color" value={layer.backgroundColor} onChange={(event) => updateTextLayer(layer.id, { backgroundColor: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-white" /></label>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {(["left","center","right"] as const).map((align) => <button key={align} type="button" onClick={() => updateTextLayer(layer.id, { align })} className={`rounded-xl border px-2 py-2 text-xs font-semibold ${layer.align === align ? "border-zinc-950 bg-zinc-950 text-white" : "border-zinc-200 bg-white text-zinc-700"}`}>{align}</button>)}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-zinc-600">
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={layer.backgroundEnabled} onChange={(event) => updateTextLayer(layer.id, { backgroundEnabled: event.target.checked })} /> Fondo</label>
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={layer.uppercase} onChange={(event) => updateTextLayer(layer.id, { uppercase: event.target.checked })} /> Mayúsculas</label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-3 rounded-[1.7rem] border border-zinc-200 bg-white p-5">
+                <button type="button" onClick={saveEditableTextLayers} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950">Guardar capas</button>
+                <button type="button" onClick={() => downloadEditedTextImage(selectedImageIndex)} disabled={downloadTextLoading || !selectedVisibleImage} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-300">{downloadTextLoading ? "Exportando..." : "Descargar con texto editable"}</button>
+              </div>
+            </aside>
+          </section>
+        </div>
+      ) : null}
 
       {isLogoModalOpen ? (
         <div className="fixed inset-0 z-50 overflow-auto bg-black/70 p-4 backdrop-blur-sm sm:p-8">
@@ -778,6 +1035,15 @@ const AssetPicker = memo(function AssetPicker({ assets, selectedAssetIds, onTogg
     </div>
   );
 });
+
+function MiniRange({ label, value, min, max, step = 1, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }) {
+  return (
+    <label className="text-xs font-semibold text-zinc-600">
+      <span className="flex justify-between"><span>{label}</span><span>{Math.round(value)}</span></span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} className="mt-1 w-full accent-zinc-950" />
+    </label>
+  );
+}
 
 function RangeControl({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix: string; onChange: (value: number) => void }) {
   return (

@@ -194,6 +194,7 @@ export default function BustItNowPage() {
   const [format, setFormat] = useState("instagram-post");
   const [goal, setGoal] = useState("sell");
   const [contentType, setContentType] = useState("promotion");
+  const [textRenderMode, setTextRenderMode] = useState<"ai-text" | "editable-layers">("ai-text");
   const [mainMessage, setMainMessage] = useState("");
   const [textBlocks, setTextBlocks] = useState<TextBlock[]>([emptyBlock()]);
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>([]);
@@ -447,6 +448,7 @@ export default function BustItNowPage() {
       format,
       goal,
       contentType,
+      textRenderMode,
       mainMessage,
       textBlocks: cleanBlocks(),
       selectedEmotions,
@@ -487,6 +489,7 @@ export default function BustItNowPage() {
       format,
       goal,
       contentType,
+      textRenderMode,
       selectedEmotions,
       selectedVisualElements,
       specificInstructions: specificInstructions.trim(),
@@ -553,6 +556,7 @@ export default function BustItNowPage() {
     setFormat(item.format);
     setGoal(item.goal);
     setContentType(item.contentType);
+    setTextRenderMode((item as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text");
     setTextBlocks((item.textBlocks as any) || [emptyBlock()]);
     setSelectedEmotions(item.selectedEmotions || []);
     setSelectedVisualElements(item.selectedVisualElements || []);
@@ -639,6 +643,29 @@ export default function BustItNowPage() {
                         { id: "2", label: "2 variantes" },
                         { id: "4", label: "4 variantes" }
                       ]} />
+                    </div>
+
+                    <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
+                      <p className="text-sm font-semibold text-zinc-950">Modo de texto</p>
+                      <p className="mt-1 text-xs leading-5 text-zinc-600">Los mismos bloques pueden viajar al prompt o convertirse en capas editables después de generar la imagen.</p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => setTextRenderMode("ai-text")}
+                          className={`rounded-2xl border p-4 text-left transition ${textRenderMode === "ai-text" ? "border-zinc-950 bg-white shadow-sm" : "border-zinc-200 bg-white/70 hover:border-zinc-400"}`}
+                        >
+                          <strong className="block text-sm text-zinc-950">IA escribe el texto</strong>
+                          <span className="mt-1 block text-xs leading-5 text-zinc-600">Modo actual. Rápido para propuestas completas y exploración visual.</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTextRenderMode("editable-layers")}
+                          className={`rounded-2xl border p-4 text-left transition ${textRenderMode === "editable-layers" ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-zinc-200 bg-white/70 hover:border-emerald-400"}`}
+                        >
+                          <strong className="block text-sm text-zinc-950">Texto editable por BUST It Now</strong>
+                          <span className="mt-1 block text-xs leading-5 text-zinc-600">La IA genera base sin texto y los bloques se montan como capas editables.</span>
+                        </button>
+                      </div>
                     </div>
                   </section>
 
@@ -906,6 +933,7 @@ export default function BustItNowPage() {
                       </div>
                       <p className="mt-4 line-clamp-3 text-sm font-semibold leading-6 text-zinc-950">{request.mainMessage}</p>
                       <p className="mt-2 text-xs text-zinc-500">{request.format} · {request.contentType} · {request.executedModel || "Sin modelo"}</p>
+                      <p className="mt-1 text-xs font-semibold text-zinc-700">{(request as any).textRenderMode === "editable-layers" ? "Texto editable" : "Texto IA"}</p>
                       {(request.requestAttachments || []).length ? <p className="mt-2 text-xs font-medium text-zinc-700">Incluye imagen puntual del brief</p> : null}
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         <button type="button" onClick={() => openHistoryItem(request)} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-950 hover:bg-zinc-50">Reusar brief</button>

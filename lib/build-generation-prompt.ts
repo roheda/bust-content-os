@@ -57,6 +57,12 @@ export type BuildPromptInput = {
     position?: string;
     size?: string;
   };
+  /**
+   * ai-text: the image model may render the official text blocks inside the image.
+   * editable-layers: the image model must create the visual composition without text;
+   * BUST It Now will place the same text blocks later as editable layers.
+   */
+  textRenderMode?: "ai-text" | "editable-layers";
 };
 
 function formatLabel(format?: string) {
@@ -187,15 +193,18 @@ function blockHasRole(blocks: ReturnType<typeof getOfficialTextBlocks>, roles: s
   return blocks.some((block) => roles.includes(block.role));
 }
 
-function buildTextBlocksText(data: BuildPromptInput) {
+function buildTextBlocksText(data: BuildPromptInput, textRenderMode: "ai-text" | "editable-layers" = "ai-text") {
   const blocks = getOfficialTextBlocks(data);
 
   if (blocks.length > 0) {
     return blocks.map((block, index) => {
+      const instruction = block.instruction ? ` Specific instruction: ${block.instruction}` : "";
+      if (textRenderMode === "editable-layers") {
+        return `${index + 1}. Editable layer text: "${block.text}" | Visual role: ${block.roleLabel} | Priority: ${block.priorityLabel}. DO NOT render this text, any letters, fake placeholder words, CTA, dates, prices, or typography names inside the generated image. Use this layer only to reserve clean space, visual hierarchy, contrast zones, and composition balance for the post-editor.${instruction}`;
+      }
       const exactRule = block.locked
         ? "Use this text EXACTLY as written. Do not rewrite, translate, correct, abbreviate, change capitalization, fix spelling, or add words to it."
         : "You may adapt hierarchy and placement, but keep the meaning aligned with the text.";
-      const instruction = block.instruction ? ` Specific instruction: ${block.instruction}` : "";
       return `${index + 1}. Text: "${block.text}" | Visual role: ${block.roleLabel} | Priority: ${block.priorityLabel}. ${exactRule}${instruction}`;
     }).join("\n");
   }
@@ -207,6 +216,11 @@ function buildTextBlocksText(data: BuildPromptInput) {
     data.copy?.cta ? `4. Text: "${data.copy.cta}" | Visual role: call to action | Priority: low priority. Use this text EXACTLY as written.` : "",
   ].filter(Boolean);
 
+  if (textRenderMode === "editable-layers") {
+    return legacyBlocks.length
+      ? legacyBlocks.join("\n").replace(/Text:/g, "Editable layer text:") + "\nDo NOT render these texts inside the generated image. They will be placed later as editable layers by BUST It Now."
+      : "No editable text layers were specified.";
+  }
   return legacyBlocks.length ? legacyBlocks.join("\n") : "No required in-image text blocks were specified.";
 }
 
@@ -241,6 +255,7 @@ function buildVisualElementsText(data: BuildPromptInput) {
 
 export function buildGenerationPrompt(data: BuildPromptInput) {
   const logoOverlayEnabled = data.logoOverlay?.enabled === true;
+  const textRenderMode: "ai-text" | "editable-layers" = data.textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
   const requestAttachmentsText = data.requestAttachments?.length
     ? data.requestAttachments.map((attachment, index) => {
         const attachmentName = attachment.name || "Specific attachment for this piece";
@@ -262,7 +277,7 @@ export function buildGenerationPrompt(data: BuildPromptInput) {
       }).join("\n")
     : "No general brand visual assets selected.";
 
-  const textBlocksText = buildTextBlocksText(data);
+  const textBlocksText = buildTextBlocksText(data, textRenderMode);
   const visualElementsText = buildVisualElementsText(data);
   const cleanDos = cleanRules(data.brandBrainSnapshot?.dos, true);
   const cleanDonts = cleanRules(data.brandBrainSnapshot?.donts, false);
@@ -282,8 +297,8 @@ PROJECT CONTEXT
 MAIN COMMUNICATION
 - Main message: ${data.mainMessage || ""}
 
-TEXT BLOCKS TO USE IN THE DESIGN
-These are the official text blocks for this piece. Treat them as flexible design elements, not as a fixed template. Arrange them dynamically according to role, priority, and visual hierarchy.
+${textRenderMode === "editable-layers" ? "TEXT LAYERS FOR THE POST-EDITOR" : "TEXT BLOCKS TO USE IN THE DESIGN"}
+${textRenderMode === "editable-layers" ? "These are the official text layers for this piece. The generated image must NOT include readable text. Use these layers only as a composition map: reserve clean spaces, contrast, hierarchy, and areas where BUST It Now will place editable text later with real fonts." : "These are the official text blocks for this piece. Treat them as flexible design elements, not as a fixed template. Arrange them dynamically according to role, priority, and visual hierarchy."}
 ${textBlocksText}
 
 VISUAL / EMOTIONAL DIRECTION
@@ -326,7 +341,10 @@ ART DIRECTION RULES
 - Avoid random decorative clutter that does not reinforce the message.
 
 TEXT RULES
-- Use only the official text blocks listed above when placing text inside the image.
+${textRenderMode === "editable-layers" ? `- Do NOT place readable text, letters, numbers, fake text, typography names, CTAs, dates, prices, legal disclaimers, logos, or brand-name lockups inside the generated image.
+- Create a polished text-free base composition with intentional empty/clean areas for the post-editor layers listed above.
+- The text layers are real content that BUST It Now will place after image generation using editable typography.
+- Avoid text-like marks or gibberish. Background signs, screens, labels, or mock headlines must be removed or abstracted.` : `- Use only the official text blocks listed above when placing text inside the image.
 - Do not force every block to appear at the same size; use hierarchy based on priority.
 - Do not invent extra words, numbers, dates, product names, or claims.
 - Do not include a date unless there is an official text block with role date.
@@ -334,7 +352,7 @@ TEXT RULES
 - Do not include a CTA unless there is an official text block with role CTA.
 - Do not add any logo text, brand-name placeholder, brand-name header, monogram, or logo label.
 - If a block is marked exact, it must appear exactly as written, including accents, spelling, punctuation, and capitalization.
-- If text appears inside the image, it must be clean, legible, and placed with clear hierarchy.
+- If text appears inside the image, it must be clean, legible, and placed with clear hierarchy.`}
 
 BRAND SAFETY RULES
 - Do not distort, rewrite, or fabricate brand names.
@@ -343,7 +361,7 @@ BRAND SAFETY RULES
 - Do not create false product details that are not supported by the brief or attachments.
 
 OUTPUT RULES
-- Produce a finished, high-quality social media advertising image.
+- Produce a finished, high-quality social media advertising image${textRenderMode === "editable-layers" ? " base without any readable text" : ""}.
 - Match the selected format and aspect ratio.
 - Avoid bland stock-template aesthetics.
 - Avoid clutter, low contrast, weak hierarchy, or overly flat compositions.
