@@ -39,6 +39,24 @@ type RequestAttachment = {
   mimeType?: string;
 };
 
+
+function getRecordTime(value: any): number {
+  if (!value) return 0;
+  if (typeof value === "string") return Date.parse(value) || 0;
+  if (typeof value === "number") return value;
+  if (typeof value.toDate === "function") return value.toDate().getTime();
+  if (typeof value.seconds === "number") return value.seconds * 1000;
+  return 0;
+}
+
+function getBriefSortTime(item: any): number {
+  return Math.max(
+    getRecordTime(item?.generatedAt),
+    getRecordTime(item?.updatedAt),
+    getRecordTime(item?.createdAt)
+  );
+}
+
 const formats = [
   { id: "instagram-post", label: "Post Instagram 4:5" },
   { id: "instagram-story", label: "Story 9:16" },
@@ -265,7 +283,11 @@ export default function BustItNowPage() {
   const briefItems = useMemo(() => {
     return filteredHistory
       .slice()
-      .sort((a, b) => String(b.id || "").localeCompare(String(a.id || "")));
+      .sort((a, b) => {
+        const byDate = getBriefSortTime(b) - getBriefSortTime(a);
+        if (byDate !== 0) return byDate;
+        return String(b.id || "").localeCompare(String(a.id || ""));
+      });
   }, [filteredHistory]);
 
   const feedItems = useMemo(() => {
@@ -296,7 +318,11 @@ export default function BustItNowPage() {
         };
       })
       .filter((item) => item.imageUrl)
-      .sort((a, b) => String(b.image.id || "").localeCompare(String(a.image.id || "")));
+      .sort((a, b) => {
+        const byDate = getBriefSortTime(b.image) - getBriefSortTime(a.image);
+        if (byDate !== 0) return byDate;
+        return String(b.image.id || "").localeCompare(String(a.image.id || ""));
+      });
   }, [generatedRecords, clientFilter, history]);
 
   function toggle(value: string, arr: string[], setter: (values: string[]) => void) {
@@ -857,7 +883,7 @@ export default function BustItNowPage() {
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Briefs</p>
                   <h2 className="mt-2 text-2xl font-semibold tracking-tight">Briefs listos para generar</h2>
-                  <p className="mt-2 text-sm text-zinc-600">Aquí vive cada brief guardado. Desde esta vista abres el brief y generas las variantes que necesites.</p>
+                  <p className="mt-2 text-sm text-zinc-600">Aquí vive cada brief guardado. Se ordenan del más reciente al más antiguo para abrir primero lo último generado.</p>
                 </div>
                 <select value={clientFilter} onChange={(event) => setClientFilter(event.target.value)} className="h-11 rounded-2xl border border-zinc-200 bg-white px-3 text-sm">
                   <option value="all">Todos los clientes</option>
