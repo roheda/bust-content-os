@@ -113,6 +113,23 @@ function safeFontFamily(value?: string) {
   return String(value || "Arial").replace(/"/g, "");
 }
 
+function quoteFontFamily(value?: string) {
+  return `"${safeFontFamily(value)}"`;
+}
+
+function fontFormatFromUrl(url?: string, mimeType?: string) {
+  const source = `${url || ""} ${mimeType || ""}`.toLowerCase();
+  if (source.includes("woff2")) return "woff2";
+  if (source.includes("woff")) return "woff";
+  if (source.includes("ttf") || source.includes("truetype")) return "truetype";
+  if (source.includes("otf") || source.includes("opentype")) return "opentype";
+  return "opentype";
+}
+
+function fontAssetStyleId(asset: ClientAsset) {
+  return `bust-font-${String(asset.id || fontFamilyFromAsset(asset)).replace(/[^a-z0-9_-]+/gi, "-")}`;
+}
+
 function getAssetCategory(asset: ClientAsset) {
   if (isLogo(asset)) return "Logos";
   if (isTextAsset(asset)) return "Textos";
@@ -232,6 +249,7 @@ export default function GenerationRequestPage() {
   const [textEditorOpen, setTextEditorOpen] = useState(false);
   const [textLayers, setTextLayers] = useState<EditableTextLayer[]>([]);
   const [downloadTextLoading, setDownloadTextLoading] = useState(false);
+  const [fontLoadStatus, setFontLoadStatus] = useState<Record<string, "loading" | "ready" | "error">>({});
 
   const [logoOverlay, setLogoOverlay] = useState<LogoOverlayXY>({
     enabled: false,
@@ -313,21 +331,34 @@ export default function GenerationRequestPage() {
   useEffect(() => {
     if (typeof window === "undefined" || !fontAssets.length) return;
     let cancelled = false;
+
     async function loadFonts() {
       await Promise.all(fontAssets.map(async (asset) => {
         if (!asset.fileUrl) return;
+        const family = fontFamilyFromAsset(asset);
+        setFontLoadStatus((current) => ({ ...current, [family]: "loading" }));
         try {
-          const family = fontFamilyFromAsset(asset);
-          const existing = Array.from(document.fonts).some((fontFace) => fontFace.family.replace(/['"]/g, "") === family);
-          if (existing) return;
-          const fontFace = new FontFace(family, `url(${asset.fileUrl})`);
-          const loaded = await fontFace.load();
-          if (!cancelled) document.fonts.add(loaded);
+          const existing = Array.from(document.fonts).some((fontFace) => fontFace.family.replace(/["']/g, "") === family);
+          if (!existing) {
+            const styleId = fontAssetStyleId(asset);
+            if (!document.getElementById(styleId)) {
+              const style = document.createElement("style");
+              style.id = styleId;
+              style.textContent = `@font-face{font-family:${quoteFontFamily(family)};src:url("${asset.fileUrl}") format("${fontFormatFromUrl(asset.fileUrl, asset.mimeType)}");font-weight:100 900;font-style:normal;font-display:swap;}`;
+              document.head.appendChild(style);
+            }
+            const fontFace = new FontFace(family, `url("${asset.fileUrl}")`);
+            const loaded = await fontFace.load();
+            if (!cancelled) document.fonts.add(loaded);
+          }
+          await document.fonts.load(`700 24px ${quoteFontFamily(family)}`);
+          if (!cancelled) setFontLoadStatus((current) => ({ ...current, [family]: "ready" }));
         } catch {
-          // Si una fuente falla por CORS o archivo corrupto, el editor mantiene fuentes del sistema.
+          if (!cancelled) setFontLoadStatus((current) => ({ ...current, [family]: "error" }));
         }
       }));
     }
+
     loadFonts();
     return () => { cancelled = true; };
   }, [fontAssets]);
@@ -644,7 +675,9 @@ export default function GenerationRequestPage() {
         const maxWidth = canvas.width * (Number(layer.widthPercent || 70) / 100);
         const x = canvas.width * (Number(layer.xPercent || 50) / 100);
         const y = canvas.height * (Number(layer.yPercent || 50) / 100);
-        ctx.font = `${Number(layer.weight || 700)} ${fontSize}px "${safeFontFamily(layer.fontFamily)}", Arial, Helvetica, sans-serif`;
+        const layerFontFamily = quoteFontFamily(layer.fontFamily);
+        if (typeof document !== "undefined" && document.fonts) await document.fonts.load(`${Number(layer.weight || 700)} ${fontSize}px ${layerFontFamily}`);
+        ctx.font = `${Number(layer.weight || 700)} ${fontSize}px ${layerFontFamily}, Arial, Helvetica, sans-serif`;
         ctx.textAlign = layer.align;
         ctx.textBaseline = "middle";
         const lines = wrapCanvasText(ctx, text, maxWidth);
@@ -888,7 +921,7 @@ export default function GenerationRequestPage() {
                           borderRadius: layer.backgroundEnabled ? "999px" : "0",
                           textAlign: layer.align,
                           fontWeight: layer.weight,
-                          fontFamily: `"${safeFontFamily(layer.fontFamily)}", Arial, Helvetica, sans-serif`,
+                          fontFamily: `${quoteFontFamily(layer.fontFamily)}, Arial, Helvetica, sans-serif`,
                           fontSize: `clamp(12px, ${layer.sizePercent * 0.42}vw, 72px)`,
                           textTransform: layer.uppercase ? "uppercase" : "none"
                         }}
@@ -926,6 +959,7 @@ export default function GenerationRequestPage() {
                       <select value={layer.fontFamily || "Arial"} onChange={(event) => updateTextLayer(layer.id, { fontFamily: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs outline-none focus:border-zinc-950">
                         {fontOptions.map((font) => <option key={`${layer.id}-${font.family}`} value={font.family}>{font.label}</option>)}
                       </select>
+                      {layer.fontFamily && layer.fontFamily !== "Arial" ? <span className={`mt-1 block text-[11px] font-semibold ${fontLoadStatus[layer.fontFamily] === "ready" ? "text-emerald-700" : fontLoadStatus[layer.fontFamily] === "error" ? "text-red-600" : "text-zinc-500"}`}>{fontLoadStatus[layer.fontFamily] === "ready" ? "Fuente cargada" : fontLoadStatus[layer.fontFamily] === "error" ? "No se pudo cargar esta fuente. Revisa el archivo o vuelve a subirlo." : "Cargando fuente..."}</span> : null}
                     </label>
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <MiniRange label="X" value={layer.xPercent} min={0} max={100} onChange={(value) => updateTextLayer(layer.id, { xPercent: value })} />
