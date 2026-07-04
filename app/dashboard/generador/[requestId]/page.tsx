@@ -453,6 +453,10 @@ export default function GenerationRequestPage() {
     () => assets.filter((asset) => selectedAssetIds.includes(asset.id || "")),
     [assets, selectedAssetIds]
   );
+  const selectedVisualAssets = useMemo(
+    () => selectedAssets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset)),
+    [selectedAssets]
+  );
   const visualAssetCategories = useMemo(() => {
     const categories: string[] = Array.from(new Set(assets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset)).map((asset) => String(getAssetCategory(asset))).filter(Boolean)));
     return categories.sort((a, b) => a.localeCompare(b, "es"));
@@ -460,7 +464,7 @@ export default function GenerationRequestPage() {
   const visibleAssets = useMemo(() => {
     return assets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset) && (assetCategoryFilter === "all" || getAssetCategory(asset) === assetCategoryFilter));
   }, [assets, assetCategoryFilter]);
-  const visualReferences = useReferences ? selectedAssets.filter((asset) => isImage(asset) && !isFontAsset(asset)) : [];
+  const visualReferences = useReferences ? selectedVisualAssets.filter(isImage) : [];
   const requestAttachmentReferences = useMemo(() => (request?.requestAttachments || [])
     .map((attachment: any) => ({ url: attachment.fileUrl || attachment.url || "", name: attachment.name || "Imagen puntual del brief" }))
     .filter((attachment: any) => attachment.url), [request]);
@@ -509,9 +513,8 @@ export default function GenerationRequestPage() {
   }
 
   function getGenerationModeLabel(mode?: string) {
-    if (mode === "dual-output") return "Doble versión: referencia + editable";
-    if (mode === "editable-layers") return "Solo base editable";
-    return "Solo referencia con texto IA";
+    if (mode === "editable-layers") return "Solo composición / texto editable";
+    return "IA genera texto";
   }
 
   function updateLogoOverlay(patch: Partial<LogoOverlayXY>) {
@@ -546,9 +549,8 @@ export default function GenerationRequestPage() {
   async function generateImages() {
     if (!request) return;
     const currentRequest = request;
-    const outputMode = (currentRequest as any).textRenderMode === "dual-output" ? "dual-output" : (currentRequest as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
-    const outputMultiplier = outputMode === "dual-output" ? 2 : 1;
-    const generatedCount = variantCount * outputMultiplier;
+    const outputMode: "ai-text" | "editable-layers" = (currentRequest as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
+    const generatedCount = variantCount;
     if (aiBillingBalance && aiBillingBalance.includedAiGenerations > 0) {
       const projected = aiBillingBalance.aiGenerations + generatedCount;
       const exceeds = projected > aiBillingBalance.includedAiGenerations;
@@ -573,17 +575,15 @@ export default function GenerationRequestPage() {
         enabled: logoOverlay.enabled && Boolean(logoOverlay.fileUrl)
       };
 
-      const referencePrompt = (currentRequest as any).referenceGeneratedPrompt || currentRequest.generatedPrompt || buildPromptForMode("ai-text");
-      const editablePrompt = (currentRequest as any).editableGeneratedPrompt || buildPromptForMode("editable-layers");
+      const generationPrompt = buildPromptForMode(outputMode) || currentRequest.generatedPrompt || "";
 
       await updateGenerationRequest(requestId, {
         status: "generating",
         executedModel: selectedModel,
         selectedAssetIds,
-        selectedAssetsSnapshot: selectedAssets,
+        selectedAssetsSnapshot: selectedVisualAssets,
         logoOverlay: nextLogoOverlay,
-        referenceGeneratedPrompt: referencePrompt,
-        editableGeneratedPrompt: editablePrompt
+        generatedPrompt: generationPrompt
       } as any);
 
       const referenceImages = [
@@ -596,7 +596,7 @@ export default function GenerationRequestPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: mode === "editable-layers" ? editablePrompt : referencePrompt,
+            prompt: generationPrompt,
             format: currentRequest.format,
             model: selectedModel,
             variantCount,
@@ -609,14 +609,9 @@ export default function GenerationRequestPage() {
         return payload;
       }
 
-      const runs = outputMode === "dual-output"
-        ? [
-            { kind: "reference-ai" as const, label: "Referencia IA", payload: await requestImages("ai-text") },
-            { kind: "editable-base" as const, label: "Base editable", payload: await requestImages("editable-layers") }
-          ]
-        : [
-            { kind: outputMode === "editable-layers" ? "editable-base" as const : "single" as const, label: outputMode === "editable-layers" ? "Base editable" : "Referencia IA", payload: await requestImages(outputMode === "editable-layers" ? "editable-layers" : "ai-text") }
-          ];
+      const runs = [
+        { kind: outputMode === "editable-layers" ? "editable-base" as const : "single" as const, label: outputMode === "editable-layers" ? "Base editable" : "IA con texto", payload: await requestImages(outputMode) }
+      ];
 
       const images: GeneratedLocalImage[] = [];
       let recordIndex = 0;
@@ -627,7 +622,7 @@ export default function GenerationRequestPage() {
           const base64 = cleanBase64(run.payload.imagesBase64[index]);
           const dataUrl = dataUrlFromBase64(base64);
           const pairIndex = index + 1;
-          const label = outputMode === "dual-output" ? `variant-${pairIndex}-${run.kind}` : `variant-${pairIndex}`;
+          const label = `variant-${pairIndex}`;
           const stored = await uploadGeneratedImageDataUrl(requestId, dataUrl, label);
           const ref: any = await saveGeneratedImageRecord({
             requestId,
@@ -665,10 +660,10 @@ export default function GenerationRequestPage() {
       await updateGenerationRequest(requestId, {
         status: "completed",
         executedModel: firstPayload.executedModel || selectedModel,
-        generationMode: outputMode === "dual-output" ? "dual-reference-editable" : firstPayload.generationMode || "gemini"
+        generationMode: firstPayload.generationMode || "gemini"
       } as any);
 
-      setSuccess(outputMode === "dual-output" ? "Doble versión generada: referencia IA + base editable." : "Imagen generada correctamente.");
+      setSuccess("Imagen generada correctamente.");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al generar.");
@@ -976,12 +971,12 @@ export default function GenerationRequestPage() {
                 {aiBillingBalance ? (
                   <div className={`mt-5 rounded-3xl border p-4 text-sm ${aiBillingBalance.includedAiGenerations && aiBillingBalance.aiGenerations + variantCount > aiBillingBalance.includedAiGenerations ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
                     <strong>Consumo IA del mes</strong>
-                    <p className="mt-1">{aiBillingBalance.aiGenerations}/{aiBillingBalance.includedAiGenerations || "sin límite"} generaciones usadas en {billingMonth}. Esta acción suma {(request as any).textRenderMode === "dual-output" ? variantCount * 2 : variantCount}.</p>
+                    <p className="mt-1">{aiBillingBalance.aiGenerations}/{aiBillingBalance.includedAiGenerations || "sin límite"} generaciones usadas en {billingMonth}. Esta acción suma {variantCount}.</p>
                     {aiBillingBalance.includedAiGenerations && aiBillingBalance.aiGenerations + variantCount > aiBillingBalance.includedAiGenerations ? <p className="mt-1">Excedente estimado bajo demanda: {money(Math.max(0, aiBillingBalance.aiGenerations + variantCount - aiBillingBalance.includedAiGenerations) * aiBillingBalance.extraAiGenerationRate)}.</p> : null}
                   </div>
                 ) : null}
 
-                <button type="button" onClick={generateImages} disabled={isGenerating} className="mt-5 h-14 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{isGenerating ? "Generando..." : (request as any).textRenderMode === "dual-output" ? "Generar doble versión" : "Generar imagen"}</button>
+                <button type="button" onClick={generateImages} disabled={isGenerating} className="mt-5 h-14 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{isGenerating ? "Generando..." : "Generar imagen"}</button>
 
                 {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
                 {success ? <div className="mt-5 rounded-3xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-medium text-green-700">{success}</div> : null}
@@ -1103,7 +1098,7 @@ export default function GenerationRequestPage() {
               </div>
               <div className="rounded-[1.7rem] border border-zinc-200 bg-zinc-50 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Modo recomendado</p>
-                <p className="mt-2 text-sm leading-6 text-zinc-700">{(request as any).textRenderMode === "dual-output" ? "Este brief generó una referencia con texto IA y una base editable. Usa la referencia como guía y la base editable para el arte final." : (request as any).textRenderMode === "editable-layers" ? "Este brief está preparado para imagen base sin texto + capas editables." : "Este brief fue generado con texto IA. Puedes superponer capas, pero el texto pegado en la imagen no se borra automáticamente."}</p>
+                <p className="mt-2 text-sm leading-6 text-zinc-700">{(request as any).textRenderMode === "editable-layers" ? "Este brief está preparado para imagen base sin texto + capas editables." : "Este brief fue generado con texto IA. Puedes superponer capas, pero el texto pegado en la imagen no se borra automáticamente."}</p>
               </div>
 
               <div className="max-h-[62vh] space-y-4 overflow-auto pr-1">
