@@ -33,6 +33,7 @@ export type BuildPromptInput = {
     dos?: string[];
     donts?: string[];
     recommendedModels?: string[];
+    importantDates?: string[];
   };
   selectedAssetsSnapshot?: Array<{
     name?: string;
@@ -332,7 +333,8 @@ BRAND BRAIN
 - Brand description: ${data.brandBrainSnapshot?.brandDescription || "Not specified"}
 - Tone: ${data.brandBrainSnapshot?.tone || "Not specified"}
 - Colors: ${data.brandBrainSnapshot?.colors?.join(", ") || "Not specified"}
-- Typography: official font names/files from Brand Brain are intentionally NOT sent as visible text instructions. Use clean, brand-aligned typography only when text rendering is enabled; the real fonts are applied later by the editor.
+- Typography: official font names/files from Brand Brain are intentionally NOT sent as visible text instructions. Never render the typography field as a headline, label, signature, brand word, or any visible copy. Use it only as an invisible style reference when text rendering is enabled; the real fonts are applied later by the editor.
+- Important client dates: ${data.brandBrainSnapshot?.importantDates?.join(", ") || "Not specified"}
 - Visual style: ${data.brandBrainSnapshot?.visualStyle?.join(", ") || "Not specified"}
 
 DO
@@ -364,7 +366,7 @@ ${textRenderMode === "editable-layers" ? `- ABSOLUTE EMPTY-TEXT MODE: Do NOT pla
 - The text layers are real content that BUST It Now will place after image generation using editable typography.
 - Avoid text-like marks or gibberish. Background signs, screens, labels, or mock headlines must be removed or abstracted.
 - The final image must look like a strong advertising visual without readable text, not like a layout with placeholder text areas.` : `- Use only the official text blocks listed above when placing text inside the image.
-- Typography or font names from the Brand Brain are style references only; never place them as headlines, labels, signatures, or visible words.
+- Typography or font names from the Brand Brain are invisible style references only; never place them as headlines, titles, labels, signatures, brand words, decorative marks, or visible copy.
 - Do not force every block to appear at the same size; use hierarchy based on priority.
 - Do not invent extra words, numbers, dates, product names, or claims.
 - Do not include a date unless there is an official text block with role date.

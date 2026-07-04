@@ -313,7 +313,7 @@ export default function TasksPage(){
   const batchContext = selected?.batchId ? requests.filter(x=>x.batchId===selected.batchId).sort((a,b)=>(a.number||0)-(b.number||0)) : [];
 
   return <AppShell active="Tareas">
-    <section className="hero">
+    <section className="hero tasks-hero">
       <div>
         <p className="eyebrow">Equipo</p>
         <h1>Tareas</h1>
@@ -321,14 +321,15 @@ export default function TasksPage(){
       </div>
     </section>
 
-    <div className="view-switch">
-      <button className={view==="calendario"?"active":""} onClick={()=>setView("calendario")}>Calendario</button>
-      <button className={view==="lista"?"active":""} onClick={()=>setView("lista")}>Lista de tareas</button>
-      <button className={view==="persona"?"active":""} onClick={()=>setView("persona")}>Por persona</button>
-      <button className={view==="eficiencia"?"active":""} onClick={()=>setView("eficiencia")}>Eficiencia IA</button>
-    </div>
+    <div className="tasks-toolbar" aria-label="Controles compactos de tareas">
+      <div className="view-switch task-view-switch">
+        <button className={view==="calendario"?"active":""} onClick={()=>setView("calendario")}>Calendario</button>
+        <button className={view==="lista"?"active":""} onClick={()=>setView("lista")}>Lista</button>
+        <button className={view==="persona"?"active":""} onClick={()=>setView("persona")}>Por persona</button>
+        <button className={view==="eficiencia"?"active":""} onClick={()=>setView("eficiencia")}>Eficiencia IA</button>
+      </div>
 
-    <div className="calendar-controls">
+      <div className="calendar-controls task-calendar-controls">
       {view==="calendario" && <>
         <span className="calendar-current-label">{formatCalendarLabel(cursor, calendarMode)}</span>
         <button className={calendarMode==="semana"?"active":""} onClick={()=>setCalendarMode("semana")}>Semana</button>
@@ -336,7 +337,7 @@ export default function TasksPage(){
         <button onClick={()=>move(-1)}>← Anterior</button>
         <button onClick={()=>setCursor(new Date())}>Hoy</button>
         <button onClick={()=>move(1)}>Siguiente →</button>
-        <span className="mini workdays-note">Solo días hábiles. Sábados y domingos no se programan.</span>
+        <span className="mini workdays-note">Solo días hábiles</span>
       </>}
       <select value={person} onChange={e=>setPerson(e.target.value)}>{people.map(x=><option key={x}>{x}</option>)}</select>
       <select value={area} onChange={e=>setArea(e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select>
@@ -358,9 +359,10 @@ export default function TasksPage(){
         <option value="overdue">Solo vencidas</option>
         <option value="current">Solo vigentes</option>
       </select>
+      </div>
     </div>
 
-    <section className="grid kpis">
+    <section className="grid kpis tasks-kpis">
       {[["Tareas",String(filtered.length)],["Vencidas",String(overdueCount)],["Arrastradas hoy",String(carryOverCount || filtered.filter(x=>isCarriedTask(x)).length)],["Cuellos",String(capacitySummary.overloadedCount)],["Persona",person],["Área",area]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 

@@ -2193,3 +2193,122 @@ a[class*="bg-black"],
   .planning-metrics-grid { grid-template-columns: 1fr; }
   .planning-area-row { grid-template-columns: 1fr; }
 }
+
+/* v69 · tareas: barra compacta de filtros y controles */
+.tasks-hero{
+  padding:24px 28px!important;
+  border-radius:28px!important;
+  margin-bottom:12px!important;
+}
+.tasks-hero h1{font-size:36px!important;line-height:1.04!important}
+.tasks-hero p:not(.eyebrow){margin:4px 0 0!important;font-size:14.5px!important}
+.tasks-toolbar{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:nowrap;
+  width:100%;
+  margin:10px 0 12px;
+  padding:8px;
+  border:1px solid rgba(208,213,221,.86);
+  border-radius:24px;
+  background:rgba(255,255,255,.78);
+  box-shadow:0 14px 34px rgba(15,23,42,.06);
+  backdrop-filter:blur(18px);
+  overflow-x:auto;
+  scrollbar-width:thin;
+}
+.tasks-toolbar .view-switch,
+.tasks-toolbar .calendar-controls{
+  margin:0!important;
+  display:flex!important;
+  align-items:center!important;
+  gap:6px!important;
+  flex-wrap:nowrap!important;
+}
+.tasks-toolbar .view-switch{flex:0 0 auto}
+.tasks-toolbar .calendar-controls{flex:1 1 auto;min-width:0}
+.tasks-toolbar .view-switch button,
+.tasks-toolbar .calendar-controls button,
+.tasks-toolbar .calendar-controls select,
+.tasks-toolbar .calendar-current-label,
+.tasks-toolbar .workdays-note{
+  min-height:36px!important;
+  height:36px!important;
+  padding:0 12px!important;
+  border-radius:999px!important;
+  font-size:13px!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+  flex:0 0 auto;
+}
+.tasks-toolbar .calendar-controls select{
+  max-width:178px;
+  min-width:128px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.tasks-toolbar .calendar-current-label{
+  font-weight:950!important;
+  max-width:170px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.tasks-toolbar .workdays-note{
+  display:inline-flex;
+  align-items:center;
+  border:1px solid rgba(208,213,221,.86);
+  background:#f7faf4;
+  color:#667085!important;
+  font-size:11px!important;
+  font-weight:900;
+}
+.tasks-kpis{
+  margin:12px 0 14px!important;
+  gap:10px!important;
+}
+.tasks-kpis .kpi{
+  min-height:74px!important;
+  padding:16px 18px!important;
+  border-radius:18px!important;
+}
+.tasks-kpis .kpi span{font-size:11px!important}
+.tasks-kpis .kpi strong{font-size:22px!important}
+@media(max-width:1300px){
+  .tasks-toolbar{flex-wrap:wrap;overflow-x:visible}
+  .tasks-toolbar .view-switch,
+  .tasks-toolbar .calendar-controls{width:100%;overflow-x:auto;padding-bottom:2px}
+}
+@media(max-width:760px){
+  .tasks-hero{padding:20px!important;border-radius:24px!important}
+  .tasks-hero h1{font-size:32px!important}
+  .tasks-toolbar{border-radius:20px;padding:7px;margin-top:8px}
+  .tasks-toolbar .view-switch button,
+  .tasks-toolbar .calendar-controls button,
+  .tasks-toolbar .calendar-controls select,
+  .tasks-toolbar .calendar-current-label,
+  .tasks-toolbar .workdays-note{height:34px!important;min-height:34px!important;font-size:12px!important;padding:0 10px!important}
+}
+
+/* v70 · Creador: panel derecho flotante completo */
+.creator-planning-sidebar{
+  position:sticky!important;
+  top:18px!important;
+  max-height:calc(100vh - 36px)!important;
+  overflow-y:auto!important;
+  overscroll-behavior:contain;
+  padding-right:4px;
+  scrollbar-width:thin;
+}
+.creator-planning-sidebar::-webkit-scrollbar{width:7px}
+.creator-planning-sidebar::-webkit-scrollbar-thumb{background:rgba(15,23,42,.18);border-radius:999px}
+.creator-planning-sidebar .planning-summary-card{
+  position:static!important;
+  top:auto!important;
+}
+.planning-calendar-card{
+  background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,252,.92))!important;
+}
+@media(max-width:1180px){
+  .creator-planning-sidebar{position:static!important;max-height:none!important;overflow:visible!important;padding-right:0}
+}

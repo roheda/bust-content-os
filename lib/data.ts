@@ -330,6 +330,7 @@ export type BrandBrain = {
   dos?: string[];
   donts?: string[];
   recommendedModels?: string[];
+  importantDates?: string[];
 };
 
 export type ClientAsset = {
@@ -988,9 +989,16 @@ export function validateCreatorItem(item: ContentRequest) {
   if (!item.clientId || !item.clientName) return "Falta cliente.";
   if (!item.contentType) return "Falta tipo de contenido.";
   if (!item.objective) return "Falta objetivo.";
+  if (!item.suggestedArea) return "Falta área sugerida.";
+  if (!item.platforms?.length) return "Falta plataforma.";
+  if (!item.visualFormat && !item.feedPlacement) return "Falta formato visual.";
+  if (!item.topic.trim()) return "Falta tema.";
   if (!item.creativeIdea.trim()) return "Falta idea creativa.";
+  if (!item.keyMessage.trim()) return "Falta mensaje clave.";
   if (!item.copyIn.trim()) return "Falta Copy In.";
+  if (!item.cta.trim()) return "Falta CTA.";
   if (!item.publishDate) return "Falta fecha de publicación.";
+  if (item.requiresProduction && !item.productionNotes.trim()) return "Faltan notas para producción.";
 
   if (!item.requiresProduction && !hasMaterial(item)) {
     return "Si no requiere producción, debes marcar material disponible y agregar un link de material.";

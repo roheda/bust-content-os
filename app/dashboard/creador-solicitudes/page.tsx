@@ -207,7 +207,8 @@ export default function CreatorPage(){
       (client.buyerPersonas||[]).length ? `Buyer personas disponibles: ${(client.buyerPersonas||[]).map(p=>p.name).join(", ")}` : "",
       brain.brandDescription && `Descripción de marca: ${brain.brandDescription}`,
       brain.tone && `Tono: ${brain.tone}`,
-      brain.typography && `Tipografía: ${brain.typography}`,
+      brain.typography && `Tipografía oficial registrada: ${brain.typography} (solo referencia de marca; no usar como titular ni copy visible)`,
+      (brain.importantDates||[]).length ? `Fechas importantes del cliente: ${(brain.importantDates||[]).join(" | ")}` : "",
       (brain.visualStyle||[]).length ? `Estilo visual del Brand Brain: ${(brain.visualStyle||[]).join(", ")}` : "",
       (brain.dos||[]).length ? `Sí hacer: ${(brain.dos||[]).join(", ")}` : "",
       (brain.donts||[]).length ? `Evitar: ${(brain.donts||[]).join(", ")}` : ""
@@ -354,41 +355,136 @@ export default function CreatorPage(){
     window.scrollTo({top:0,behavior:"smooth"});
   }
 
-  function generateAI(){
+  function buildFallbackAiProposal(index:number, typeList:string[], goalList:string[], themeList:string[]) {
+    const contentType = typeList[index % Math.max(typeList.length, 1)] || "Post";
+    const objective = goalList[index % Math.max(goalList.length, 1)] || "Ventas";
+    const topic = themeList[index % Math.max(themeList.length, 1)] || "Tema estratégico";
+    const suggestedArea = ["Reel","TikTok","Foto"].includes(contentType) ? "Audiovisual" : "Diseño";
+    const personas = client?.buyerPersonas || [];
+    const persona = personas.length ? personas[index % personas.length] : null;
+    const importantDates = client?.brandBrain?.importantDates || [];
+    const importantDate = importantDates.length ? importantDates[index % importantDates.length] : "";
+    const isVideoLike = ["Reel","TikTok","Foto"].includes(contentType);
+    const publishDate = startDate ? nextBusinessDate(addDays(startDate,index * Math.max(1, interval))) : "";
+    const personaName = persona?.name || "audiencia general de la marca";
+    const dateContext = importantDate ? ` Considerar como oportunidad editorial la fecha importante: ${importantDate}.` : "";
+    const format = ["Reel","TikTok"].includes(contentType) ? "Vertical 9:16" : contentType === "Carrusel" ? "Carrusel Feed" : "Cuadrado 1:1";
+    const feed = contentType === "Carrusel" ? "Carrousel para el Feed" : ["Reel","TikTok"].includes(contentType) ? contentType : "Feed";
+    return hydrate({
+      ...emptyRequest,
+      contentType,
+      objective,
+      topic: `${topic}${importantDate ? ` · ${importantDate}` : ""}`,
+      platforms: contentType === "TikTok" ? ["TikTok"] : ["Instagram","Facebook"],
+      visualFormat: format,
+      feedPlacement: feed,
+      buyerPersonaId: persona?.id || "",
+      buyerPersonaName: persona?.name || "Sin enfoque particular",
+      buyerPersonaSnapshot: persona || null,
+      suggestedArea,
+      creativeIdea:`Crear un ${contentType.toLowerCase()} para ${client?.name || "el cliente"} enfocado en ${objective.toLowerCase()}, dirigido a ${personaName}. La pieza debe aterrizar el tema ${topic} con una situación clara, visual y fácil de ejecutar por el equipo. Debe usar el tono de marca, conectar con el contexto comercial del cliente y evitar sentirse genérica.${dateContext} El cierre debe dejar claro el siguiente paso para la audiencia y facilitar que el diseño o edición construyan una publicación lista para operar.`,
+      keyMessage: must || `Mensaje central alineado a ${objective} para ${topic}.`,
+      copyIn:`Propuesta de copy: ${topic} explicado con enfoque en ${objective.toLowerCase()} para ${personaName}. Usar un encabezado claro, desarrollo breve con beneficio concreto y cierre con CTA.`,
+      cta: objective === "Reservas" ? "Reserva por WhatsApp" : objective === "Tráfico" ? "Conoce más" : "Solicita información",
+      requiresProduction: isVideoLike,
+      materialAvailable: !isVideoLike,
+      materialLinks: isVideoLike ? "" : "No requiere producción. Usar assets de marca, material existente, stock o generación IA según el brief.",
+      productionNotes: isVideoLike ? `Producción necesaria para capturar material del tema: ${topic}. Priorizar tomas útiles para ${format}, planos de recurso, detalles del producto/servicio y cierre visual para CTA.` : "",
+      publishDate
+    },"auto");
+  }
+
+  async function generateAI(){
     if(!client?.id)return alert("Selecciona cliente");
+    if(!startDate)return alert("Define la primera fecha para que la IA pueda generar publicaciones completas con fecha.");
     if(!draftName)setDraftName(defaultBatchName(client.name));
     const typeList=split(types), goalList=split(goals), themeList=split(themes);
-
-    const generated = Array.from({length:Math.max(1,aiCount)}).map((_,i)=>{
-      const contentType=typeList[i%typeList.length]||"Post";
-      const objective=goalList[i%goalList.length]||"Ventas";
-      const topic=themeList[i%themeList.length]||"Tema";
-      const suggestedArea = ["Reel","TikTok","Foto"].includes(contentType) ? "Audiovisual" : "Diseño";
-      const personas = client?.buyerPersonas || [];
-      const persona = personas.length ? personas[i % personas.length] : null;
-
-      return hydrate({
-        ...emptyRequest,
-        contentType,
-        objective,
-        topic,
-        platforms: contentType === "TikTok" ? ["TikTok"] : ["Instagram","Facebook"],
-        visualFormat: ["Reel","TikTok"].includes(contentType) ? "Vertical 9:16" : contentType === "Carrusel" ? "Carrusel Feed" : "Cuadrado 1:1",
-        feedPlacement: contentType === "Carrusel" ? "Carrousel para el Feed" : "Feed",
-        buyerPersonaId: persona?.id || "",
-        buyerPersonaName: persona?.name || "Sin enfoque particular",
-        buyerPersonaSnapshot: persona || null,
-        suggestedArea,
-        creativeIdea:`Idea creativa para ${topic} con enfoque en ${objective}.`,
-        keyMessage:must,
-        copyIn:"Copy inicial pendiente de ajustar.",
-        cta:"Enviar WhatsApp / Solicitar información",
-        publishDate:startDate?nextBusinessDate(addDays(startDate,i*interval)):""
-      },"auto");
-    });
-
-    setItems([...items,...generated]);
-    setExpandedItemIndex(null);
+    setBusy(true);
+    try{
+      const response = await fetch("/api/generate-content-proposals",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          count: Math.max(1, aiCount),
+          startDate,
+          interval: Math.max(1, interval),
+          types: typeList,
+          goals: goalList,
+          themes: themeList,
+          must,
+          client:{
+            id: client.id,
+            name: client.name,
+            industry: client.industry,
+            brandNotes: client.brandNotes,
+            brandPersonality: client.brandPersonality,
+            visualStyle: client.visualStyle,
+            contentPillars: client.contentPillars,
+            valueProposition: client.valueProposition,
+            contentAngles: client.contentAngles,
+            customerPainPoints: client.customerPainPoints,
+            marketScope: client.marketScope,
+            marketRegion: client.marketRegion,
+            primaryCity: client.primaryCity,
+            serviceArea: client.serviceArea,
+            offerSummary: client.offerSummary,
+            localAudienceContext: client.localAudienceContext,
+            brandBrain: client.brandBrain,
+            buyerPersonas: client.buyerPersonas || []
+          },
+          clientContext: clientContext(),
+          marketContext: marketContext(),
+          successfulContext: successfulRequestsContext()
+        })
+      });
+      const payload = await response.json();
+      if(!response.ok || !Array.isArray(payload.proposals))throw new Error(payload?.error || "No se pudieron generar propuestas completas.");
+      const generated = payload.proposals.slice(0, Math.max(1, aiCount)).map((proposal:any,index:number)=>{
+        const fallback = buildFallbackAiProposal(index,typeList,goalList,themeList);
+        const contentType = proposal.contentType || fallback.contentType;
+        const isVideoLike = ["Reel","TikTok","Foto"].includes(contentType);
+        return hydrate({
+          ...emptyRequest,
+          ...fallback,
+          ...proposal,
+          clientId: client.id!,
+          clientName: client.name,
+          number: items.length + index + 1,
+          total: items.length + payload.proposals.length,
+          contentType,
+          objective: proposal.objective || fallback.objective,
+          platforms: Array.isArray(proposal.platforms) && proposal.platforms.length ? proposal.platforms : fallback.platforms,
+          visualFormat: proposal.visualFormat || fallback.visualFormat,
+          feedPlacement: proposal.feedPlacement || fallback.feedPlacement,
+          buyerPersonaId: proposal.buyerPersonaId || fallback.buyerPersonaId,
+          buyerPersonaName: proposal.buyerPersonaName || fallback.buyerPersonaName,
+          buyerPersonaSnapshot: proposal.buyerPersonaSnapshot || fallback.buyerPersonaSnapshot,
+          topic: proposal.topic || fallback.topic,
+          creativeIdea: proposal.creativeIdea || fallback.creativeIdea,
+          keyMessage: proposal.keyMessage || fallback.keyMessage,
+          copyIn: proposal.copyIn || fallback.copyIn,
+          cta: proposal.cta || fallback.cta,
+          suggestedArea: proposal.suggestedArea || fallback.suggestedArea,
+          requiresProduction: typeof proposal.requiresProduction === "boolean" ? proposal.requiresProduction : isVideoLike,
+          materialAvailable: typeof proposal.materialAvailable === "boolean" ? proposal.materialAvailable : !isVideoLike,
+          materialLinks: proposal.materialLinks || (!isVideoLike ? "No requiere producción. Usar assets de marca, material existente, stock o generación IA según el brief." : ""),
+          productionNotes: proposal.productionNotes || (isVideoLike ? fallback.productionNotes : ""),
+          publishDate: proposal.publishDate ? nextBusinessDate(proposal.publishDate) : fallback.publishDate,
+          source:"ai-complete"
+        },"ai-complete");
+      });
+      const numbered = generated.map((item:any,index:number)=>({...item,number:items.length+index+1,total:items.length+generated.length}));
+      setItems([...items,...numbered]);
+      setExpandedItemIndex(null);
+    }catch(error){
+      const generated = Array.from({length:Math.max(1,aiCount)}).map((_,i)=>buildFallbackAiProposal(i,typeList,goalList,themeList));
+      const numbered = generated.map((item:any,index:number)=>({...item,number:items.length+index+1,total:items.length+generated.length}));
+      setItems([...items,...numbered]);
+      setExpandedItemIndex(null);
+      alert(`No se pudo completar con IA externa. Agregué propuestas completas base para no detener el flujo. Detalle: ${error instanceof Error ? error.message : "Error desconocido"}`);
+    }finally{
+      setBusy(false);
+    }
   }
 
   function addManual(){
@@ -613,7 +709,7 @@ export default function CreatorPage(){
             <div className="field"><label>Temas</label><input value={themes} onChange={e=>setThemes(e.target.value)}/></div>
             <div className="field full"><label>Factores obligatorios</label><textarea value={must} onChange={e=>setMust(e.target.value)}/></div>
           </div>
-          <button className="btn blue" onClick={generateAI}>Agregar propuestas IA</button>
+          <button className="btn blue" onClick={generateAI} disabled={busy}>{busy?"Generando publicaciones...":"Generar publicaciones completas con IA"}</button>
 
           <h3 style={{marginTop:28}}>Manual</h3>
           <RequestForm request={manual} buyerPersonas={client?.buyerPersonas || []} onPersonaChange={(persona)=>setManual({...manual,buyerPersonaId:persona?.id || "",buyerPersonaName:persona?.name || "Sin enfoque particular",buyerPersonaSnapshot:persona || null})} onChange={setManualField} onUpload={uploadToManual} onPreview={setPreview} onImprove={()=>improveCreativeIdea("manual")} improving={improvingKey==="manual"} onRemove={(_,index)=>setManual({...manual,referenceFiles:manual.referenceFiles.filter((_,i)=>i!==index)})}/>
@@ -651,6 +747,7 @@ export default function CreatorPage(){
                       <div className="field"><label>Objetivo</label><select value={item.objective} onChange={e=>updateItem(index,"objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
                       <div className="field"><label>Área sugerida</label><select value={item.suggestedArea} onChange={e=>updateItem(index,"suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
                       <div className="field"><label>Fecha publicación</label><input type="date" value={item.publishDate} onChange={e=>updateItem(index,"publishDate",e.target.value)}/></div>
+                      <div className="field full"><label>Tema / publicación</label><input value={item.topic} onChange={e=>updateItem(index,"topic",e.target.value)} placeholder="Ej. Promoción julio, testimonio, producto estrella"/></div>
                     </div>
                     <BuyerPersonaSelector request={item} buyerPersonas={client?.buyerPersonas || []} onSelect={(persona)=>updateItemPersona(index, persona)}/>
                     <PostInfoSelector request={item} onChange={(k,v)=>updateItem(index,k,v)}/>
@@ -660,6 +757,10 @@ export default function CreatorPage(){
                   <section className="creator-section">
                     <div className="section-title"><strong>Idea y copy</strong><span>Información para ejecución creativa.</span></div>
                     <CreativeIdeaField value={item.creativeIdea} onChange={(v)=>updateItem(index,"creativeIdea",v)} onImprove={()=>improveCreativeIdea(index)} busy={improvingKey===String(index)}/>
+                    <div className="creator-compact-grid">
+                      <div className="field"><label>Mensaje clave</label><input value={item.keyMessage} onChange={e=>updateItem(index,"keyMessage",e.target.value)} placeholder="Qué debe quedar claro"/></div>
+                      <div className="field"><label>CTA</label><input value={item.cta} onChange={e=>updateItem(index,"cta",e.target.value)} placeholder="Ej. Solicita información"/></div>
+                    </div>
                     <div className="field"><label>Copy In</label><textarea value={item.copyIn} onChange={e=>updateItem(index,"copyIn",e.target.value)}/></div>
                     <OperationalEstimate item={item} rules={costRules} overrides={clientOverrides}/>
                   </section>
@@ -699,6 +800,10 @@ export default function CreatorPage(){
 
       <aside className="grid creator-planning-sidebar">
         <PlanningSummaryCard summary={planningSummary} forceReason={forceReason} forceNotes={forceNotes} setForceReason={setForceReason} setForceNotes={setForceNotes}/>
+        <div className="card planning-calendar-card">
+          <h3>Calendario del lote</h3>
+          <CalendarPanel items={calendarItems}/>
+        </div>
         <div className="card">
           <h3>Borradores guardados</h3>
           <div className="draft-list">
@@ -713,11 +818,6 @@ export default function CreatorPage(){
             {!drafts.length && <p className="mini">Aún no hay borradores.</p>}
           </div>
         </div>
-        <div className="card">
-          <h3>Calendario del lote</h3>
-          <CalendarPanel items={calendarItems}/>
-        </div>
-
         <div className="card">
           <h3>Lotes realizados para reusar</h3>
           <div className="batch-reuse-grid">
@@ -826,9 +926,12 @@ function RequestForm({request,buyerPersonas,onPersonaChange,onChange,onUpload,on
     <div className="field"><label>Objetivo</label><select value={request.objective} onChange={e=>onChange("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Área sugerida</label><select value={request.suggestedArea} onChange={e=>onChange("suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
     <div className="field"><label>Fecha publicación</label><input type="date" value={request.publishDate} onChange={e=>onChange("publishDate",e.target.value)}/></div>
+    <div className="field full"><label>Tema / publicación</label><input value={request.topic} onChange={e=>onChange("topic",e.target.value)} placeholder="Ej. Promoción julio, testimonio, producto estrella"/></div>
     <BuyerPersonaSelector request={request} buyerPersonas={buyerPersonas} onSelect={onPersonaChange}/>
     <PostInfoSelector request={request} onChange={onChange}/>
     <CreativeIdeaField value={request.creativeIdea} onChange={(value)=>onChange("creativeIdea",value)} onImprove={onImprove} busy={improving}/>
+    <div className="field"><label>Mensaje clave</label><input value={request.keyMessage} onChange={e=>onChange("keyMessage",e.target.value)} placeholder="Qué debe quedar claro"/></div>
+    <div className="field"><label>CTA</label><input value={request.cta} onChange={e=>onChange("cta",e.target.value)} placeholder="Ej. Solicita información"/></div>
     <div className="field full"><label>Copy In</label><textarea value={request.copyIn} onChange={e=>onChange("copyIn",e.target.value)}/></div>
     <div className="field full"><label>Inspiración / referencias</label><textarea value={request.referenceLinks} onChange={e=>onChange("referenceLinks",e.target.value)}/><input type="file" multiple accept="image/*,video/mp4,video/quicktime,video/webm" onChange={e=>onUpload("reference",e.target.files)}/><p className="mini field-note">Referencia temporal: imagen o video hasta 80 MB. Se eliminará al finalizar la solicitud.</p><FileList files={request.referenceFiles||[]} onPreview={onPreview} onRemove={(i)=>onRemove("reference",i)}/></div>
     <div className="field full">
@@ -849,8 +952,11 @@ function briefCompleteness(item:ContentRequest){
     item.objective,
     item.suggestedArea,
     item.publishDate,
+    item.topic,
     item.creativeIdea && item.creativeIdea.length > 40,
-    item.copyIn || item.keyMessage,
+    item.keyMessage,
+    item.copyIn,
+    item.cta,
     item.platforms?.length,
     item.visualFormat || item.feedPlacement,
     item.requiresProduction ? item.productionNotes : (item.materialAvailable || item.materialLinks)
@@ -864,8 +970,11 @@ function briefMissingFields(item:ContentRequest){
   if(!item.objective) missing.push("objetivo");
   if(!item.suggestedArea) missing.push("área");
   if(!item.publishDate) missing.push("fecha");
+  if(!item.topic) missing.push("tema");
   if(!item.creativeIdea || item.creativeIdea.length < 40) missing.push("idea clara");
-  if(!item.copyIn && !item.keyMessage) missing.push("copy/mensaje");
+  if(!item.keyMessage) missing.push("mensaje clave");
+  if(!item.copyIn) missing.push("copy in");
+  if(!item.cta) missing.push("CTA");
   if(!item.platforms?.length) missing.push("plataformas");
   if(item.requiresProduction && !item.productionNotes) missing.push("notas producción");
   if(!item.requiresProduction && !item.materialAvailable && !item.materialLinks) missing.push("material/link");

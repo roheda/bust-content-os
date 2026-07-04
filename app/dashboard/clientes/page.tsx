@@ -47,7 +47,7 @@ function makeBrandUpdateFromAnalysis(context:any){
       visualStyle: Array.isArray(context.visualStyle) ? context.visualStyle : splitComma(String(context.visualStyle || "")),
       dos: context.dos || [],
       donts: context.donts || [],
-      recommendedModels: []
+      recommendedModels: [], importantDates: Array.isArray(context.importantDates) ? context.importantDates : splitComma(String(context.importantDates || ""))
     }
   } as Partial<Brand>);
 }

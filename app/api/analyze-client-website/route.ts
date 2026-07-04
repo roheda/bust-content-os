@@ -207,6 +207,7 @@ Devuelve SOLO JSON válido con esta estructura exacta:
   "visualStyle": [""],
   "colors": [""],
   "typography": "",
+  "importantDates": [""],
   "dos": [""],
   "donts": [""],
   "marketScope": "Local | Regional | Nacional | Internacional",
@@ -234,6 +235,7 @@ Reglas:
 - En marcas locales/regionales de México, adapta lenguaje y contexto al mercado real sin clichés.
 - contentPillars debe ser un texto práctico con 4 a 6 pilares separados por comas.
 - dos y donts deben orientar al equipo creativo.
+- importantDates debe contener fechas o temporadas relevantes para calendarizar contenido del cliente si la fuente las menciona o si son claramente pertinentes a su giro. No inventes fechas específicas sin sustento; puedes usar temporadas como "Regreso a clases" o "Buen Fin" cuando aplique.
 - No uses bullets en strings largos; solo arrays donde se pide array.
 
 Datos previos del cliente:
@@ -256,6 +258,7 @@ ${scraped}`;
       visualStyle: sanitizeArray(json.visualStyle),
       colors: sanitizeArray(json.colors),
       typography: String(json.typography || "").trim(),
+      importantDates: sanitizeArray(json.importantDates),
       dos: sanitizeArray(json.dos),
       donts: sanitizeArray(json.donts),
       marketScope: String(json.marketScope || "").trim(),

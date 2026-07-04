@@ -29,7 +29,7 @@ export default function ClientBrandBrainPage(){
   const {clientId} = useParams<{clientId:string}>();
   const [client,setClient]=useState<Brand|null>(null);
   const [form,setForm]=useState({
-    name:"",industry:"",website:"",instagram:"",brandDescription:"",tone:"",colors:"",typography:"",visualStyle:"",dos:"",donts:"",recommendedModels:"",
+    name:"",industry:"",website:"",instagram:"",brandDescription:"",tone:"",colors:"",typography:"",visualStyle:"",dos:"",donts:"",recommendedModels:"", importantDates:"",
     brandPersonality:"",contentPillars:"",valueProposition:"",contentAngles:"",customerPainPoints:"",
     marketScope:"",marketRegion:"",primaryCity:"",serviceArea:"",offerSummary:"",localAudienceContext:"",analysisNotes:""
   });
@@ -49,7 +49,7 @@ export default function ClientBrandBrainPage(){
     const billing = getClientBillingConfig(row);
     setForm({
       name:row.name||"", industry:row.industry||"", website:row.website||"", instagram:row.instagram||"",
-      brandDescription:brain.brandDescription||row.brandNotes||"", tone:brain.tone||row.tone||"", colors:joinItems(brain.colors), typography:brain.typography||"",
+      brandDescription:brain.brandDescription||row.brandNotes||"", tone:brain.tone||row.tone||"", colors:joinItems(brain.colors), typography:brain.typography||"", importantDates:Array.isArray(brain.importantDates)?brain.importantDates.join("\n"):"",
       visualStyle:joinItems(brain.visualStyle)||row.visualStyle||"", dos:Array.isArray(brain.dos)?brain.dos.join("\n"):"",
       donts:Array.isArray(brain.donts)?brain.donts.join("\n"):"", recommendedModels:joinItems(brain.recommendedModels),
       brandPersonality:row.brandPersonality||"", contentPillars:row.contentPillars||"", valueProposition:row.valueProposition||"",
@@ -99,7 +99,7 @@ export default function ClientBrandBrainPage(){
       marketScope:form.marketScope.trim(), marketRegion:form.marketRegion.trim(), primaryCity:form.primaryCity.trim(),
       serviceArea:form.serviceArea.trim(), location:form.serviceArea.trim(), offerSummary:form.offerSummary.trim(),
       localAudienceContext:form.localAudienceContext.trim(), analysisNotes:form.analysisNotes.trim(),
-      brandBrain:{brandDescription:form.brandDescription.trim(), tone:form.tone.trim(), colors:splitComma(form.colors), typography:form.typography.trim(), visualStyle:splitComma(form.visualStyle), dos:splitLines(form.dos), donts:splitLines(form.donts), recommendedModels:splitComma(form.recommendedModels)}
+      brandBrain:{brandDescription:form.brandDescription.trim(), tone:form.tone.trim(), colors:splitComma(form.colors), typography:form.typography.trim(), visualStyle:splitComma(form.visualStyle), dos:splitLines(form.dos), donts:splitLines(form.donts), recommendedModels:splitComma(form.recommendedModels), importantDates:splitLines(form.importantDates)}
     });
     setSuccess("Brand Brain, sitio web y buyer personas guardados correctamente.");
     setSaving(false);
@@ -130,6 +130,7 @@ export default function ClientBrandBrainPage(){
         visualStyle:Array.isArray(ctx.visualStyle) ? ctx.visualStyle.join(", ") : (ctx.visualStyle || current.visualStyle),
         colors:Array.isArray(ctx.colors) ? ctx.colors.join(", ") : (ctx.colors || current.colors),
         typography:ctx.typography || current.typography,
+        importantDates:Array.isArray(ctx.importantDates) ? ctx.importantDates.join("\n") : (ctx.importantDates || current.importantDates),
         dos:Array.isArray(ctx.dos) ? ctx.dos.join("\n") : current.dos,
         donts:Array.isArray(ctx.donts) ? ctx.donts.join("\n") : current.donts,
         marketScope:ctx.marketScope || current.marketScope,
@@ -233,7 +234,8 @@ export default function ClientBrandBrainPage(){
             <div className="field"><label>Contexto de audiencia local</label><textarea value={form.localAudienceContext} onChange={e=>set("localAudienceContext",e.target.value)} placeholder="Ej. Familias jóvenes de Mérida norte, compradores de vivienda premium..."/></div>
           </div>
 
-          <div className="client-profile-grid"><div className="field"><label>Colores</label><input value={form.colors} onChange={e=>set("colors",e.target.value)} placeholder="#003B71, #E31E24"/></div><div className="field"><label>Tipografía</label><input value={form.typography} onChange={e=>set("typography",e.target.value)}/></div></div>
+          <div className="client-profile-grid"><div className="field"><label>Colores</label><input value={form.colors} onChange={e=>set("colors",e.target.value)} placeholder="#003B71, #E31E24"/></div><div className="field"><label>Tipografía</label><input value={form.typography} onChange={e=>set("typography",e.target.value)} placeholder="Nombre de la familia tipográfica, no copy para publicaciones"/></div></div>
+          <div className="field"><label>Fechas importantes del cliente</label><textarea value={form.importantDates} onChange={e=>set("importantDates",e.target.value)} placeholder="Una por línea. Ej. 14 de febrero - San Valentín / 30 de abril - Día del niño / 15 de septiembre - Independencia"/></div>
           <div className="field"><label>Estilo visual</label><input value={form.visualStyle} onChange={e=>set("visualStyle",e.target.value)}/></div>
           <div className="field"><label>DO</label><textarea value={form.dos} onChange={e=>set("dos",e.target.value)} /></div>
           <div className="field"><label>DON'T</label><textarea value={form.donts} onChange={e=>set("donts",e.target.value)} /></div>
@@ -259,7 +261,7 @@ export default function ClientBrandBrainPage(){
         <button type="button" className="btn" onClick={addPersona}>Agregar buyer persona</button>
 
         <h2 style={{marginTop:24}}>Resumen para generación</h2>
-        <div className="detail-copy"><strong>Marca:</strong> {form.name}{"\n"}<strong>Giro:</strong> {form.industry}{"\n"}<strong>Sitio:</strong> {form.website||"Pendiente"}{"\n"}<strong>Tono:</strong> {form.tone||"Pendiente"}{"\n"}<strong>Alcance:</strong> {form.marketScope||"Pendiente"}{"\n"}<strong>Región:</strong> {form.marketRegion||"Pendiente"}{"\n"}<strong>Ciudad:</strong> {form.primaryCity||"Pendiente"}{"\n"}<strong>Oferta:</strong> {form.offerSummary||"Pendiente"}{"\n"}<strong>Buyer personas:</strong> {normalizedPersonas().map(p=>p.name).join(", ") || "Pendiente"}</div>
+        <div className="detail-copy"><strong>Marca:</strong> {form.name}{"\n"}<strong>Giro:</strong> {form.industry}{"\n"}<strong>Sitio:</strong> {form.website||"Pendiente"}{"\n"}<strong>Tono:</strong> {form.tone||"Pendiente"}{"\n"}<strong>Alcance:</strong> {form.marketScope||"Pendiente"}{"\n"}<strong>Región:</strong> {form.marketRegion||"Pendiente"}{"\n"}<strong>Ciudad:</strong> {form.primaryCity||"Pendiente"}{"\n"}<strong>Oferta:</strong> {form.offerSummary||"Pendiente"}{"\n"}<strong>Buyer personas:</strong> {normalizedPersonas().map(p=>p.name).join(", ") || "Pendiente"}{"\n"}<strong>Fechas importantes:</strong> {form.importantDates || "Pendiente"}</div>
         <div className="soft-delete-note">Para eliminar escribe exactamente su nombre. Se marca como deleted para conservar trazabilidad.</div>
         <input value={deleteConfirmation} onChange={e=>setDeleteConfirmation(e.target.value)} placeholder={client.name}/>
         <button className="btn red" onClick={archive}>Eliminar cliente</button>
