@@ -134,6 +134,14 @@ function proxiedFontUrl(asset: ClientAsset) {
   return `/api/font-proxy?url=${encodeURIComponent(direct)}&name=${encodeURIComponent(asset.name || (asset as any).originalFileName || "font")}`;
 }
 
+function proxiedImageUrl(source: string) {
+  const direct = String(source || "");
+  if (!direct || direct.startsWith("data:image/") || direct.startsWith("blob:")) return direct;
+  if (direct.startsWith("/api/image-proxy") || direct.startsWith("/")) return direct;
+  if (direct.startsWith("http")) return `/api/image-proxy?url=${encodeURIComponent(direct)}`;
+  return direct;
+}
+
 function fontAssetStyleId(asset: ClientAsset) {
   return `bust-font-${String(asset.id || fontFamilyFromAsset(asset)).replace(/[^a-z0-9_-]+/gi, "-")}`;
 }
@@ -662,12 +670,13 @@ export default function GenerationRequestPage() {
     setDownloadTextLoading(true);
     setError("");
     try {
-      const source = dataUrlFromBase64(image.finalBase64 || image.base64);
+      const rawSource = dataUrlFromBase64(image.finalBase64 || image.base64);
+      const source = proxiedImageUrl(rawSource);
       const img = new Image();
       img.crossOrigin = "anonymous";
       await new Promise<void>((resolve, reject) => {
         img.onload = () => resolve();
-        img.onerror = () => reject(new Error("No se pudo cargar la imagen para exportar."));
+        img.onerror = () => reject(new Error("No se pudo cargar la imagen para exportar. Intenta regenerar la imagen o abrirla y volver a descargar."));
         img.src = source;
       });
       const canvas = document.createElement("canvas");
@@ -708,10 +717,21 @@ export default function GenerationRequestPage() {
           ctx.fillText(line, x, y - totalHeight / 2 + lineHeight / 2 + lineIndex * lineHeight, maxWidth);
         });
       }
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((value) => {
+          if (value) resolve(value);
+          else reject(new Error("No se pudo preparar el archivo PNG."));
+        }, "image/png", 0.95);
+      });
+      const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.download = `${downloadClientName}-variante-${imageIndex + 1}-texto-editable.png`;
-      link.href = canvas.toDataURL("image/png");
+      link.href = objectUrl;
+      document.body.appendChild(link);
       link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+      setSuccess("Imagen final descargada con texto editable.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo exportar la imagen con texto editable.");
     } finally {
@@ -992,8 +1012,8 @@ export default function GenerationRequestPage() {
               </div>
 
               <div className="grid gap-3 rounded-[1.7rem] border border-zinc-200 bg-white p-5">
-                <button type="button" onClick={saveEditableTextLayers} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950">Guardar capas</button>
-                <button type="button" onClick={() => downloadEditedTextImage(selectedImageIndex)} disabled={downloadTextLoading || !selectedVisibleImage} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-300">{downloadTextLoading ? "Exportando..." : "Descargar con texto editable"}</button>
+                <button type="button" onClick={saveEditableTextLayers} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950">Guardar edición</button>
+                <button type="button" onClick={() => downloadEditedTextImage(selectedImageIndex)} disabled={downloadTextLoading || !selectedVisibleImage} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-300">{downloadTextLoading ? "Exportando..." : "Descargar imagen final"}</button>
               </div>
             </aside>
           </section>
