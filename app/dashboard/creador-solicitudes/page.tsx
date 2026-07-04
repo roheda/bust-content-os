@@ -24,6 +24,7 @@ import {
   getOperationalPlan,
   addBusinessDays,
   subtractBusinessDays,
+  todayDateKey,
   listUniqueBrands,
   listPlannerDrafts, deletePlannerDraft,
   listClientOperationalOverrides,
@@ -586,6 +587,15 @@ export default function CreatorPage(){
       alert(`No se puede enviar. Solicitud ${errors[0].index+1}: ${errors[0].error}`);
       return false;
     }
+    const today = todayDateKey();
+    const expiredProduction = items.findIndex((item)=>{
+      const plan = getOperationalPlan(item,costRules,clientOverrides);
+      return Boolean(item.requiresProduction && plan.productionDueDate && plan.productionDueDate < today);
+    });
+    if(expiredProduction >= 0){
+      alert(`No se puede enviar. Solicitud ${expiredProduction+1}: la fecha máxima de producción ya pasó. Mueve la fecha de publicación o cambia el contenido a material disponible.`);
+      return false;
+    }
     return true;
   }
 
@@ -843,8 +853,12 @@ function buildPlanningSummary(items:ContentRequest[], existing:ContentRequest[],
     byArea[area].weight += plan.operationalWeight;
     byArea[area].cost += plan.totalCost;
   });
+  const today = todayDateKey();
   const productionItems = planned.filter(({item})=>item.requiresProduction);
   const productionDueDates = productionItems.map(({plan})=>plan.productionDueDate).filter(Boolean).sort();
+  const expiredProductionDates = productionDueDates.filter(date=>date < today);
+  const validProductionDates = productionDueDates.filter(date=>date >= today);
+  const hasExpiredProduction = expiredProductionDates.length > 0;
   const internalDates = planned.map(({plan})=>plan.internalDueDate).filter(Boolean).sort();
   const clientDates = planned.map(({plan})=>plan.clientDueDate).filter(Boolean).sort();
   const earliestInternalDue = internalDates[0] || "";
@@ -871,12 +885,20 @@ function buildPlanningSummary(items:ContentRequest[], existing:ContentRequest[],
     return {area,...row,capacity:cap,projected,tone:tone.tone,label:tone.label};
   });
   const overload = areaWarnings.some(row=>row.tone === "red" || row.tone === "orange");
-  const riskTone = !items.length ? "green" : (requestedTooSoon || overload ? "red" : planned.some(row=>row.risk.tone==="mid") ? "yellow" : "green");
-  const viableDate = requestedTooSoon ? minimumViableDate : latestClientDue;
-  const riskReason = requestedTooSoon ? `la primera fecha viable por tiempos configurados es ${minimumViableDate}` : overload ? "la carga por área supera la capacidad disponible" : "sin riesgo crítico";
+  const riskTone = !items.length ? "green" : (hasExpiredProduction || requestedTooSoon || overload ? "red" : planned.some(row=>row.risk.tone==="mid") ? "yellow" : "green");
+  const viableDate = (requestedTooSoon || hasExpiredProduction) ? minimumViableDate : latestClientDue;
+  const productionDueLabel = hasExpiredProduction ? "Ya no viable" : validProductionDates[0] || "";
+  const riskReason = hasExpiredProduction
+    ? "la fecha máxima de producción ya pasó; debe usarse material disponible o mover la publicación"
+    : requestedTooSoon
+      ? `la primera fecha viable por tiempos configurados es ${minimumViableDate}`
+      : overload
+        ? "la carga por área supera la capacidad disponible"
+        : "sin riesgo crítico";
   return {
     totalCost,totalHours,totalWeight:Number(totalWeight.toFixed(1)),byArea,productionCount:productionItems.length,
-    productionDueDate:productionDueDates[0] || "",earliestInternalDue,latestClientDue,viableDate,
+    productionDueDate:productionDueDates[0] || "",productionDueLabel,hasExpiredProduction,expiredProductionCount:expiredProductionDates.length,
+    earliestInternalDue,latestClientDue,viableDate,
     riskTone,riskLabel:riskTone==="red"?"Rojo":riskTone==="yellow"?"Amarillo":"Verde",riskReason,areaWarnings,riskCount: planned.filter(row=>row.risk.tone==="bad").length
   };
 }
@@ -893,7 +915,7 @@ function PlanningSummaryCard({summary,forceReason,forceNotes,setForceReason,setF
       <div><span>Unidades</span><strong>{summary.totalWeight}</strong></div>
       <div><span>Fecha viable</span><strong>{summary.viableDate || "Sin fecha"}</strong></div>
       <div><span>Entrega interna</span><strong>{summary.earliestInternalDue || "Sin fecha"}</strong></div>
-      <div><span>Máx. producción</span><strong>{summary.productionDueDate || "No aplica"}</strong></div>
+      <div className={summary.hasExpiredProduction ? "metric-danger" : ""}><span>Máx. producción</span><strong>{summary.productionDueLabel || "No aplica"}</strong></div>
     </div>
     <div className="planning-area-list">
       <strong>Carga por área</strong>
@@ -902,6 +924,10 @@ function PlanningSummaryCard({summary,forceReason,forceNotes,setForceReason,setF
       </div>)}
       {!summary.areaWarnings.length && <p className="mini">Agrega contenidos para calcular carga.</p>}
     </div>
+    {summary.hasExpiredProduction && <div className="production-expired-alert">
+      <strong>Producción ya no viable</strong>
+      <span>Hay {summary.expiredProductionCount} pieza(s) cuya fecha máxima de producción ya pasó. Para avanzar, mueve la fecha de publicación o desactiva producción y trabaja con material disponible.</span>
+    </div>}
     <p className="mini">{summary.riskTone === "red" ? `Riesgo: ${summary.riskReason}.` : "La fecha se calcula con tiempos por contenido, producción requerida y capacidad diaria configurada."}</p>
     {summary.riskTone === "red" && <div className="force-date-box">
       <h4>Forzar fecha con justificación</h4>

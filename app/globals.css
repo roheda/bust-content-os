@@ -2312,3 +2312,33 @@ a[class*="bg-black"],
 @media(max-width:1180px){
   .creator-planning-sidebar{position:static!important;max-height:none!important;overflow:visible!important;padding-right:0}
 }
+
+/* v72 - Producción vencida no debe mostrarse como fecha viable */
+.planning-metrics-grid > div.metric-danger {
+  border-color: rgba(220, 38, 38, .28);
+  background: rgba(254, 242, 242, .92);
+}
+
+.planning-metrics-grid > div.metric-danger strong {
+  color: #b91c1c;
+}
+
+.production-expired-alert {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+  padding: 11px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(220, 38, 38, .22);
+  background: rgba(254, 242, 242, .92);
+  color: #7f1d1d;
+}
+
+.production-expired-alert strong {
+  font-size: 13px;
+}
+
+.production-expired-alert span {
+  font-size: 12px;
+  line-height: 1.45;
+}
