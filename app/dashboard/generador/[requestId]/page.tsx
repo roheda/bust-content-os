@@ -51,6 +51,7 @@ type EditableTextLayer = {
   backgroundEnabled: boolean;
   align: "left" | "center" | "right";
   weight: number;
+  fontFamily?: string;
   uppercase: boolean;
 };
 
@@ -97,6 +98,19 @@ function isLogo(asset: ClientAsset) {
 function isTextAsset(asset: ClientAsset) {
   const value = `${asset.type} ${asset.category} ${(asset.tags || []).join(" ")} ${asset.name} ${(asset as any).text || ""}`.toLowerCase();
   return value.includes("bloque-texto") || asset.type === "texto" || asset.mimeType === "text/plain";
+}
+
+function isFontAsset(asset: ClientAsset) {
+  const value = `${asset.type} ${asset.category} ${(asset.tags || []).join(" ")} ${asset.name} ${asset.mimeType || ""} ${(asset as any).originalFileName || ""}`.toLowerCase();
+  return asset.type === "font" || value.includes("tipografia") || value.includes("fuente") || /\.(otf|ttf|woff2?|eot)(\?|$)/i.test(`${asset.fileUrl || ""} ${asset.storagePath || ""}`);
+}
+
+function fontFamilyFromAsset(asset: ClientAsset) {
+  return String((asset as any).fontFamily || `BUST-Font-${asset.id || asset.name}`).replace(/"/g, "");
+}
+
+function safeFontFamily(value?: string) {
+  return String(value || "Arial").replace(/"/g, "");
 }
 
 function getAssetCategory(asset: ClientAsset) {
@@ -158,6 +172,7 @@ function defaultLayerFromBlock(block: any, index: number): EditableTextLayer {
     backgroundEnabled: false,
     align: "center",
     weight: priority === "high" ? 900 : priority === "low" ? 500 : 700,
+    fontFamily: "Arial",
     uppercase: false,
     ...roleDefaults[role]
   } as EditableTextLayer;
@@ -286,20 +301,55 @@ export default function GenerationRequestPage() {
     }
   }
 
+
+  const fontAssets = useMemo(() => assets.filter(isFontAsset), [assets]);
+  const fontOptions = useMemo(() => [
+    { label: "Arial / sistema", family: "Arial" },
+    ...fontAssets.map((asset) => ({ label: asset.name || (asset as any).originalFileName || "Fuente", family: fontFamilyFromAsset(asset) }))
+  ], [fontAssets]);
+
   useEffect(() => { load(); }, [requestId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !fontAssets.length) return;
+    let cancelled = false;
+    async function loadFonts() {
+      await Promise.all(fontAssets.map(async (asset) => {
+        if (!asset.fileUrl) return;
+        try {
+          const family = fontFamilyFromAsset(asset);
+          const existing = Array.from(document.fonts).some((fontFace) => fontFace.family.replace(/['"]/g, "") === family);
+          if (existing) return;
+          const fontFace = new FontFace(family, `url(${asset.fileUrl})`);
+          const loaded = await fontFace.load();
+          if (!cancelled) document.fonts.add(loaded);
+        } catch {
+          // Si una fuente falla por CORS o archivo corrupto, el editor mantiene fuentes del sistema.
+        }
+      }));
+    }
+    loadFonts();
+    return () => { cancelled = true; };
+  }, [fontAssets]);
+
+  useEffect(() => {
+    if (!fontAssets.length) return;
+    const firstFamily = fontFamilyFromAsset(fontAssets[0]);
+    setTextLayers((current) => current.map((layer) => !layer.fontFamily || layer.fontFamily === "Arial" ? { ...layer, fontFamily: firstFamily } : layer));
+  }, [fontAssets]);
 
   const selectedAssets = useMemo(
     () => assets.filter((asset) => selectedAssetIds.includes(asset.id || "")),
     [assets, selectedAssetIds]
   );
   const visualAssetCategories = useMemo(() => {
-    const categories: string[] = Array.from(new Set(assets.filter((asset) => !isTextAsset(asset)).map((asset) => String(getAssetCategory(asset))).filter(Boolean)));
+    const categories: string[] = Array.from(new Set(assets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset)).map((asset) => String(getAssetCategory(asset))).filter(Boolean)));
     return categories.sort((a, b) => a.localeCompare(b, "es"));
   }, [assets]);
   const visibleAssets = useMemo(() => {
-    return assets.filter((asset) => !isTextAsset(asset) && (assetCategoryFilter === "all" || getAssetCategory(asset) === assetCategoryFilter));
+    return assets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset) && (assetCategoryFilter === "all" || getAssetCategory(asset) === assetCategoryFilter));
   }, [assets, assetCategoryFilter]);
-  const visualReferences = useReferences ? selectedAssets.filter(isImage) : [];
+  const visualReferences = useReferences ? selectedAssets.filter((asset) => isImage(asset) && !isFontAsset(asset)) : [];
   const requestAttachmentReferences = useMemo(() => (request?.requestAttachments || [])
     .map((attachment: any) => ({ url: attachment.fileUrl || attachment.url || "", name: attachment.name || "Imagen puntual del brief" }))
     .filter((attachment: any) => attachment.url), [request]);
@@ -586,6 +636,7 @@ export default function GenerationRequestPage() {
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("No se pudo preparar el lienzo.");
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      if (typeof document !== "undefined" && document.fonts) await document.fonts.ready;
       const enabledLayers = textLayers.filter((layer) => layer.enabled && layer.text.trim());
       for (const layer of enabledLayers) {
         const text = layer.uppercase ? layer.text.toUpperCase() : layer.text;
@@ -593,7 +644,7 @@ export default function GenerationRequestPage() {
         const maxWidth = canvas.width * (Number(layer.widthPercent || 70) / 100);
         const x = canvas.width * (Number(layer.xPercent || 50) / 100);
         const y = canvas.height * (Number(layer.yPercent || 50) / 100);
-        ctx.font = `${Number(layer.weight || 700)} ${fontSize}px Arial, Helvetica, sans-serif`;
+        ctx.font = `${Number(layer.weight || 700)} ${fontSize}px "${safeFontFamily(layer.fontFamily)}", Arial, Helvetica, sans-serif`;
         ctx.textAlign = layer.align;
         ctx.textBaseline = "middle";
         const lines = wrapCanvasText(ctx, text, maxWidth);
@@ -837,6 +888,7 @@ export default function GenerationRequestPage() {
                           borderRadius: layer.backgroundEnabled ? "999px" : "0",
                           textAlign: layer.align,
                           fontWeight: layer.weight,
+                          fontFamily: `"${safeFontFamily(layer.fontFamily)}", Arial, Helvetica, sans-serif`,
                           fontSize: `clamp(12px, ${layer.sizePercent * 0.42}vw, 72px)`,
                           textTransform: layer.uppercase ? "uppercase" : "none"
                         }}
@@ -852,6 +904,11 @@ export default function GenerationRequestPage() {
             </div>
 
             <aside className="space-y-5">
+              <div className="rounded-[1.7rem] border border-emerald-200 bg-emerald-50 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Tipografías del cliente</p>
+                <p className="mt-2 text-sm leading-6 text-emerald-900">{fontAssets.length ? `${fontAssets.length} fuente(s) cargada(s) desde Assets.` : "No hay fuentes cargadas. Puedes subir OTF/TTF/WOFF en Clientes → Assets."}</p>
+                {client?.id ? <Link href={`/dashboard/clientes/${client.id}/assets`} className="mt-3 inline-flex rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-800">Abrir Assets</Link> : null}
+              </div>
               <div className="rounded-[1.7rem] border border-zinc-200 bg-zinc-50 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Modo recomendado</p>
                 <p className="mt-2 text-sm leading-6 text-zinc-700">{(request as any).textRenderMode === "editable-layers" ? "Este brief está preparado para imagen base sin texto + capas editables." : "Este brief fue generado con texto IA. Puedes superponer capas, pero el texto pegado en la imagen no se borra automáticamente."}</p>
@@ -865,6 +922,11 @@ export default function GenerationRequestPage() {
                       <label className="flex items-center gap-2 text-xs font-semibold text-zinc-600"><input type="checkbox" checked={layer.enabled} onChange={(event) => updateTextLayer(layer.id, { enabled: event.target.checked })} /> Visible</label>
                     </div>
                     <textarea value={layer.text} onChange={(event) => updateTextLayer(layer.id, { text: event.target.value })} className="mt-3 min-h-20 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-zinc-950" />
+                    <label className="mt-3 block text-xs font-semibold text-zinc-600">Fuente
+                      <select value={layer.fontFamily || "Arial"} onChange={(event) => updateTextLayer(layer.id, { fontFamily: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs outline-none focus:border-zinc-950">
+                        {fontOptions.map((font) => <option key={`${layer.id}-${font.family}`} value={font.family}>{font.label}</option>)}
+                      </select>
+                    </label>
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <MiniRange label="X" value={layer.xPercent} min={0} max={100} onChange={(value) => updateTextLayer(layer.id, { xPercent: value })} />
                       <MiniRange label="Y" value={layer.yPercent} min={0} max={100} onChange={(value) => updateTextLayer(layer.id, { yPercent: value })} />

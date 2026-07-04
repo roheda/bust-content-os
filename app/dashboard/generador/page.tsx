@@ -162,6 +162,11 @@ function isTextAsset(asset: ClientAsset) {
   return value.includes("bloque-texto") || asset.type === "texto" || asset.mimeType === "text/plain";
 }
 
+function isFontAsset(asset: ClientAsset) {
+  const value = `${asset.type} ${asset.category} ${(asset.tags || []).join(" ")} ${asset.name} ${asset.mimeType || ""} ${asset.originalFileName || ""}`.toLowerCase();
+  return asset.type === "font" || value.includes("tipografia") || value.includes("fuente") || /\.(otf|ttf|woff2?|eot)(\?|$)/i.test(`${asset.fileUrl || ""} ${asset.storagePath || ""}`);
+}
+
 function getAssetCategory(asset: ClientAsset) {
   if (isLogo(asset)) return "Logos";
   if (isTextAsset(asset)) return "Textos";
@@ -258,12 +263,13 @@ export default function BustItNowPage() {
   const aiBillingBalance = useMemo(() => client ? calculateClientBillingBalance({ client, month: billingMonth, requests: [], productions: [], generatedImages: generatedRecords }) : null, [client, billingMonth, generatedRecords]);
   const selectedAssets = useMemo(() => assets.filter((asset) => selectedAssetIds.includes(asset.id || "")), [assets, selectedAssetIds]);
   const logoAssets = useMemo(() => assets.filter(isLogo), [assets]);
+  const fontAssets = useMemo(() => assets.filter(isFontAsset), [assets]);
   const visualAssetCategories = useMemo(() => {
-    const categories: string[] = Array.from(new Set(assets.filter((asset) => !isTextAsset(asset)).map((asset) => String(getAssetCategory(asset))).filter(Boolean)));
+    const categories: string[] = Array.from(new Set(assets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset)).map((asset) => String(getAssetCategory(asset))).filter(Boolean)));
     return categories.sort((a, b) => a.localeCompare(b, "es"));
   }, [assets]);
   const visibleAssets = useMemo(() => {
-    return assets.filter((asset) => !isTextAsset(asset) && (assetCategoryFilter === "all" || getAssetCategory(asset) === assetCategoryFilter));
+    return assets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset) && (assetCategoryFilter === "all" || getAssetCategory(asset) === assetCategoryFilter));
   }, [assets, assetCategoryFilter]);
   const textAssetRoleOptions = useMemo(() => {
     const values: string[] = Array.from(new Set(assets.filter(isTextAsset).map((asset) => String((asset as any).visualRole || asset.category || "free"))));
@@ -667,6 +673,11 @@ export default function BustItNowPage() {
                         </button>
                       </div>
                     </div>
+                    {textRenderMode === "editable-layers" ? (
+                      <div className="mt-4 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-xs leading-5 text-emerald-900">
+                        Tipografías cargadas para este cliente: <strong>{fontAssets.length}</strong>. Se usarán en el editor de texto editable. Puedes subir OTF/TTF/WOFF en Clientes → Assets.
+                      </div>
+                    ) : null}
                   </section>
 
                   <section className="border-t border-zinc-200 pt-6">
@@ -809,7 +820,7 @@ export default function BustItNowPage() {
                       Tono: {client?.brandBrain?.tone || client?.tone || "Pendiente"}<br />
                       Colores: {(client?.brandBrain?.colors || []).join(", ") || "Pendiente"}<br />
                       Tipografía: {client?.brandBrain?.typography || "Pendiente"}<br />
-                      Assets: {assets.length}
+                      Assets: {assets.length} · Tipografías: {fontAssets.length}
                     </div>
                   </section>
 

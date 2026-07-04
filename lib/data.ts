@@ -344,6 +344,8 @@ export type ClientAsset = {
   fileUrl: string;
   storagePath: string;
   mimeType: string;
+  originalFileName?: string;
+  fontFamily?: string;
   isFeatured: boolean;
 };
 
@@ -1160,10 +1162,12 @@ export async function uploadClientAsset(clientId: string, clientName: string, fi
   const storageRef = ref(storage, storagePath);
   await uploadBytes(storageRef, file, { contentType: file.type || undefined });
   const fileUrl = await getDownloadURL(storageRef);
+  const isFont = meta.type === "font" || /\.(otf|ttf|woff2?|eot)$/i.test(file.name);
+  const fontFamily = isFont ? `BUST-${clientId}-${(meta.name || file.name).replace(/\.[^/.]+$/," ").replace(/[^a-z0-9]+/gi,"-").replace(/^-+|-+$/g,"")}` : "";
   return addDoc(collection(db, "clientAssets"), {
     clientId, clientName, name: meta.name, type: meta.type, category: meta.category,
     tags: meta.tags, notes: meta.notes, fileUrl, storagePath, mimeType: file.type || "",
-    originalFileName: file.name, isFeatured: false, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+    originalFileName: file.name, fontFamily, isFeatured: false, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
   });
 }
 
