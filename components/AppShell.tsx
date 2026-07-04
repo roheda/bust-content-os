@@ -161,7 +161,7 @@ export default function AppShell({
     </button>
     {mobileMenuOpen ? <button className="mobile-sidebar-scrim" type="button" aria-label="Cerrar menú" onClick={()=>setMobileMenuOpen(false)} /> : null}
     <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`} aria-label="Navegación principal">
-      <div>
+      <div className="sidebar-main-scroll">
         <div className="sidebar-head-row">
         <Link href="/dashboard" className="brand-mark brand-mark-logo" aria-label="Ir al dashboard">
           <img className="brand-logo-img" src="/brand/bust-logo-dark.svg" alt="BUST" />

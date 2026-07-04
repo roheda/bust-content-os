@@ -930,7 +930,20 @@ body{
   backdrop-filter:blur(22px) saturate(1.4);
   -webkit-backdrop-filter:blur(22px) saturate(1.4);
   box-shadow:inset -1px 0 rgba(255,255,255,.45);
+  overflow:hidden;
 }
+.sidebar-main-scroll{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:4px;
+  scrollbar-gutter:stable;
+}
+.sidebar-main-scroll::-webkit-scrollbar{width:8px}
+.sidebar-main-scroll::-webkit-scrollbar-track{background:transparent}
+.sidebar-main-scroll::-webkit-scrollbar-thumb{background:rgba(52,58,64,.16);border-radius:999px}
+.sidebar-main-scroll:hover::-webkit-scrollbar-thumb{background:rgba(52,58,64,.28)}
 .brand-mark{
   display:flex;
   align-items:flex-start;
@@ -1856,6 +1869,8 @@ a[class*="bg-black"],
 .shell.sidebar-collapsed .user-profile-row{justify-content:center;padding-inline:0}
 .shell.sidebar-collapsed .sidebar-logout{width:46px;height:46px;padding:0;border-radius:16px;font-size:0;position:relative}
 .shell.sidebar-collapsed .sidebar-logout::before{content:"⎋";font-size:17px;font-weight:900;color:var(--brand-dark)}
+.sidebar{height:100dvh;max-height:100dvh}
+.sidebar .userbox{flex:0 0 auto}
 .mobile-sidebar-toggle,.mobile-sidebar-scrim{display:none}
 @media (max-width: 1100px){
   .shell{grid-template-columns:1fr}
@@ -1877,7 +1892,8 @@ a[class*="bg-black"],
 @media (max-width: 1000px){
   .shell,.shell.sidebar-collapsed{display:block!important;grid-template-columns:1fr!important}
   .main,.shell.sidebar-collapsed .main{max-width:none!important;width:100%!important;margin:0!important;padding:72px 16px 30px!important}
-  .sidebar{display:flex!important;position:fixed!important;left:0;top:0;bottom:0;height:100dvh!important;width:min(86vw,320px)!important;z-index:120!important;transform:translateX(-104%)!important;transition:transform .2s ease,box-shadow .2s ease!important;overflow:auto!important}
+  .sidebar{display:flex!important;position:fixed!important;left:0;top:0;bottom:0;height:100dvh!important;width:min(86vw,320px)!important;z-index:120!important;transform:translateX(-104%)!important;transition:transform .2s ease,box-shadow .2s ease!important;overflow:hidden!important}
+  .sidebar-main-scroll{overflow-y:auto!important;min-height:0!important;flex:1 1 auto!important}
   .sidebar.open{transform:translateX(0)!important;box-shadow:0 24px 80px rgba(15,23,42,.22)!important}
   .mobile-sidebar-toggle{display:flex!important;position:fixed!important;top:14px!important;left:14px!important;z-index:130!important}
   .mobile-sidebar-scrim{display:block!important;position:fixed!important;inset:0!important;z-index:118!important;background:rgba(15,23,42,.26)!important}
