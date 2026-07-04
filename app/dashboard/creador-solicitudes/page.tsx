@@ -129,6 +129,7 @@ export default function CreatorPage(){
   }
 
   function setBusinessDate(setter:(value:string)=>void, value:string, label="fecha"){
+    // Usar solo para fechas de trabajo interno. Las fechas de publicación sí pueden caer en sábado o domingo.
     if(value && isWeekendDate(value)){
       alert(`La ${label} no puede ser sábado o domingo. Elige un día hábil.`);
       return;
@@ -186,10 +187,6 @@ export default function CreatorPage(){
   }
 
   function setManualField(k:keyof ContentRequest, v:any){
-    if(k === "publishDate" && v && isWeekendDate(v)){
-      alert("La fecha de publicación no puede ser sábado o domingo. Elige un día hábil.");
-      return;
-    }
     setManual({...manual,[k]:v});
   }
 
@@ -365,7 +362,7 @@ export default function CreatorPage(){
     const importantDates = client?.brandBrain?.importantDates || [];
     const importantDate = importantDates.length ? importantDates[index % importantDates.length] : "";
     const isVideoLike = ["Reel","TikTok","Foto"].includes(contentType);
-    const publishDate = startDate ? nextBusinessDate(addDays(startDate,index * Math.max(1, interval))) : "";
+    const publishDate = startDate ? addDays(startDate,index * Math.max(1, interval)) : "";
     const personaName = persona?.name || "audiencia general de la marca";
     const dateContext = importantDate ? ` Considerar como oportunidad editorial la fecha importante: ${importantDate}.` : "";
     const format = ["Reel","TikTok"].includes(contentType) ? "Vertical 9:16" : contentType === "Carrusel" ? "Carrusel Feed" : "Cuadrado 1:1";
@@ -469,7 +466,7 @@ export default function CreatorPage(){
           materialAvailable: typeof proposal.materialAvailable === "boolean" ? proposal.materialAvailable : !isVideoLike,
           materialLinks: proposal.materialLinks || (!isVideoLike ? "No requiere producción. Usar assets de marca, material existente, stock o generación IA según el brief." : ""),
           productionNotes: proposal.productionNotes || (isVideoLike ? fallback.productionNotes : ""),
-          publishDate: proposal.publishDate ? nextBusinessDate(proposal.publishDate) : fallback.publishDate,
+          publishDate: proposal.publishDate || fallback.publishDate,
           source:"ai-complete"
         },"ai-complete");
       });
@@ -497,10 +494,6 @@ export default function CreatorPage(){
   }
 
   function updateItem(index:number,k:keyof ContentRequest,v:any){
-    if(k === "publishDate" && v && isWeekendDate(v)){
-      alert("La fecha de publicación no puede ser sábado o domingo. Elige un día hábil.");
-      return;
-    }
     const next=[...items];
     const updated = {...next[index],[k]:v};
     if(k==="contentType" || k==="publishDate" || k==="requiresProduction" || k==="batchDueDate"){
@@ -601,9 +594,6 @@ export default function CreatorPage(){
     if(!client?.id)return alert("Selecciona cliente");
     const name = draftName || defaultBatchName(client.name);
     if(!batchDueDate)return alert("Define la fecha límite del lote.");
-    if(isWeekendDate(batchDueDate))return alert("La fecha límite del lote no puede ser sábado o domingo.");
-    const weekendItem = items.find(item=>item.publishDate && isWeekendDate(item.publishDate));
-    if(weekendItem)return alert("Hay una solicitud con fecha en sábado o domingo. Ajusta las fechas antes de enviar el lote.");
     if(!validateBatch())return;
     if(planningSummary.riskTone === "red" && !forceReason){
       return alert("La fecha no es viable con la carga o tiempos actuales. Elige una fecha viable o agrega justificación para forzarla.");
@@ -679,7 +669,8 @@ export default function CreatorPage(){
       </div>
       <div className="field" style={{margin:0}}>
         <label>Fecha límite del lote</label>
-        <input type="date" value={batchDueDate} onChange={e=>setBusinessDate(setBatchDueDate,e.target.value,"fecha límite del lote")}/>
+        <input type="date" value={batchDueDate} onChange={e=>setBatchDueDate(e.target.value)}/>
+        <p className="mini field-note">Puede caer en fin de semana; el sistema moverá el trabajo operativo a días hábiles previos.</p>
       </div>
       <button className="btn blue" onClick={saveDraft}>Guardar borrador</button>
       <button className="btn dark" onClick={publishBatch} disabled={busy}>{busy?"Cargando referencias...":"Aprobar lote y enviar a Asignación"}</button>
@@ -702,7 +693,7 @@ export default function CreatorPage(){
           <h3>IA automática</h3>
           <div className="form-grid">
             <div className="field"><label>Cuántas</label><input type="number" value={aiCount} onChange={e=>setAiCount(Number(e.target.value))}/></div>
-            <div className="field"><label>Primera fecha</label><input type="date" value={startDate} onChange={e=>setBusinessDate(setStartDate,e.target.value,"primera fecha")}/></div>
+            <div className="field"><label>Primera fecha de publicación</label><input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/><p className="mini field-note">Puede ser sábado o domingo.</p></div>
             <div className="field"><label>Cada cuántos días</label><input type="number" value={interval} onChange={e=>setInterval(Number(e.target.value))}/></div>
             <div className="field"><label>Tipos</label><input value={types} onChange={e=>setTypes(e.target.value)}/></div>
             <div className="field"><label>Objetivos</label><input value={goals} onChange={e=>setGoals(e.target.value)}/></div>

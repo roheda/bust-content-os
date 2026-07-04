@@ -217,7 +217,7 @@ Reglas:
 - Usa únicamente estos tipos si aplican: ${types.join(", ") || "Post, Carrusel, Reel"}.
 - Usa estos objetivos si aplican: ${goals.join(", ") || "Ventas, Awareness, Confianza"}.
 - Usa estos temas como base: ${themes.join(", ") || "Temas estratégicos"}.
-- Fechas: primera fecha ${startDate}, separación ${interval} días, nunca sábado o domingo.
+- Fechas de publicación: primera fecha ${startDate}, separación ${interval} días. Sí puedes proponer sábado o domingo si estratégicamente conviene publicar ese día.
 - Buyer personas disponibles: ${personas.map((p) => `${p.id || p.name}: ${p.name} - ${p.description || ""}`).join(" | ") || "sin buyer personas"}. Asigna buyer persona cuando tenga sentido.
 - Fechas importantes del cliente que siempre deben considerarse si son pertinentes: ${importantDates.join(" | ") || "sin fechas registradas"}.
 - Si la pieza es Reel, TikTok o Foto y requiere capturar material nuevo, marca requiresProduction true y llena productionNotes.
