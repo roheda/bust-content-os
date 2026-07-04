@@ -488,22 +488,23 @@ export default function GenerationRequestPage() {
 
   function buildPromptForMode(mode: "ai-text" | "editable-layers") {
     if (!request) return "";
+    const currentRequest = request;
     return buildGenerationPrompt({
       clientName: currentRequest.clientName,
-      clientIndustry: request.clientIndustry,
+      clientIndustry: currentRequest.clientIndustry,
       format: currentRequest.format,
-      goal: request.goal,
-      contentType: request.contentType,
+      goal: currentRequest.goal,
+      contentType: currentRequest.contentType,
       textRenderMode: mode,
-      mainMessage: request.mainMessage,
-      textBlocks: (request as any).textBlocks || [],
-      selectedEmotions: request.selectedEmotions || [],
-      selectedVisualElements: request.selectedVisualElements || [],
-      specificInstructions: request.specificInstructions || "",
-      brandBrainSnapshot: request.brandBrainSnapshot as any,
-      selectedAssetsSnapshot: request.selectedAssetsSnapshot || [],
-      requestAttachments: (request as any).requestAttachments || [],
-      logoOverlay: request.logoOverlay || { enabled: false }
+      mainMessage: currentRequest.mainMessage,
+      textBlocks: (currentRequest as any).textBlocks || [],
+      selectedEmotions: currentRequest.selectedEmotions || [],
+      selectedVisualElements: currentRequest.selectedVisualElements || [],
+      specificInstructions: currentRequest.specificInstructions || "",
+      brandBrainSnapshot: currentRequest.brandBrainSnapshot as any,
+      selectedAssetsSnapshot: currentRequest.selectedAssetsSnapshot || [],
+      requestAttachments: (currentRequest as any).requestAttachments || [],
+      logoOverlay: currentRequest.logoOverlay || { enabled: false }
     });
   }
 
