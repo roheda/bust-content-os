@@ -5,6 +5,9 @@ import {
   Brand,
   ContentRequest,
   ReferenceFile,
+  OperationalContentRule,
+  ClientOperationalOverride,
+  TeamDailyCapacity,
   PlatformUser,
   areas,
   getOperationalStatus,
@@ -14,6 +17,12 @@ import {
   listUniqueBrands,
   listRequests,
   listUsers,
+  listOperationalContentRules,
+  listClientOperationalOverrides,
+  listTeamDailyCapacities,
+  getCapacityTone,
+  getOperationalPlan,
+  planWorkDateForAssignment,
   organizationTeam,
   priorities,
   updateRequest,
@@ -125,6 +134,9 @@ export default function AssignmentPage(){
   const [items,setItems]=useState<ContentRequest[]>([]);
   const [brands,setBrands]=useState<Brand[]>([]);
   const [users,setUsers]=useState<PlatformUser[]>([]);
+  const [costRules,setCostRules]=useState<OperationalContentRule[]>([]);
+  const [clientOverrides,setClientOverrides]=useState<ClientOperationalOverride[]>([]);
+  const [teamCapacities,setTeamCapacities]=useState<TeamDailyCapacity[]>([]);
   const [client,setClient]=useState("all");
   const [area,setArea]=useState("all");
   const [status,setStatus]=useState("all");
@@ -140,10 +152,20 @@ export default function AssignmentPage(){
   const [sort,setSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"batch",direction:"asc"});
 
   async function load(){
-    const [loadedItems, loadedBrands, loadedUsers] = await Promise.all([listRequests(), listUniqueBrands(), listUsers()]);
+    const [loadedItems, loadedBrands, loadedUsers, loadedRules, loadedOverrides, loadedCapacities] = await Promise.all([
+      listRequests(),
+      listUniqueBrands(),
+      listUsers(),
+      listOperationalContentRules(),
+      listClientOperationalOverrides(),
+      listTeamDailyCapacities()
+    ]);
     setItems(loadedItems);
     setBrands(loadedBrands);
     setUsers(loadedUsers.filter(user=>user.status!=="inactive"));
+    setCostRules(loadedRules);
+    setClientOverrides(loadedOverrides);
+    setTeamCapacities(loadedCapacities);
   }
   useEffect(()=>{load()},[]);
 
@@ -217,19 +239,38 @@ export default function AssignmentPage(){
     await load();
   }
 
+  function buildAssignmentPayload(item:ContentRequest, assignee:string, areaValue:string){
+    const plan = getOperationalPlan({...item,assignedTo:assignee,assignedArea:areaValue},costRules,clientOverrides);
+    const schedule = planWorkDateForAssignment(item,items,teamCapacities,costRules,clientOverrides,assignee,areaValue);
+    const capacityTone = getCapacityTone(schedule.projectedLoad, schedule.capacity);
+    return {
+      assignedArea: areaValue,
+      assignedTo: assignee,
+      priority: item.priority || "Media",
+      clientDueDate: plan.clientDueDate,
+      internalDueDate: plan.internalDueDate,
+      productionDueDate: item.requiresProduction ? plan.productionDueDate : "",
+      dueDate: plan.internalDueDate || item.dueDate || item.batchDueDate || item.publishDate,
+      plannedWorkDate: schedule.plannedWorkDate,
+      operationalCost: plan.totalCost,
+      operationalHours: plan.editingHours,
+      operationalWeight: plan.operationalWeight,
+      operationalRisk: schedule.overflow || capacityTone.tone === "red" ? "red" : capacityTone.tone === "orange" ? "orange" : capacityTone.tone === "yellow" ? "yellow" : "green",
+      carriedOver: false,
+      carriedOverDays: 0,
+      status: "asignada"
+    } as Partial<ContentRequest>;
+  }
+
   async function assign(item:ContentRequest){
     if(!item.id)return;
     if(!canAssignRequest(item)){
       alert(getAssignBlockReason(item));
       return;
     }
-    await update(item.id,{
-      assignedArea:item.assignedArea||item.suggestedArea,
-      assignedTo:getTeamOptionsForArea(item.assignedArea||item.suggestedArea).includes(item.assignedTo||"") ? item.assignedTo : getTeamOptionsForArea(item.assignedArea||item.suggestedArea)[0]||"",
-      priority:item.priority||"Media",
-      dueDate:item.dueDate||item.batchDueDate||item.publishDate,
-      status:"asignada"
-    });
+    const targetArea = item.assignedArea||item.suggestedArea||"Diseño";
+    const assignee = getTeamOptionsForArea(targetArea).includes(item.assignedTo||"") ? item.assignedTo || "" : getTeamOptionsForArea(targetArea)[0]||"";
+    await update(item.id,buildAssignmentPayload(item,assignee,targetArea));
   }
 
   async function assignFromDetail(item:ContentRequest){
@@ -240,13 +281,11 @@ export default function AssignmentPage(){
     }
     const targetArea = detailDraft.assignedArea || item.assignedArea || item.suggestedArea || "Diseño";
     const validAssignees = getTeamOptionsForArea(targetArea);
+    const assignee = validAssignees.includes(detailDraft.assignedTo || "") ? detailDraft.assignedTo || "" : "";
     await updateRequest(item.id,{
-      assignedArea:targetArea,
-      assignedTo:validAssignees.includes(detailDraft.assignedTo || "") ? detailDraft.assignedTo || "" : "",
-      priority:detailDraft.priority || "Media",
-      internalNotes:detailDraft.internalNotes || "",
-      dueDate:item.dueDate||item.batchDueDate||item.publishDate,
-      status:"asignada"
+      ...buildAssignmentPayload(item,assignee,targetArea),
+      priority: detailDraft.priority || "Media",
+      internalNotes:detailDraft.internalNotes || ""
     });
     setEditing(null);
     setDetailDraft({});
@@ -274,13 +313,7 @@ export default function AssignmentPage(){
       alert("Ninguna de las solicitudes seleccionadas está lista para asignarse. Las piezas que requieren producción deben tener material listo antes de pasar a diseño/audiovisual.");
       return;
     }
-    await Promise.all(assignable.map(item=>updateRequest(item.id!,{
-      assignedArea:item.assignedArea||item.suggestedArea,
-      assignedTo:bulkAssignee,
-      priority:item.priority||"Media",
-      dueDate:item.dueDate||item.batchDueDate||item.publishDate,
-      status:"asignada"
-    })));
+    await Promise.all(assignable.map(item=>updateRequest(item.id!,buildAssignmentPayload(item,bulkAssignee,item.assignedArea||item.suggestedArea||areasInSelection[0]||"Diseño"))));
     setSelected(blocked.map(item=>item.id!).filter(Boolean));
     setBulkAssignee("");
     await load();
@@ -365,7 +398,7 @@ export default function AssignmentPage(){
       <div className="card">
         <h3>Solicitudes para asignar</h3>
         <div className="table-wrap"><table className="table">
-          <thead><tr><th><input type="checkbox" title="Seleccionar solo solicitudes listas para asignar" checked={assignableFiltered.length>0 && assignableFiltered.every(item=>selected.includes(item.id!))} onChange={e=>setSelected(e.target.checked?assignableFiltered.map(item=>item.id!).filter(Boolean):[])}/></th><th><SortButton label="Lote" active={sort.key==="batch"} direction={sort.direction} onClick={()=>toggleSort("batch")}/></th><th><SortButton label="Solicitud" active={sort.key==="request"} direction={sort.direction} onClick={()=>toggleSort("request")}/></th><th><SortButton label="Límite lote" active={sort.key==="dueDate"} direction={sort.direction} onClick={()=>toggleSort("dueDate")}/></th><th><SortButton label="Estado" active={sort.key==="status"} direction={sort.direction} onClick={()=>toggleSort("status")}/></th><th><SortButton label="Área" active={sort.key==="area"} direction={sort.direction} onClick={()=>toggleSort("area")}/></th><th><SortButton label="Asignación" active={sort.key==="assignedTo"} direction={sort.direction} onClick={()=>toggleSort("assignedTo")}/></th><th></th></tr></thead>
+          <thead><tr><th><input type="checkbox" title="Seleccionar solo solicitudes listas para asignar" checked={assignableFiltered.length>0 && assignableFiltered.every(item=>selected.includes(item.id!))} onChange={e=>setSelected(e.target.checked?assignableFiltered.map(item=>item.id!).filter(Boolean):[])}/></th><th><SortButton label="Lote" active={sort.key==="batch"} direction={sort.direction} onClick={()=>toggleSort("batch")}/></th><th><SortButton label="Solicitud" active={sort.key==="request"} direction={sort.direction} onClick={()=>toggleSort("request")}/></th><th><SortButton label="Fecha interna" active={sort.key==="dueDate"} direction={sort.direction} onClick={()=>toggleSort("dueDate")}/></th><th><SortButton label="Estado" active={sort.key==="status"} direction={sort.direction} onClick={()=>toggleSort("status")}/></th><th><SortButton label="Área" active={sort.key==="area"} direction={sort.direction} onClick={()=>toggleSort("area")}/></th><th><SortButton label="Asignación" active={sort.key==="assignedTo"} direction={sort.direction} onClick={()=>toggleSort("assignedTo")}/></th><th></th></tr></thead>
           <tbody>{filtered.map(item=>{
             const op=getOperationalStatus(item);
             const assignable = canAssignRequest(item);
@@ -375,7 +408,7 @@ export default function AssignmentPage(){
               <td><input type="checkbox" checked={selected.includes(item.id!)} disabled={!assignable} title={assignable ? "Lista para asignar" : getAssignBlockReason(item)} onChange={()=>toggle(item.id!)}/></td>
               <td><strong>{item.batchName||"Sin lote"}</strong><br/><span className="mini">#{item.number||"--"} de {item.total||"--"}</span></td>
               <td><strong>{item.clientName}</strong><br/><span>{item.contentType} · {item.objective}</span><br/><span className="mini text-clamp-2">{item.creativeIdea}</span><br/><span className="mini">Publica: {item.publishDate||"Sin fecha"}</span>{item.rejectionNote && <div className="reject-note text-clamp-2">Rebotada: {item.rejectionNote}</div>}</td>
-              <td><strong>{item.batchDueDate||item.dueDate||"Sin fecha"}</strong><br/><span className="mini">Entrega operativa</span></td>
+              <td><strong>{item.internalDueDate||item.dueDate||item.batchDueDate||"Sin fecha"}</strong><br/><span className="mini">Interna · Final: {item.publishDate||item.clientDueDate||"Sin fecha"}</span>{item.productionDueDate && <><br/><span className="mini">Máx. producción: {item.productionDueDate}</span></>}</td>
               <td><StatusPill status={op}/>{!assignable && <p className="mini warn-text">{getAssignBlockReason(item)}</p>}</td>
               <td>{item.suggestedArea}</td>
               <td>
@@ -486,12 +519,16 @@ function RequestDetail({
       {item.rejectionNote && <div className="reject-note">Rebotada: {item.rejectionNote}</div>}
       <div className="form-grid">
         <div className="field">
-          <label>Fecha límite lote</label>
-          <input value={item.batchDueDate || item.dueDate || "Sin fecha"} disabled/>
+          <label>Fecha interna</label>
+          <input value={item.internalDueDate || item.dueDate || item.batchDueDate || "Sin fecha"} disabled/>
         </div>
         <div className="field">
           <label>Fecha publicación</label>
-          <input value={item.publishDate || "Sin fecha"} disabled/>
+          <input value={item.publishDate || item.clientDueDate || "Sin fecha"} disabled/>
+        </div>
+        <div className="field">
+          <label>Día programado sugerido</label>
+          <input value={item.plannedWorkDate || "Se calcula al asignar"} disabled/>
         </div>
         <div className="field">
           <label>Responsable</label>

@@ -1,7 +1,32 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { ContentRequest, PlatformUser, Production, ReferenceFile, TaskComment, isImageFile, isVideoFile, listProductions, listRequests, listUsers, organizationTeam, updateRequest } from "@/lib/data";
+import {
+  ClientOperationalOverride,
+  ContentRequest,
+  OperationalContentRule,
+  PlatformUser,
+  Production,
+  ReferenceFile,
+  TaskComment,
+  TeamDailyCapacity,
+  businessDaysBetween,
+  getCapacityForPerson,
+  getCapacityTone,
+  getEffectiveWorkDate,
+  getOperationalPlan,
+  isImageFile,
+  isVideoFile,
+  listClientOperationalOverrides,
+  listOperationalContentRules,
+  listProductions,
+  listRequests,
+  listTeamDailyCapacities,
+  listUsers,
+  organizationTeam,
+  todayDateKey,
+  updateRequest
+} from "@/lib/data";
 
 const people = ["Todos", ...organizationTeam.map((member)=>member.name)];
 const areas = ["Todas","Diseño","Audiovisual"];
@@ -16,6 +41,10 @@ export default function TasksPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [productions,setProductions]=useState<Production[]>([]);
   const [users,setUsers]=useState<PlatformUser[]>([]);
+  const [costRules,setCostRules]=useState<OperationalContentRule[]>([]);
+  const [clientOverrides,setClientOverrides]=useState<ClientOperationalOverride[]>([]);
+  const [teamCapacities,setTeamCapacities]=useState<TeamDailyCapacity[]>([]);
+  const [carryOverCount,setCarryOverCount]=useState(0);
   const [view,setView]=useState<"calendario"|"lista"|"persona"|"eficiencia">("calendario");
   const [calendarMode,setCalendarMode]=useState<"semana"|"mes">("semana");
   const [cursor,setCursor]=useState(new Date());
@@ -33,8 +62,20 @@ export default function TasksPage(){
   const [contextPost,setContextPost]=useState<ContentRequest|null>(null);
 
   async function load(){
-    const [loadedRequests, loadedProductions, loadedUsers] = await Promise.all([listRequests(), listProductions(), listUsers().catch(()=>[])]);
-    setRequests(loadedRequests);
+    const [loadedRequests, loadedProductions, loadedUsers, loadedRules, loadedOverrides, loadedCapacities] = await Promise.all([
+      listRequests(),
+      listProductions(),
+      listUsers().catch(()=>[]),
+      listOperationalContentRules(),
+      listClientOperationalOverrides(),
+      listTeamDailyCapacities()
+    ]);
+    setCostRules(loadedRules);
+    setClientOverrides(loadedOverrides);
+    setTeamCapacities(loadedCapacities);
+    const normalized = await autoCarryOverTasks(loadedRequests, loadedRules, loadedOverrides);
+    setCarryOverCount(normalized.carried);
+    setRequests(normalized.items);
     setProductions(loadedProductions);
     setUsers(loadedUsers);
   }
@@ -115,6 +156,8 @@ export default function TasksPage(){
   },[mentionSearch, mentionOptions]);
 
   const overdueCount = filtered.filter(isOverdue).length;
+
+  const capacitySummary = useMemo(()=>buildCapacitySummary(filtered, teamCapacities, costRules, clientOverrides),[filtered,teamCapacities,costRules,clientOverrides]);
 
   async function openTask(task:ContentRequest){
     const shouldStart = task.status === "asignada";
@@ -318,8 +361,10 @@ export default function TasksPage(){
     </div>
 
     <section className="grid kpis">
-      {[["Tareas",String(filtered.length)],["Vencidas",String(overdueCount)],["Finalizadas",String(requests.filter(x=>x.status==="finalizada").length)],["Persona",person],["Área",area]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Tareas",String(filtered.length)],["Vencidas",String(overdueCount)],["Arrastradas hoy",String(carryOverCount || filtered.filter(x=>isCarriedTask(x)).length)],["Cuellos",String(capacitySummary.overloadedCount)],["Persona",person],["Área",area]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
+
+    <CapacityLoadPanel rows={capacitySummary.rows}/>
 
     <section className="calendar-workspace no-doubts-panel">
       <div>
@@ -340,7 +385,7 @@ export default function TasksPage(){
           <div>
             <p className="eyebrow">Tarea asignada</p>
             <h2 style={{margin:"0 0 4px"}}>{selected.clientName} · {selected.contentType}</h2>
-            <p className="mini">Fecha operativa: {getTaskDate(selected)||"Sin fecha"} · Publica: {selected.publishDate||"Sin fecha"} · Lote: {selected.batchName||"Sin lote"}</p>
+            <p className="mini">Trabajar: {getTaskDate(selected)||"Sin fecha"} · Límite interno: {selected.internalDueDate||selected.dueDate||"Sin fecha"} · Publica: {selected.publishDate||selected.clientDueDate||"Sin fecha"} · Lote: {selected.batchName||"Sin lote"}</p>
           </div>
           <button className="btn red" onClick={closeTask}>Cerrar</button>
         </div>
@@ -493,6 +538,72 @@ function normalizeExternalUrl(value?:string){
   return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
+
+async function autoCarryOverTasks(items:ContentRequest[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[]){
+  const today = todayDateKey();
+  const closeds = ["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","aprobada","finalizada","programada","publicada","cancelada","eliminada"];
+  const stale = items.filter(item=>item.id && item.plannedWorkDate && item.plannedWorkDate < today && !closeds.includes(item.status||""));
+  if(!stale.length) return {items, carried:0};
+  await Promise.all(stale.map(item=>{
+    const original = item.carriedOverFromDate || item.plannedWorkDate || today;
+    const days = Math.max(1, Math.abs(businessDaysBetween(original,today)));
+    const plan = getOperationalPlan(item,rules,overrides);
+    return updateRequest(item.id!,{
+      plannedWorkDate: today,
+      carriedOver: true,
+      carriedOverFromDate: original,
+      carriedOverDays: days,
+      operationalWeight: item.operationalWeight || plan.operationalWeight,
+      operationalRisk: "orange"
+    });
+  }));
+  const updated = items.map(item=> stale.some(staleItem=>staleItem.id===item.id)
+    ? {...item,plannedWorkDate:today,carriedOver:true,carriedOverFromDate:item.carriedOverFromDate||item.plannedWorkDate,carriedOverDays:Math.max(1,Math.abs(businessDaysBetween(item.carriedOverFromDate||item.plannedWorkDate||today,today))),operationalRisk:"orange" as const}
+    : item);
+  return {items:updated, carried:stale.length};
+}
+
+function isClosedTask(item:ContentRequest){
+  return ["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","aprobada","finalizada","programada","publicada","cancelada","eliminada"].includes(item.status||"");
+}
+
+function isCarriedTask(item:ContentRequest){
+  return Boolean(item.carriedOver || (item.plannedWorkDate && item.plannedWorkDate < todayDateKey() && !isClosedTask(item)));
+}
+
+function buildCapacitySummary(tasks:ContentRequest[], capacities:TeamDailyCapacity[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[]){
+  const active = tasks.filter(task=>!isClosedTask(task));
+  const grouped:Record<string,{person:string;date:string;load:number;capacity:number;carried:number;tasks:ContentRequest[]}> = {};
+  active.forEach(task=>{
+    const person = task.assignedTo || "Sin asignar";
+    const area = task.assignedArea || task.suggestedArea || "";
+    const date = getTaskDate(task) || todayDateKey();
+    const key = `${person}__${date}`;
+    const plan = getOperationalPlan(task,rules,overrides);
+    grouped[key] = grouped[key] || {person,date,load:0,capacity:getCapacityForPerson(person,area,capacities),carried:0,tasks:[]};
+    grouped[key].load += Number(task.operationalWeight || plan.operationalWeight || 1);
+    grouped[key].carried += isCarriedTask(task) ? 1 : 0;
+    grouped[key].tasks.push(task);
+  });
+  const rows = Object.values(grouped).map(row=>({ ...row, tone:getCapacityTone(row.load,row.capacity) }))
+    .sort((a,b)=>a.date.localeCompare(b.date) || b.tone.ratio - a.tone.ratio || a.person.localeCompare(b.person,"es"))
+    .slice(0,18);
+  return {rows, overloadedCount:rows.filter(row=>row.tone.tone==="orange" || row.tone.tone==="red").length};
+}
+
+function CapacityLoadPanel({rows}:{rows:ReturnType<typeof buildCapacitySummary>["rows"]}){
+  return <section className="card capacity-load-panel">
+    <div className="capacity-panel-head"><div><p className="eyebrow">Capacidad diaria</p><h3>Semáforo de cuellos de botella</h3></div><span className="mini">Lo no cerrado se arrastra al día siguiente y consume capacidad.</span></div>
+    {!rows.length ? <p className="mini">No hay tareas activas para calcular carga.</p> : <div className="capacity-load-grid">
+      {rows.map(row=><div className={`capacity-load-card ${row.tone.tone}`} key={`${row.person}-${row.date}`}>
+        <div><strong>{row.person}</strong><span>{row.date}</span></div>
+        <b>{row.load.toFixed(1)} / {row.capacity}</b>
+        <small>{row.tone.label} · {Math.round(row.tone.ratio*100)}% {row.carried ? `· ${row.carried} arrastrada(s)` : ""}</small>
+      </div>)}
+    </div>}
+  </section>;
+}
+
 function statusLabel(status:string){
   const labels:Record<string,string> = {
     asignada: "Asignada",
@@ -508,14 +619,14 @@ function statusLabel(status:string){
 }
 
 function getTaskDate(item:ContentRequest){
-  return item.dueDate || item.batchDueDate || item.publishDate || "";
+  return getEffectiveWorkDate(item);
 }
 
 function isOverdue(item:ContentRequest){
-  const date = getTaskDate(item);
+  const date = item.internalDueDate || item.dueDate || item.batchDueDate || item.publishDate || "";
   if(!date)return false;
-  const today = new Date().toISOString().slice(0,10);
-  return date < today && !["pendiente_aprobacion","aprobada","finalizada"].includes(item.status||"");
+  const today = todayDateKey();
+  return date < today && !["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","aprobada","finalizada"].includes(item.status||"");
 }
 
 function key(date:Date){
@@ -580,10 +691,11 @@ function DayBox({date,tasks,onOpen,muted=false,variant}:{date:Date;tasks:Content
 function TaskChip({task,onOpen}:{task:ContentRequest;onOpen:(item:ContentRequest)=>void}){
   const overdue = isOverdue(task);
   const done = ["pendiente_aprobacion","aprobada","finalizada"].includes(task.status||"");
-  return <button className={`task-chip ${overdue?"overdue":""} ${done?"done":""}`} onClick={()=>onOpen(task)}>
+  const carried = isCarriedTask(task);
+  return <button className={`task-chip ${overdue?"overdue":""} ${done?"done":""} ${carried?"carried":""}`} onClick={()=>onOpen(task)}>
     <strong>{task.clientName}</strong>
     <span>{task.contentType} · {task.assignedTo||"Sin asignar"}</span>
-    <span className="mini-status">{overdue ? "VENCIDA" : statusLabel(task.status||"")}</span>
+    <span className="mini-status">{carried ? `ARRASTRADA ${task.carriedOverDays||1}d` : overdue ? "VENCIDA" : statusLabel(task.status||"")}</span>
   </button>;
 }
 
@@ -591,7 +703,7 @@ function ListView({tasks,onOpen}:{tasks:ContentRequest[];onOpen:(item:ContentReq
   if(!tasks.length)return <div className="card"><p>No hay tareas con estos filtros.</p></div>;
   return <div>{tasks.sort((a,b)=>getTaskDate(a).localeCompare(getTaskDate(b))).map(task=><button className={`list-task-card ${isOverdue(task)?"task-chip overdue":""}`} key={task.id} onClick={()=>onOpen(task)}>
     <strong>{task.clientName} · {task.contentType}</strong>
-    <span className="mini">Fecha operativa: {getTaskDate(task)||"Sin fecha"} · Responsable: {task.assignedTo||"Sin asignar"} · Estado: {isOverdue(task) ? "VENCIDA" : statusLabel(task.status||"")}</span>
+    <span className="mini">Trabajar: {getTaskDate(task)||"Sin fecha"} · Interna: {task.internalDueDate||task.dueDate||"Sin fecha"} · Responsable: {task.assignedTo||"Sin asignar"} · Estado: {isOverdue(task) ? "VENCIDA" : statusLabel(task.status||"")}</span>
     <span className="mini">{task.creativeIdea}</span>
   </button>)}</div>;
 }

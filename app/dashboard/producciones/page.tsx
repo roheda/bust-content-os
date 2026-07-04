@@ -137,7 +137,8 @@ export default function ProductionsPage(){
     return Array.from(new Map([...fromUsers,...fallback].filter(Boolean).filter(isProductionTeamName).map(name=>[name.toLowerCase(),name])).values()).sort((a,b)=>a.localeCompare(b,"es"));
   },[users]);
 
-  function getInternalDueDate(item:ContentRequest){return item.dueDate || item.batchDueDate || "";}
+  function getInternalDueDate(item:ContentRequest){return item.internalDueDate || item.dueDate || item.batchDueDate || "";}
+  function getProductionDueDate(item:ContentRequest){return item.productionDueDate || getInternalDueDate(item) || item.publishDate || "";}
   function isVideoRequest(item:ContentRequest){
     const text = `${item.contentType} ${item.visualFormat || ""} ${item.feedPlacement || ""}`.toLowerCase();
     return /reel|video|tik|vertical|story/.test(text);
@@ -338,7 +339,7 @@ export default function ProductionsPage(){
           <th><SortButton label="Video / estático" active={requestSort.key==="kind"} direction={requestSort.direction} onClick={()=>toggleRequestSort("kind")}/></th>
         </tr></thead><tbody>{productionRequests.map(x=><tr key={x.id} className="clickable-row" onClick={()=>setPendingDetail(x)}>
           <td onClick={event=>event.stopPropagation()}><input type="checkbox" checked={selected.includes(x.id!)} onChange={()=>toggle(x.id!)}/></td>
-          <td><strong>{x.batchName||"Sin lote"}</strong><br/><span className="mini">Entrega interna: {getInternalDueDate(x)||"Sin fecha"}</span></td>
+          <td><strong>{x.batchName||"Sin lote"}</strong><br/><span className="mini">Entrega interna: {getInternalDueDate(x)||"Sin fecha"}</span><br/><span className="mini">Máx. producción: {getProductionDueDate(x)||"Sin fecha"}</span></td>
           <td><strong>{x.clientName}</strong><br/>{x.contentType} · {x.objective}<br/><span className="mini text-clamp-2">{x.creativeIdea}</span></td>
           <td><span className="text-clamp-2">{x.productionNotes||"Sin notas"}</span></td>
           <td>{x.publishDate||"Sin fecha"}</td>

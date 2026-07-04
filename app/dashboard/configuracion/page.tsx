@@ -5,18 +5,23 @@ import {
   Brand,
   ClientOperationalOverride,
   OperationalContentRule,
+  TeamDailyCapacity,
   areas,
   contentTypes,
   defaultOperationalRules,
   deleteClientOperationalOverride,
   deleteOperationalContentRule,
+  deleteTeamDailyCapacity,
   listClientOperationalOverrides,
   listOperationalContentRules,
+  listTeamDailyCapacities,
   listUniqueBrands,
   saveClientOperationalOverride,
   saveOperationalContentRule,
+  saveTeamDailyCapacity,
   updateClientOperationalOverride,
-  updateOperationalContentRule
+  updateOperationalContentRule,
+  updateTeamDailyCapacity
 } from "@/lib/data";
 
 const emptyRule: OperationalContentRule = {
@@ -46,26 +51,39 @@ const emptyOverride: ClientOperationalOverride = {
   active: true
 };
 
+const emptyCapacity: TeamDailyCapacity = {
+  personName: "",
+  area: "Diseño",
+  dailyCapacityUnits: 5,
+  active: true,
+  notes: ""
+};
+
 export default function ConfiguracionPage(){
   const [rules,setRules]=useState<OperationalContentRule[]>([]);
   const [overrides,setOverrides]=useState<ClientOperationalOverride[]>([]);
   const [brands,setBrands]=useState<Brand[]>([]);
+  const [capacities,setCapacities]=useState<TeamDailyCapacity[]>([]);
   const [ruleForm,setRuleForm]=useState<OperationalContentRule>(emptyRule);
   const [overrideForm,setOverrideForm]=useState<ClientOperationalOverride>(emptyOverride);
   const [editingRuleId,setEditingRuleId]=useState("");
   const [editingOverrideId,setEditingOverrideId]=useState("");
+  const [capacityForm,setCapacityForm]=useState<TeamDailyCapacity>(emptyCapacity);
+  const [editingCapacityId,setEditingCapacityId]=useState("");
   const [clientFilter,setClientFilter]=useState("all");
   const [busy,setBusy]=useState(false);
 
   async function load(){
-    const [loadedRules,loadedOverrides,loadedBrands] = await Promise.all([
+    const [loadedRules,loadedOverrides,loadedBrands,loadedCapacities] = await Promise.all([
       listOperationalContentRules(),
       listClientOperationalOverrides(),
-      listUniqueBrands()
+      listUniqueBrands(),
+      listTeamDailyCapacities()
     ]);
     setRules(loadedRules);
     setOverrides(loadedOverrides);
     setBrands(loadedBrands);
+    setCapacities(loadedCapacities);
     if(!overrideForm.clientId && loadedBrands[0]?.id){
       setOverrideForm({...overrideForm,clientId:loadedBrands[0].id,clientName:loadedBrands[0].name});
     }
@@ -79,6 +97,7 @@ export default function ConfiguracionPage(){
 
   function setRule(k:keyof OperationalContentRule, v:any){setRuleForm({...ruleForm,[k]:v});}
   function setOverride(k:keyof ClientOperationalOverride, v:any){setOverrideForm({...overrideForm,[k]:v});}
+  function setCapacity(k:keyof TeamDailyCapacity, v:any){setCapacityForm({...capacityForm,[k]:v});}
 
   function startRuleEdit(rule:OperationalContentRule){
     setEditingRuleId(rule.id||"");
@@ -168,6 +187,42 @@ export default function ConfiguracionPage(){
     alert("Las reglas default ya están cargadas en pantalla. Para guardarlas en Firebase, edita una regla y presiona guardar.");
   }
 
+  function startCapacityEdit(item:TeamDailyCapacity){
+    setEditingCapacityId(item.id||"");
+    setCapacityForm({...item});
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+
+  async function saveCapacity(){
+    if(!capacityForm.personName.trim())return alert("Escribe el nombre de la persona.");
+    setBusy(true);
+    try{
+      const payload = {
+        ...capacityForm,
+        personName: capacityForm.personName.trim(),
+        dailyCapacityUnits: Number(capacityForm.dailyCapacityUnits || 5),
+        active: capacityForm.active !== false
+      };
+      if(editingCapacityId) await updateTeamDailyCapacity(editingCapacityId,payload);
+      else await saveTeamDailyCapacity(payload);
+      setEditingCapacityId("");
+      setCapacityForm(emptyCapacity);
+      await load();
+    }finally{setBusy(false)}
+  }
+
+  async function removeCapacity(item:TeamDailyCapacity){
+    if(!item.id)return alert("Esta capacidad viene por default. Edítala y guarda una versión personalizada para reemplazarla.");
+    if(!confirm("¿Eliminar capacidad personalizada?"))return;
+    await deleteTeamDailyCapacity(item.id);
+    await load();
+  }
+
+  function resetCapacity(){
+    setEditingCapacityId("");
+    setCapacityForm(emptyCapacity);
+  }
+
   return <AppShell active="Configuración">
     <section className="hero">
       <div>
@@ -183,6 +238,7 @@ export default function ConfiguracionPage(){
       <Metric label="Costo base acumulado" value={money(totalBaseCost)}/>
       <Metric label="Promedio entrega" value={`${avgDelivery} días`}/>
       <Metric label="Ajustes por cliente" value={overrides.length}/>
+      <Metric label="Capacidades" value={capacities.length}/>
       <Metric label="Clientes" value={brands.length}/>
       <Metric label="Estado" value={busy?"Guardando":"Listo"}/>
     </section>
@@ -268,12 +324,35 @@ export default function ConfiguracionPage(){
         </div>
 
         <div className="card">
+          <h3>{editingCapacityId?"Editar capacidad diaria":"Capacidad diaria por persona"}</h3>
+          <p className="mini">Define cuántas unidades operativas puede cerrar cada persona por día. El sistema usa esto para programar tareas, detectar arrastres y prender semáforos.</p>
+          <div className="form-grid" style={{marginTop:14}}>
+            <div className="field full"><label>Persona</label><input value={capacityForm.personName} onChange={e=>setCapacity("personName",e.target.value)} placeholder="Nombre del diseñador/editor"/></div>
+            <div className="field"><label>Área</label><select value={capacityForm.area} onChange={e=>setCapacity("area",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
+            <div className="field"><label>Unidades máximas por día</label><input type="number" value={capacityForm.dailyCapacityUnits} onChange={e=>setCapacity("dailyCapacityUnits",Number(e.target.value))}/></div>
+            <label className="check-row"><input type="checkbox" checked={capacityForm.active!==false} onChange={e=>setCapacity("active",e.target.checked)}/> Activa</label>
+            <div className="field full"><label>Notas</label><textarea value={capacityForm.notes||""} onChange={e=>setCapacity("notes",e.target.value)} placeholder="Ej. edita reels complejos / apoyo a diseño..."/></div>
+          </div>
+          <div className="config-actions">
+            <button className="btn blue" onClick={saveCapacity}>{editingCapacityId?"Guardar cambios":"Guardar capacidad"}</button>
+            <button className="btn" onClick={resetCapacity}>Limpiar</button>
+          </div>
+          <div className="draft-list" style={{marginTop:14}}>
+            {capacities.map(item=><div className="draft-item" key={`${item.id||"default"}-${item.personName}`}>
+              <strong>{item.personName}</strong>
+              <span className="mini">{item.area} · {item.dailyCapacityUnits} unidades/día · {item.active===false?"Inactiva":"Activa"}</span>
+              <div className="config-actions"><button className="btn" onClick={()=>startCapacityEdit(item)}>Editar</button><button className="btn red" onClick={()=>removeCapacity(item)}>Eliminar</button></div>
+            </div>)}
+          </div>
+        </div>
+
+        <div className="card">
           <h3>Configuraciones recomendadas</h3>
           <ul className="config-list">
-            <li>Margen o fee deseado por cliente para medir rentabilidad.</li>
-            <li>Capacidad semanal por persona para evitar sobreasignación.</li>
-            <li>Días de revisión del cliente antes de publicación.</li>
-            <li>Costos externos: pauta, locación, modelos, food styling o renta de equipo.</li>
+            <li>Usa las mismas unidades para todo el equipo: 1 post simple puede pesar 1, un reel más complejo puede pesar más por sus horas configuradas.</li>
+            <li>La fecha al cliente no es la fecha de tarea; Tareas usa fecha programada e interna.</li>
+            <li>Si una tarea no se cierra, se arrastra al siguiente día y consume capacidad.</li>
+            <li>Los semáforos aparecen cuando una persona supera su capacidad diaria.</li>
           </ul>
         </div>
       </aside>

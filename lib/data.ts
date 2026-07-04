@@ -529,6 +529,22 @@ export type ContentRequest = {
   comments?: TaskComment[];
   productionId?: string;
   productionName?: string;
+
+  // Planeación operativa automática
+  clientDueDate?: string;
+  internalDueDate?: string;
+  plannedWorkDate?: string;
+  productionDueDate?: string;
+  operationalCost?: number;
+  operationalHours?: number;
+  operationalWeight?: number;
+  operationalRisk?: "green" | "yellow" | "orange" | "red";
+  forcedDate?: boolean;
+  forcedDateReason?: string;
+  forcedDateNotes?: string;
+  carriedOver?: boolean;
+  carriedOverFromDate?: string;
+  carriedOverDays?: number;
 };
 
 export type PlannerDraft = {
@@ -607,6 +623,41 @@ export type ClientOperationalOverride = {
   active: boolean;
 };
 
+export type TeamDailyCapacity = {
+  id?: string;
+  personName: string;
+  area: string;
+  dailyCapacityUnits: number;
+  active: boolean;
+  notes?: string;
+};
+
+export type OperationalPlan = {
+  rule: OperationalContentRule;
+  internalCost: number;
+  productionCost: number;
+  totalCost: number;
+  editingHours: number;
+  deliveryDays: number;
+  bufferHours: number;
+  operationalWeight: number;
+  clientDueDate: string;
+  internalDueDate: string;
+  productionDueDate: string;
+};
+
+export const defaultDailyCapacityUnits = 5;
+
+export const defaultTeamDailyCapacities: TeamDailyCapacity[] = organizationTeam
+  .filter((member) => ["Diseño", "Audiovisual"].includes(member.area))
+  .map((member) => ({
+    personName: member.name,
+    area: member.area,
+    dailyCapacityUnits: defaultDailyCapacityUnits,
+    active: true,
+    notes: "Capacidad default. Ajustar en Configuración según rol/persona."
+  }));
+
 export const defaultOperationalRules: OperationalContentRule[] = [
   { contentType: "Reel", label: "Post Reel", area: "Audiovisual", internalCost: 1500, productionCost: 0, editingHours: 6, deliveryDays: 4, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Edición corta vertical con copy y entrega para redes." },
   { contentType: "TikTok", label: "TikTok / Short", area: "Audiovisual", internalCost: 1300, productionCost: 0, editingHours: 5, deliveryDays: 3, bufferHours: 6, requiresProductionDefault: false, active: true, notes: "Pieza vertical rápida con ritmo dinámico." },
@@ -658,22 +709,163 @@ export function estimateRequestCost(
   };
 }
 
+export function toDateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+export function todayDateKey() {
+  return toDateKey(new Date());
+}
+
+export function isBusinessDate(value?: string) {
+  if (!value) return false;
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+  const day = date.getDay();
+  return day !== 0 && day !== 6;
+}
+
+export function addBusinessDays(value: string, days: number) {
+  if (!value) return "";
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  const direction = days >= 0 ? 1 : -1;
+  let remaining = Math.abs(Math.trunc(days));
+  while (remaining > 0) {
+    date.setDate(date.getDate() + direction);
+    const day = date.getDay();
+    if (day !== 0 && day !== 6) remaining -= 1;
+  }
+  return toDateKey(date);
+}
+
+export function subtractBusinessDays(value: string, days: number) {
+  return addBusinessDays(value, -Math.max(0, Number(days || 0)));
+}
+
+export function businessDaysBetween(startValue: string, endValue: string) {
+  if (!startValue || !endValue) return 0;
+  const start = new Date(`${startValue}T12:00:00`);
+  const end = new Date(`${endValue}T12:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  const direction = start <= end ? 1 : -1;
+  let count = 0;
+  const cursor = new Date(start);
+  while (toDateKey(cursor) !== toDateKey(end)) {
+    cursor.setDate(cursor.getDate() + direction);
+    const day = cursor.getDay();
+    if (day !== 0 && day !== 6) count += direction;
+  }
+  return count;
+}
+
 export function suggestOperationalDueDate(publishDate: string, deliveryDays: number) {
   if (!publishDate) return "";
-  const d = new Date(publishDate + "T00:00:00");
-  if (Number.isNaN(d.getTime())) return "";
-  d.setDate(d.getDate() - Math.max(0, Number(deliveryDays || 0)));
-  return d.toISOString().slice(0, 10);
+  return subtractBusinessDays(publishDate, Math.max(0, Number(deliveryDays || 0)));
+}
+
+export function suggestProductionDueDate(publishDate: string, deliveryDays: number, bufferHours = 8) {
+  if (!publishDate) return "";
+  const internalDueDate = suggestOperationalDueDate(publishDate, deliveryDays);
+  const productionLeadDays = Math.max(1, Math.ceil(Number(bufferHours || 8) / 8));
+  return subtractBusinessDays(internalDueDate || publishDate, productionLeadDays);
+}
+
+export function operationalWeightFromHours(hours: number) {
+  if (!Number.isFinite(Number(hours))) return 1;
+  return Math.max(0.5, Math.round((Number(hours || 0) / 2) * 2) / 2 || 1);
+}
+
+export function getOperationalPlan(
+  item: Partial<ContentRequest>,
+  rules: OperationalContentRule[] = [],
+  overrides: ClientOperationalOverride[] = []
+): OperationalPlan {
+  const estimate = estimateRequestCost(item, rules, overrides);
+  const clientDueDate = item.publishDate || item.batchDueDate || item.clientDueDate || item.dueDate || "";
+  const internalDueDate = item.internalDueDate || suggestOperationalDueDate(clientDueDate, estimate.deliveryDays) || item.dueDate || clientDueDate;
+  const productionDueDate = item.requiresProduction ? (item.productionDueDate || suggestProductionDueDate(clientDueDate, estimate.deliveryDays, estimate.bufferHours)) : "";
+  return {
+    ...estimate,
+    operationalWeight: operationalWeightFromHours(estimate.editingHours),
+    clientDueDate,
+    internalDueDate,
+    productionDueDate
+  };
+}
+
+export function getCapacityForPerson(personName = "", area = "", capacities: TeamDailyCapacity[] = []) {
+  const found = capacities.find((item) => item.active !== false && item.personName === personName);
+  if (found) return Number(found.dailyCapacityUnits || defaultDailyCapacityUnits);
+  const defaultFound = defaultTeamDailyCapacities.find((item) => item.personName === personName);
+  if (defaultFound) return Number(defaultFound.dailyCapacityUnits || defaultDailyCapacityUnits);
+  return defaultDailyCapacityUnits;
+}
+
+export function getCapacityTone(load: number, capacity: number) {
+  const safeCapacity = Math.max(0.1, Number(capacity || defaultDailyCapacityUnits));
+  const ratio = Number(load || 0) / safeCapacity;
+  if (ratio <= 0.85) return { tone: "green" as const, label: "Verde", ratio };
+  if (ratio <= 1) return { tone: "yellow" as const, label: "Amarillo", ratio };
+  if (ratio <= 1.2) return { tone: "orange" as const, label: "Naranja", ratio };
+  return { tone: "red" as const, label: "Rojo", ratio };
+}
+
+export function getEffectiveWorkDate(item: Partial<ContentRequest>, todayKey = todayDateKey()) {
+  const planned = item.plannedWorkDate || item.dueDate || item.internalDueDate || item.batchDueDate || item.publishDate || "";
+  if (!planned) return "";
+  const closed = ["pendiente_aprobacion", "pendiente_aprobacion_kam", "aprobada_pendiente_copyout", "aprobada", "finalizada", "programada", "publicada", "cancelada", "eliminada"].includes(item.status || "");
+  if (!closed && planned < todayKey) return todayKey;
+  return planned;
+}
+
+export function planWorkDateForAssignment(
+  item: ContentRequest,
+  allRequests: ContentRequest[] = [],
+  capacities: TeamDailyCapacity[] = [],
+  rules: OperationalContentRule[] = [],
+  overrides: ClientOperationalOverride[] = [],
+  assignedTo = item.assignedTo || "",
+  assignedArea = item.assignedArea || item.suggestedArea || ""
+) {
+  const todayKey = todayDateKey();
+  const plan = getOperationalPlan({ ...item, assignedTo, assignedArea }, rules, overrides);
+  const deadline = plan.internalDueDate || item.dueDate || item.batchDueDate || item.publishDate || todayKey;
+  const weight = item.operationalWeight || plan.operationalWeight;
+  const capacity = getCapacityForPerson(assignedTo, assignedArea, capacities);
+  const loadByDate: Record<string, number> = {};
+
+  allRequests
+    .filter((task) => task.id !== item.id)
+    .filter((task) => task.assignedTo === assignedTo)
+    .filter((task) => !["pendiente_aprobacion", "pendiente_aprobacion_kam", "aprobada_pendiente_copyout", "aprobada", "finalizada", "programada", "publicada", "cancelada", "eliminada"].includes(task.status || ""))
+    .forEach((task) => {
+      const date = getEffectiveWorkDate(task, todayKey);
+      if (!date) return;
+      const taskPlan = getOperationalPlan(task, rules, overrides);
+      loadByDate[date] = (loadByDate[date] || 0) + Number(task.operationalWeight || taskPlan.operationalWeight || 1);
+    });
+
+  let cursor = todayKey;
+  let guard = 0;
+  while (cursor && cursor <= deadline && guard < 180) {
+    if (isBusinessDate(cursor) && (loadByDate[cursor] || 0) + weight <= capacity) {
+      return { plannedWorkDate: cursor, capacity, projectedLoad: (loadByDate[cursor] || 0) + weight, weight, plan, overflow: false };
+    }
+    cursor = addBusinessDays(cursor, 1);
+    guard += 1;
+  }
+
+  const fallback = isBusinessDate(deadline) ? deadline : addBusinessDays(deadline || todayKey, 1);
+  return { plannedWorkDate: fallback || todayKey, capacity, projectedLoad: (loadByDate[fallback] || 0) + weight, weight, plan, overflow: true };
 }
 
 export function getDeliveryRisk(publishDate: string, deliveryDays: number) {
   if (!publishDate) return { tone: "mid" as const, label: "Sin fecha de publicación" };
-  const today = new Date();
-  const publish = new Date(publishDate + "T00:00:00");
-  const diffDays = Math.ceil((publish.getTime() - new Date(today.toISOString().slice(0,10) + "T00:00:00").getTime()) / (1000 * 60 * 60 * 24));
-  if (Number.isNaN(diffDays)) return { tone: "mid" as const, label: "Fecha inválida" };
-  if (diffDays < deliveryDays) return { tone: "bad" as const, label: `Riesgo: requiere ${deliveryDays} días y quedan ${Math.max(0, diffDays)}` };
-  if (diffDays <= deliveryDays + 1) return { tone: "mid" as const, label: "Tiempo justo" };
+  const today = todayDateKey();
+  const minDate = addBusinessDays(today, Math.max(0, Number(deliveryDays || 0)));
+  if (publishDate < minDate) return { tone: "bad" as const, label: `Riesgo: primera fecha viable ${minDate}` };
+  if (businessDaysBetween(today, publishDate) <= deliveryDays + 1) return { tone: "mid" as const, label: "Tiempo justo" };
   return { tone: "good" as const, label: "Tiempo viable" };
 }
 
@@ -723,6 +915,20 @@ export const emptyRequest: ContentRequest = {
   deletedAt: "",
   deletedReason: "",
   comments: [],
+  clientDueDate: "",
+  internalDueDate: "",
+  plannedWorkDate: "",
+  productionDueDate: "",
+  operationalCost: 0,
+  operationalHours: 0,
+  operationalWeight: 1,
+  operationalRisk: "green",
+  forcedDate: false,
+  forcedDateReason: "",
+  forcedDateNotes: "",
+  carriedOver: false,
+  carriedOverFromDate: "",
+  carriedOverDays: 0,
 };
 
 export function isImageFile(file: ReferenceFile) {
@@ -909,6 +1115,7 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
 
   await Promise.all(items.map((item, index) => {
     const status = item.requiresProduction ? "pendiente_produccion" : "lista_asignacion";
+    const plan = getOperationalPlan({ ...item, batchDueDate: batch.batchDueDate });
     return saveRequest({
       ...item,
       number: index + 1,
@@ -916,7 +1123,14 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
       batchId,
       batchName: batch.name,
       batchDueDate: batch.batchDueDate,
-      dueDate: item.dueDate || batch.batchDueDate,
+      clientDueDate: plan.clientDueDate || item.publishDate || batch.batchDueDate,
+      internalDueDate: plan.internalDueDate || item.dueDate || batch.batchDueDate,
+      productionDueDate: item.requiresProduction ? plan.productionDueDate : "",
+      dueDate: item.dueDate || plan.internalDueDate || batch.batchDueDate,
+      operationalCost: item.operationalCost ?? plan.totalCost,
+      operationalHours: item.operationalHours ?? plan.editingHours,
+      operationalWeight: item.operationalWeight ?? plan.operationalWeight,
+      operationalRisk: item.operationalRisk || "green",
       status
     });
   }));
@@ -1041,6 +1255,38 @@ export async function updateClientOperationalOverride(id: string, data: Partial<
 
 export async function deleteClientOperationalOverride(id: string) {
   return deleteDoc(doc(db, "clientOperationalOverrides", id));
+}
+
+export async function listTeamDailyCapacities() {
+  const snap = await getDocs(collection(db, "teamDailyCapacities"));
+  const custom = snap.docs.map((d) => ({ id: d.id, ...d.data() } as TeamDailyCapacity));
+  const customPeople = new Set(custom.map(item => item.personName));
+  return [
+    ...custom,
+    ...defaultTeamDailyCapacities.filter(item => !customPeople.has(item.personName))
+  ].sort((a, b) => (a.area || "").localeCompare(b.area || "", "es") || (a.personName || "").localeCompare(b.personName || "", "es"));
+}
+
+export async function saveTeamDailyCapacity(item: TeamDailyCapacity) {
+  return addDoc(collection(db, "teamDailyCapacities"), {
+    ...item,
+    dailyCapacityUnits: Number(item.dailyCapacityUnits || defaultDailyCapacityUnits),
+    active: item.active !== false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function updateTeamDailyCapacity(id: string, data: Partial<TeamDailyCapacity>) {
+  return updateDoc(doc(db, "teamDailyCapacities", id), {
+    ...data,
+    dailyCapacityUnits: data.dailyCapacityUnits === undefined ? data.dailyCapacityUnits : Number(data.dailyCapacityUnits || defaultDailyCapacityUnits),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteTeamDailyCapacity(id: string) {
+  return deleteDoc(doc(db, "teamDailyCapacities", id));
 }
 
 

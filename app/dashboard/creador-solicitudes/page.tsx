@@ -7,6 +7,7 @@ import {
   ClientBuyerPersona,
   ContentRequest,
   OperationalContentRule,
+  TeamDailyCapacity,
   PlannerDraft,
   RequestBatch,
   ReferenceFile,
@@ -19,10 +20,15 @@ import {
   isVideoFile,
   estimateRequestCost,
   getDeliveryRisk,
+  getCapacityTone,
+  getOperationalPlan,
+  addBusinessDays,
+  subtractBusinessDays,
   listUniqueBrands,
   listPlannerDrafts, deletePlannerDraft,
   listClientOperationalOverrides,
   listOperationalContentRules,
+  listTeamDailyCapacities,
   listRequestBatches,
   listRequests,
   objectives,
@@ -41,6 +47,9 @@ export default function CreatorPage(){
   const [batches,setBatches]=useState<RequestBatch[]>([]);
   const [costRules,setCostRules]=useState<OperationalContentRule[]>([]);
   const [clientOverrides,setClientOverrides]=useState<ClientOperationalOverride[]>([]);
+  const [teamCapacities,setTeamCapacities]=useState<TeamDailyCapacity[]>([]);
+  const [forceReason,setForceReason]=useState("");
+  const [forceNotes,setForceNotes]=useState("");
   const [currentDraftId,setCurrentDraftId]=useState("");
   const [draftName,setDraftName]=useState("");
   const [batchDueDate,setBatchDueDate]=useState("");
@@ -62,13 +71,14 @@ export default function CreatorPage(){
   const [must,setMust]=useState("CTA claro, alineado al tono de marca y sin contenido de relleno.");
 
   async function load(){
-    const [loadedBrands, loadedRequests, loadedDrafts, loadedBatches, loadedRules, loadedOverrides] = await Promise.all([
+    const [loadedBrands, loadedRequests, loadedDrafts, loadedBatches, loadedRules, loadedOverrides, loadedCapacities] = await Promise.all([
       listUniqueBrands(),
       listRequests(),
       listPlannerDrafts(),
       listRequestBatches(),
       listOperationalContentRules(),
-      listClientOperationalOverrides()
+      listClientOperationalOverrides(),
+      listTeamDailyCapacities()
     ]);
     setBrands(loadedBrands);
     setRequests(loadedRequests);
@@ -76,6 +86,7 @@ export default function CreatorPage(){
     setBatches(loadedBatches);
     setCostRules(loadedRules);
     setClientOverrides(loadedOverrides);
+    setTeamCapacities(loadedCapacities);
     if(!clientId && loadedBrands[0]?.id){
       setClientId(loadedBrands[0].id);
       if(!draftName)setDraftName(`${loadedBrands[0].name} · Creado ${new Date().toLocaleDateString("es-MX", { day:"2-digit", month:"2-digit", year:"numeric" })}`);
@@ -91,16 +102,8 @@ export default function CreatorPage(){
     return [...saved, ...items].filter(x=>getRequestDate(x));
   },[client?.id, requests, items]);
 
-  const operationalSummary = useMemo(()=>{
-    const costs = items.map(item=>estimateRequestCost(item,costRules,clientOverrides));
-    const totalCost = costs.reduce((sum,row)=>sum+row.totalCost,0);
-    const totalHours = costs.reduce((sum,row)=>sum+row.editingHours,0);
-    const riskCount = items.filter(item=>{
-      const cost = estimateRequestCost(item,costRules,clientOverrides);
-      return getDeliveryRisk(item.publishDate,cost.deliveryDays).tone === "bad";
-    }).length;
-    return {totalCost,totalHours,riskCount};
-  },[items,costRules,clientOverrides]);
+  const planningSummary = useMemo(()=>buildPlanningSummary(items, requests, costRules, clientOverrides, teamCapacities),[items,requests,costRules,clientOverrides,teamCapacities]);
+  const operationalSummary = planningSummary;
 
   function split(v:string){return v.split(",").map(x=>x.trim()).filter(Boolean)}
   function addDays(date:string, days:number){
@@ -162,15 +165,22 @@ export default function CreatorPage(){
   }
 
   function hydrate(req: ContentRequest, source:string): ContentRequest{
+    const base = { ...req, clientId: client?.id || "", clientName: client?.name || "", batchDueDate };
+    const plan = getOperationalPlan(base, costRules, clientOverrides);
+    const risk = getDeliveryRisk(plan.clientDueDate, plan.deliveryDays);
     return {
-      ...req,
-      clientId: client?.id || "",
-      clientName: client?.name || "",
+      ...base,
       total: items.length + 1,
       number: items.length + 1,
       status: req.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
-      batchDueDate,
-      dueDate: req.dueDate || suggestOperationalDueDate(req.publishDate, estimateRequestCost({...req,clientId: client?.id || ""}, costRules, clientOverrides).deliveryDays) || batchDueDate,
+      clientDueDate: plan.clientDueDate,
+      internalDueDate: plan.internalDueDate,
+      productionDueDate: req.requiresProduction ? plan.productionDueDate : "",
+      dueDate: req.dueDate || plan.internalDueDate || batchDueDate,
+      operationalCost: plan.totalCost,
+      operationalHours: plan.editingHours,
+      operationalWeight: plan.operationalWeight,
+      operationalRisk: risk.tone === "bad" ? "red" : risk.tone === "mid" ? "yellow" : "green",
       source
     };
   }
@@ -397,9 +407,17 @@ export default function CreatorPage(){
     }
     const next=[...items];
     const updated = {...next[index],[k]:v};
-    if(k==="contentType" || k==="publishDate" || k==="requiresProduction"){
-      const cost = estimateRequestCost(updated,costRules,clientOverrides);
-      updated.dueDate = suggestOperationalDueDate(updated.publishDate,cost.deliveryDays) || updated.dueDate;
+    if(k==="contentType" || k==="publishDate" || k==="requiresProduction" || k==="batchDueDate"){
+      const plan = getOperationalPlan(updated,costRules,clientOverrides);
+      const risk = getDeliveryRisk(plan.clientDueDate,plan.deliveryDays);
+      updated.clientDueDate = plan.clientDueDate;
+      updated.internalDueDate = plan.internalDueDate;
+      updated.productionDueDate = updated.requiresProduction ? plan.productionDueDate : "";
+      updated.dueDate = plan.internalDueDate || updated.dueDate;
+      updated.operationalCost = plan.totalCost;
+      updated.operationalHours = plan.editingHours;
+      updated.operationalWeight = plan.operationalWeight;
+      updated.operationalRisk = risk.tone === "bad" ? "red" : risk.tone === "mid" ? "yellow" : "green";
     }
     next[index]=updated;
     if(k==="requiresProduction"){
@@ -491,14 +509,39 @@ export default function CreatorPage(){
     const weekendItem = items.find(item=>item.publishDate && isWeekendDate(item.publishDate));
     if(weekendItem)return alert("Hay una solicitud con fecha en sábado o domingo. Ajusta las fechas antes de enviar el lote.");
     if(!validateBatch())return;
+    if(planningSummary.riskTone === "red" && !forceReason){
+      return alert("La fecha no es viable con la carga o tiempos actuales. Elige una fecha viable o agrega justificación para forzarla.");
+    }
     setBusy(true);
     try{
-      await saveRequestBatch({name,clientId:client.id,clientName:client.name,totalRequests:items.length,status:"sent_to_assignment",batchDueDate},items.map((x,i)=>({...x,number:i+1,total:items.length,batchDueDate,dueDate:x.dueDate||batchDueDate})));
+      await saveRequestBatch({name,clientId:client.id,clientName:client.name,totalRequests:items.length,status:"sent_to_assignment",batchDueDate},items.map((x,i)=>{
+        const plan = getOperationalPlan({...x,batchDueDate},costRules,clientOverrides);
+        const risk = getDeliveryRisk(plan.clientDueDate,plan.deliveryDays);
+        return {
+          ...x,
+          number:i+1,
+          total:items.length,
+          batchDueDate,
+          clientDueDate: plan.clientDueDate,
+          internalDueDate: plan.internalDueDate,
+          productionDueDate: x.requiresProduction ? plan.productionDueDate : "",
+          dueDate: x.dueDate || plan.internalDueDate || batchDueDate,
+          operationalCost: plan.totalCost,
+          operationalHours: plan.editingHours,
+          operationalWeight: plan.operationalWeight,
+          operationalRisk: risk.tone === "bad" || planningSummary.riskTone === "red" ? "red" : risk.tone === "mid" ? "yellow" : "green",
+          forcedDate: planningSummary.riskTone === "red",
+          forcedDateReason: planningSummary.riskTone === "red" ? forceReason : "",
+          forcedDateNotes: planningSummary.riskTone === "red" ? forceNotes : ""
+        };
+      }));
       if(currentDraftId)await updatePlannerDraft(currentDraftId,{status:"sent_to_assignment",batchDueDate,items:items.map(x=>({...x,batchDueDate,dueDate:x.dueDate||batchDueDate}))});
       setItems([]);
       setCurrentDraftId("");
       setExpandedItemIndex(null);
       setDraftName("");
+      setForceReason("");
+      setForceNotes("");
       await load();
       alert("Lote aprobado y enviado a Asignación");
     }finally{setBusy(false)}
@@ -530,7 +573,7 @@ export default function CreatorPage(){
     </div>
 
     <section className="grid kpis">
-      {[["Cliente",client?.name||"Sin cliente"],["En lote",String(items.length)],["Costo estimado",money(operationalSummary.totalCost)],["Horas edición",`${operationalSummary.totalHours} h`],["Riesgo tiempo",String(operationalSummary.riskCount)],["Límite lote",batchDueDate||"Sin fecha"]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Cliente",client?.name||"Sin cliente"],["En lote",String(items.length)],["Costo solicitud",money(operationalSummary.totalCost)],["Unidades",`${operationalSummary.totalWeight} u`],["Fecha viable",operationalSummary.viableDate||"Sin fecha"],["Semáforo",operationalSummary.riskLabel]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
     <div className="batch-bar">
@@ -547,11 +590,11 @@ export default function CreatorPage(){
       <button className="btn red" onClick={newDraft}>Nuevo</button>
     </div>
 
-    <div className={`operational-alert ${operationalSummary.riskCount>0?"risk":"ok"}`}>
-      {operationalSummary.riskCount>0
-        ? `${operationalSummary.riskCount} solicitud(es) tienen una fecha demasiado cercana para el tiempo estándar configurado.`
-        : "Las solicitudes del lote cumplen los tiempos configurados."}
-      <span> Configura costos y tiempos en Configuración → Configuración operativa.</span>
+    <div className={`operational-alert ${operationalSummary.riskTone==="red"?"risk":"ok"}`}>
+      {operationalSummary.riskTone==="red"
+        ? `Fecha en riesgo: ${operationalSummary.riskReason}`
+        : "La solicitud cabe con los tiempos y capacidad configurada."}
+      <span> Configura costos, tiempos y capacidad diaria en Configuración.</span>
     </div>
 
     <section className="grid two-col creator-layout">
@@ -654,7 +697,8 @@ export default function CreatorPage(){
         </div>
       </div>
 
-      <aside className="grid">
+      <aside className="grid creator-planning-sidebar">
+        <PlanningSummaryCard summary={planningSummary} forceReason={forceReason} forceNotes={forceNotes} setForceReason={setForceReason} setForceNotes={setForceNotes}/>
         <div className="card">
           <h3>Borradores guardados</h3>
           <div className="draft-list">
@@ -690,6 +734,90 @@ export default function CreatorPage(){
 
     {preview && <PreviewModal file={preview} onClose={()=>setPreview(null)}/>}
   </AppShell>
+}
+
+
+type PlanningSummary = ReturnType<typeof buildPlanningSummary>;
+
+function buildPlanningSummary(items:ContentRequest[], existing:ContentRequest[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[], capacities:TeamDailyCapacity[]){
+  const planned = items.map((item)=>({item, plan:getOperationalPlan(item,rules,overrides), risk:getDeliveryRisk((item.publishDate||item.batchDueDate||item.clientDueDate||""), getOperationalPlan(item,rules,overrides).deliveryDays)}));
+  const totalCost = planned.reduce((sum,row)=>sum+row.plan.totalCost,0);
+  const totalHours = planned.reduce((sum,row)=>sum+row.plan.editingHours,0);
+  const totalWeight = planned.reduce((sum,row)=>sum+row.plan.operationalWeight,0);
+  const byArea:Record<string,{count:number;weight:number;cost:number}> = {};
+  planned.forEach(({item,plan})=>{
+    const area = item.suggestedArea || plan.rule.area || "Sin área";
+    byArea[area] = byArea[area] || {count:0,weight:0,cost:0};
+    byArea[area].count += 1;
+    byArea[area].weight += plan.operationalWeight;
+    byArea[area].cost += plan.totalCost;
+  });
+  const productionItems = planned.filter(({item})=>item.requiresProduction);
+  const productionDueDates = productionItems.map(({plan})=>plan.productionDueDate).filter(Boolean).sort();
+  const internalDates = planned.map(({plan})=>plan.internalDueDate).filter(Boolean).sort();
+  const clientDates = planned.map(({plan})=>plan.clientDueDate).filter(Boolean).sort();
+  const earliestInternalDue = internalDates[0] || "";
+  const latestClientDue = clientDates[clientDates.length-1] || "";
+  const maxDeliveryDays = Math.max(0,...planned.map(({plan,item})=>Number(plan.deliveryDays || 0) + (item.requiresProduction ? Math.max(1,Math.ceil(Number(plan.bufferHours||8)/8)) : 0)));
+  const minimumViableDate = addBusinessDays(new Date().toISOString().slice(0,10), maxDeliveryDays);
+  const requestedTooSoon = clientDates.some(date=>date && date < minimumViableDate);
+
+  const areaCapacity:Record<string,number> = {};
+  capacities.filter(x=>x.active!==false).forEach(cap=>{areaCapacity[cap.area]=(areaCapacity[cap.area]||0)+Number(cap.dailyCapacityUnits||5);});
+  const areaLoadToday:Record<string,number> = {};
+  existing.filter(task=>!["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","finalizada","cancelada","eliminada"].includes(task.status||"")).forEach(task=>{
+    const plan = getOperationalPlan(task,rules,overrides);
+    const area = task.assignedArea || task.suggestedArea || plan.rule.area || "Sin área";
+    const date = task.plannedWorkDate || task.dueDate || task.internalDueDate || "";
+    if(date && date <= earliestInternalDue){
+      areaLoadToday[area] = (areaLoadToday[area]||0) + Number(task.operationalWeight || plan.operationalWeight || 1);
+    }
+  });
+  const areaWarnings = Object.entries(byArea).map(([area,row])=>{
+    const cap = areaCapacity[area] || 5;
+    const projected = row.weight + (areaLoadToday[area] || 0);
+    const tone = getCapacityTone(projected, Math.max(cap,1));
+    return {area,...row,capacity:cap,projected,tone:tone.tone,label:tone.label};
+  });
+  const overload = areaWarnings.some(row=>row.tone === "red" || row.tone === "orange");
+  const riskTone = !items.length ? "green" : (requestedTooSoon || overload ? "red" : planned.some(row=>row.risk.tone==="mid") ? "yellow" : "green");
+  const viableDate = requestedTooSoon ? minimumViableDate : latestClientDue;
+  const riskReason = requestedTooSoon ? `la primera fecha viable por tiempos configurados es ${minimumViableDate}` : overload ? "la carga por área supera la capacidad disponible" : "sin riesgo crítico";
+  return {
+    totalCost,totalHours,totalWeight:Number(totalWeight.toFixed(1)),byArea,productionCount:productionItems.length,
+    productionDueDate:productionDueDates[0] || "",earliestInternalDue,latestClientDue,viableDate,
+    riskTone,riskLabel:riskTone==="red"?"Rojo":riskTone==="yellow"?"Amarillo":"Verde",riskReason,areaWarnings,riskCount: planned.filter(row=>row.risk.tone==="bad").length
+  };
+}
+
+function PlanningSummaryCard({summary,forceReason,forceNotes,setForceReason,setForceNotes}:{summary:PlanningSummary;forceReason:string;forceNotes:string;setForceReason:(v:string)=>void;setForceNotes:(v:string)=>void}){
+  return <div className={`card planning-summary-card ${summary.riskTone}`}>
+    <div className="planning-summary-head">
+      <div><p className="eyebrow">Planeación viva</p><h3>Viabilidad de solicitud</h3></div>
+      <span className={`pill ${summary.riskTone === "red" ? "red" : summary.riskTone === "yellow" ? "yellow" : "green"}`}>{summary.riskLabel}</span>
+    </div>
+    <div className="planning-metrics-grid">
+      <div><span>Costo solicitud</span><strong>{money(summary.totalCost)}</strong></div>
+      <div><span>Horas estimadas</span><strong>{summary.totalHours} h</strong></div>
+      <div><span>Unidades</span><strong>{summary.totalWeight}</strong></div>
+      <div><span>Fecha viable</span><strong>{summary.viableDate || "Sin fecha"}</strong></div>
+      <div><span>Entrega interna</span><strong>{summary.earliestInternalDue || "Sin fecha"}</strong></div>
+      <div><span>Máx. producción</span><strong>{summary.productionDueDate || "No aplica"}</strong></div>
+    </div>
+    <div className="planning-area-list">
+      <strong>Carga por área</strong>
+      {summary.areaWarnings.map(row=><div className="planning-area-row" key={row.area}>
+        <span>{row.area}</span><small>{row.count} pieza(s) · {row.weight.toFixed(1)} u</small><b className={`capacity-dot ${row.tone}`}>{row.projected.toFixed(1)} / {row.capacity}</b>
+      </div>)}
+      {!summary.areaWarnings.length && <p className="mini">Agrega contenidos para calcular carga.</p>}
+    </div>
+    <p className="mini">{summary.riskTone === "red" ? `Riesgo: ${summary.riskReason}.` : "La fecha se calcula con tiempos por contenido, producción requerida y capacidad diaria configurada."}</p>
+    {summary.riskTone === "red" && <div className="force-date-box">
+      <h4>Forzar fecha con justificación</h4>
+      <div className="field"><label>Motivo</label><select value={forceReason} onChange={e=>setForceReason(e.target.value)}><option value="">Selecciona motivo...</option><option>Cliente urgente</option><option>Campaña pagada activa</option><option>Solicitud de dirección</option><option>Contenido prioritario</option><option>Otro</option></select></div>
+      <div className="field"><label>Notas</label><textarea value={forceNotes} onChange={e=>setForceNotes(e.target.value)} placeholder="Explica por qué se acepta el riesgo operativo."/></div>
+    </div>}
+  </div>;
 }
 
 function RequestForm({request,buyerPersonas,onPersonaChange,onChange,onUpload,onPreview,onImprove,improving,onRemove}:{request:ContentRequest;buyerPersonas:ClientBuyerPersona[];onPersonaChange:(persona?:ClientBuyerPersona)=>void;onChange:(k:keyof ContentRequest,v:any)=>void;onUpload:(kind:"reference",files:FileList|null)=>void;onPreview:(file:ReferenceFile)=>void;onImprove:()=>void;improving:boolean;onRemove:(kind:"reference",index:number)=>void;}){
