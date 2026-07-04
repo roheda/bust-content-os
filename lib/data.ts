@@ -368,6 +368,8 @@ export type GenerationRequest = {
   requestAttachments?: any[];
   logoOverlay?: any;
   generatedPrompt?: string;
+  referenceGeneratedPrompt?: string;
+  editableGeneratedPrompt?: string;
   executedModel?: string;
   generationMode?: string;
   textRenderMode?: "ai-text" | "editable-layers" | "dual-output";
