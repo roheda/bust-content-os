@@ -565,8 +565,10 @@ export default function GenerationRequestPage() {
   }
 
   async function downloadEditedTextImage(imageIndex = selectedImageIndex) {
+    if (!request) return alert("Primero espera a que cargue el brief.");
     const image = generatedImages[imageIndex];
     if (!image) return alert("Primero genera una imagen.");
+    const downloadClientName = request.clientName || "BUST-It-Now";
     setDownloadTextLoading(true);
     setError("");
     try {
@@ -614,7 +616,7 @@ export default function GenerationRequestPage() {
         });
       }
       const link = document.createElement("a");
-      link.download = `${request.clientName}-variante-${imageIndex + 1}-texto-editable.png`;
+      link.download = `${downloadClientName}-variante-${imageIndex + 1}-texto-editable.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
     } catch (err) {
