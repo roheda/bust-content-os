@@ -489,9 +489,9 @@ export default function GenerationRequestPage() {
   function buildPromptForMode(mode: "ai-text" | "editable-layers") {
     if (!request) return "";
     return buildGenerationPrompt({
-      clientName: request.clientName,
+      clientName: currentRequest.clientName,
       clientIndustry: request.clientIndustry,
-      format: request.format,
+      format: currentRequest.format,
       goal: request.goal,
       contentType: request.contentType,
       textRenderMode: mode,
@@ -544,7 +544,8 @@ export default function GenerationRequestPage() {
 
   async function generateImages() {
     if (!request) return;
-    const outputMode = (request as any).textRenderMode === "dual-output" ? "dual-output" : (request as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
+    const currentRequest = request;
+    const outputMode = (currentRequest as any).textRenderMode === "dual-output" ? "dual-output" : (currentRequest as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
     const outputMultiplier = outputMode === "dual-output" ? 2 : 1;
     const generatedCount = variantCount * outputMultiplier;
     if (aiBillingBalance && aiBillingBalance.includedAiGenerations > 0) {
@@ -571,8 +572,8 @@ export default function GenerationRequestPage() {
         enabled: logoOverlay.enabled && Boolean(logoOverlay.fileUrl)
       };
 
-      const referencePrompt = (request as any).referenceGeneratedPrompt || request.generatedPrompt || buildPromptForMode("ai-text");
-      const editablePrompt = (request as any).editableGeneratedPrompt || buildPromptForMode("editable-layers");
+      const referencePrompt = (currentRequest as any).referenceGeneratedPrompt || currentRequest.generatedPrompt || buildPromptForMode("ai-text");
+      const editablePrompt = (currentRequest as any).editableGeneratedPrompt || buildPromptForMode("editable-layers");
 
       await updateGenerationRequest(requestId, {
         status: "generating",
@@ -595,7 +596,7 @@ export default function GenerationRequestPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt: mode === "editable-layers" ? editablePrompt : referencePrompt,
-            format: request.format,
+            format: currentRequest.format,
             model: selectedModel,
             variantCount,
             referenceImages,
@@ -629,8 +630,8 @@ export default function GenerationRequestPage() {
           const stored = await uploadGeneratedImageDataUrl(requestId, dataUrl, label);
           const ref: any = await saveGeneratedImageRecord({
             requestId,
-            clientId: request.clientId,
-            clientName: request.clientName,
+            clientId: currentRequest.clientId,
+            clientName: currentRequest.clientName,
             imageUrl: stored.imageUrl,
             storagePath: stored.storagePath,
             originalImageUrl: stored.imageUrl,
