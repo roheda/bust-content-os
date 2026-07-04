@@ -224,12 +224,16 @@ function buildTextBlocksText(data: BuildPromptInput, textRenderMode: "ai-text" |
   return legacyBlocks.length ? legacyBlocks.join("\n") : "No required in-image text blocks were specified.";
 }
 
-function buildVisualElementsText(data: BuildPromptInput) {
+function buildVisualElementsText(data: BuildPromptInput, textRenderMode: "ai-text" | "editable-layers" = "ai-text") {
   const blocks = getOfficialTextBlocks(data);
   const omitted: string[] = [];
   const filteredElements = (data.selectedVisualElements || []).filter((element) => {
     const normalized = normalizeText(element);
     if (normalized.includes("logo")) {
+      omitted.push(element);
+      return false;
+    }
+    if (textRenderMode === "editable-layers" && (normalized === "fecha" || normalized === "precio" || normalized === "cta" || normalized.includes("call to action") || normalized.includes("texto"))) {
       omitted.push(element);
       return false;
     }
@@ -278,7 +282,7 @@ export function buildGenerationPrompt(data: BuildPromptInput) {
     : "No general brand visual assets selected.";
 
   const textBlocksText = buildTextBlocksText(data, textRenderMode);
-  const visualElementsText = buildVisualElementsText(data);
+  const visualElementsText = buildVisualElementsText(data, textRenderMode);
   const cleanDos = cleanRules(data.brandBrainSnapshot?.dos, true);
   const cleanDonts = cleanRules(data.brandBrainSnapshot?.donts, false);
   const dos = cleanDos.length ? cleanDos.join("; ") : "Keep the communication aligned with the brand and make the main message easy to read.";
@@ -295,7 +299,8 @@ PROJECT CONTEXT
 - Content type: ${data.contentType || "general content"}
 
 MAIN COMMUNICATION
-- Main message: ${data.mainMessage || ""}
+${textRenderMode === "editable-layers" ? `- Strategic message for composition only: ${data.mainMessage || ""}
+- IMPORTANT: Do not render, write, imitate, trace, or approximate any words from this message inside the image. Use it only to understand the scene, mood, hierarchy, and empty areas needed for editable text layers.` : `- Main message: ${data.mainMessage || ""}`}
 
 ${textRenderMode === "editable-layers" ? "TEXT LAYERS FOR THE POST-EDITOR" : "TEXT BLOCKS TO USE IN THE DESIGN"}
 ${textRenderMode === "editable-layers" ? "These are the official text layers for this piece. The generated image must NOT include readable text. Use these layers only as a composition map: reserve clean spaces, contrast, hierarchy, and areas where BUST It Now will place editable text later with real fonts." : "These are the official text blocks for this piece. Treat them as flexible design elements, not as a fixed template. Arrange them dynamically according to role, priority, and visual hierarchy."}
@@ -341,10 +346,13 @@ ART DIRECTION RULES
 - Avoid random decorative clutter that does not reinforce the message.
 
 TEXT RULES
-${textRenderMode === "editable-layers" ? `- Do NOT place readable text, letters, numbers, fake text, typography names, CTAs, dates, prices, legal disclaimers, logos, or brand-name lockups inside the generated image.
+${textRenderMode === "editable-layers" ? `- ABSOLUTE EMPTY-TEXT MODE: Do NOT place readable text, letters, numbers, fake text, placeholder copy, typography names, CTAs, dates, prices, legal disclaimers, logos, brand-name lockups, or any text-like marks inside the generated image.
+- Never write generic placeholder labels such as "CTA", "CTA NOW", "SALE", "PROMO", "CLICK HERE", "TITLE", "HEADLINE", "TEXT", "DATE", "PRICE", "LOGO", "Lorem ipsum", or any invented words.
+- If the composition needs a call-to-action area, create only a blank visual container/button shape with no words, no letters, and no symbols inside it.
 - Create a polished text-free base composition with intentional empty/clean areas for the post-editor layers listed above.
 - The text layers are real content that BUST It Now will place after image generation using editable typography.
-- Avoid text-like marks or gibberish. Background signs, screens, labels, or mock headlines must be removed or abstracted.` : `- Use only the official text blocks listed above when placing text inside the image.
+- Avoid text-like marks or gibberish. Background signs, screens, labels, or mock headlines must be removed or abstracted.
+- The final image must look like an elegant blank advertising layout ready for text overlay, not like a finished ad with placeholder text.` : `- Use only the official text blocks listed above when placing text inside the image.
 - Do not force every block to appear at the same size; use hierarchy based on priority.
 - Do not invent extra words, numbers, dates, product names, or claims.
 - Do not include a date unless there is an official text block with role date.
@@ -361,7 +369,7 @@ BRAND SAFETY RULES
 - Do not create false product details that are not supported by the brief or attachments.
 
 OUTPUT RULES
-- Produce a finished, high-quality social media advertising image${textRenderMode === "editable-layers" ? " base without any readable text" : ""}.
+- Produce a finished, high-quality social media advertising image${textRenderMode === "editable-layers" ? " base without any readable text, no placeholder CTA text, and no invented copy" : ""}.
 - Match the selected format and aspect ratio.
 - Avoid bland stock-template aesthetics.
 - Avoid clutter, low contrast, weak hierarchy, or overly flat compositions.
