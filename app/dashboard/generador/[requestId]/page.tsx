@@ -126,6 +126,14 @@ function fontFormatFromUrl(url?: string, mimeType?: string) {
   return "opentype";
 }
 
+function proxiedFontUrl(asset: ClientAsset) {
+  if (!asset.fileUrl) return "";
+  const direct = String(asset.fileUrl);
+  if (direct.startsWith("/api/font-proxy")) return direct;
+  if (direct.startsWith("/")) return direct;
+  return `/api/font-proxy?url=${encodeURIComponent(direct)}&name=${encodeURIComponent(asset.name || (asset as any).originalFileName || "font")}`;
+}
+
 function fontAssetStyleId(asset: ClientAsset) {
   return `bust-font-${String(asset.id || fontFamilyFromAsset(asset)).replace(/[^a-z0-9_-]+/gi, "-")}`;
 }
@@ -336,6 +344,7 @@ export default function GenerationRequestPage() {
       await Promise.all(fontAssets.map(async (asset) => {
         if (!asset.fileUrl) return;
         const family = fontFamilyFromAsset(asset);
+        const fontUrl = proxiedFontUrl(asset);
         setFontLoadStatus((current) => ({ ...current, [family]: "loading" }));
         try {
           const existing = Array.from(document.fonts).some((fontFace) => fontFace.family.replace(/["']/g, "") === family);
@@ -344,10 +353,10 @@ export default function GenerationRequestPage() {
             if (!document.getElementById(styleId)) {
               const style = document.createElement("style");
               style.id = styleId;
-              style.textContent = `@font-face{font-family:${quoteFontFamily(family)};src:url("${asset.fileUrl}") format("${fontFormatFromUrl(asset.fileUrl, asset.mimeType)}");font-weight:100 900;font-style:normal;font-display:swap;}`;
+              style.textContent = `@font-face{font-family:${quoteFontFamily(family)};src:url("${fontUrl}") format("${fontFormatFromUrl(asset.fileUrl, asset.mimeType)}");font-weight:100 900;font-style:normal;font-display:swap;}`;
               document.head.appendChild(style);
             }
-            const fontFace = new FontFace(family, `url("${asset.fileUrl}")`);
+            const fontFace = new FontFace(family, `url("${fontUrl}")`);
             const loaded = await fontFace.load();
             if (!cancelled) document.fonts.add(loaded);
           }
