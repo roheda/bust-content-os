@@ -146,6 +146,49 @@ function fontAssetStyleId(asset: ClientAsset) {
   return `bust-font-${String(asset.id || fontFamilyFromAsset(asset)).replace(/[^a-z0-9_-]+/gi, "-")}`;
 }
 
+function normalizeHexColor(value: string) {
+  const source = String(value || "").trim();
+  const match = source.match(/#([0-9a-f]{3}|[0-9a-f]{6})\b/i);
+  if (!match) return "";
+  const raw = match[1];
+  if (raw.length === 3) return `#${raw.split("").map((char) => `${char}${char}`).join("")}`.toUpperCase();
+  return `#${raw}`.toUpperCase();
+}
+
+function colorNameToHex(value: string) {
+  const source = String(value || "").toLowerCase();
+  const colorMap: Record<string, string> = {
+    blanco: "#FFFFFF", white: "#FFFFFF",
+    negro: "#000000", black: "#000000",
+    naranja: "#F97316", orange: "#F97316",
+    amarillo: "#FACC15", yellow: "#FACC15",
+    rojo: "#EF4444", red: "#EF4444",
+    azul: "#2563EB", blue: "#2563EB",
+    verde: "#22C55E", green: "#22C55E",
+    morado: "#7C3AED", purple: "#7C3AED",
+    rosa: "#EC4899", pink: "#EC4899",
+    gris: "#6B7280", gray: "#6B7280", grey: "#6B7280",
+    beige: "#EDEAE6", crema: "#F5F0E6", cream: "#F5F0E6",
+  };
+  return Object.entries(colorMap).find(([name]) => source.includes(name))?.[1] || "";
+}
+
+function extractBrandColors(...sources: any[]) {
+  const values = sources.flatMap((source) => {
+    if (!source) return [];
+    if (Array.isArray(source)) return source;
+    return String(source).split(/[\n,;/|]+/g);
+  });
+  const colors: { label: string; value: string }[] = [];
+  values.forEach((raw) => {
+    const label = String(raw || "").trim();
+    const value = normalizeHexColor(label) || colorNameToHex(label);
+    if (!value || colors.some((item) => item.value === value)) return;
+    colors.push({ label: label || value, value });
+  });
+  return colors;
+}
+
 function getAssetCategory(asset: ClientAsset) {
   if (isLogo(asset)) return "Logos";
   if (isTextAsset(asset)) return "Textos";
@@ -341,6 +384,12 @@ export default function GenerationRequestPage() {
     { label: "Arial / sistema", family: "Arial" },
     ...fontAssets.map((asset) => ({ label: asset.name || (asset as any).originalFileName || "Fuente", family: fontFamilyFromAsset(asset) }))
   ], [fontAssets]);
+
+  const brandColorOptions = useMemo(() => extractBrandColors(
+    request?.brandBrainSnapshot?.colors,
+    client?.brandBrain?.colors,
+    (client as any)?.colors
+  ), [request, client]);
 
   useEffect(() => { load(); }, [requestId]);
 
@@ -969,6 +1018,7 @@ export default function GenerationRequestPage() {
               <div className="rounded-[1.7rem] border border-emerald-200 bg-emerald-50 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Tipografías del cliente</p>
                 <p className="mt-2 text-sm leading-6 text-emerald-900">{fontAssets.length ? `${fontAssets.length} fuente(s) cargada(s) desde Assets.` : "No hay fuentes cargadas. Puedes subir OTF/TTF/WOFF en Clientes → Assets."}</p>
+                <p className="mt-2 text-xs font-semibold text-emerald-800">{brandColorOptions.length ? `${brandColorOptions.length} color(es) de marca disponibles para texto y fondo.` : "Agrega colores HEX en Brand Brain para activar paleta rápida."}</p>
                 {client?.id ? <Link href={`/dashboard/clientes/${client.id}/assets`} className="mt-3 inline-flex rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-800">Abrir Assets</Link> : null}
               </div>
               <div className="rounded-[1.7rem] border border-zinc-200 bg-zinc-50 p-5">
@@ -1000,6 +1050,42 @@ export default function GenerationRequestPage() {
                       <label className="text-xs font-semibold text-zinc-600">Color<input type="color" value={layer.color} onChange={(event) => updateTextLayer(layer.id, { color: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-white" /></label>
                       <label className="text-xs font-semibold text-zinc-600">Fondo<input type="color" value={layer.backgroundColor} onChange={(event) => updateTextLayer(layer.id, { backgroundColor: event.target.value })} className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-white" /></label>
                     </div>
+                    {brandColorOptions.length ? (
+                      <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
+                        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">Colores de marca</p>
+                        <div className="mt-2 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="w-12 text-[11px] font-bold text-zinc-500">Texto</span>
+                            {brandColorOptions.map((color) => (
+                              <button
+                                key={`${layer.id}-text-${color.value}`}
+                                type="button"
+                                title={`Aplicar al texto: ${color.label}`}
+                                aria-label={`Aplicar ${color.value} al texto`}
+                                onClick={() => updateTextLayer(layer.id, { color: color.value })}
+                                className={`h-8 w-8 rounded-full border shadow-sm transition hover:scale-105 ${layer.color.toUpperCase() === color.value ? "ring-2 ring-zinc-950 ring-offset-2" : "border-zinc-200"}`}
+                                style={{ backgroundColor: color.value }}
+                              />
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="w-12 text-[11px] font-bold text-zinc-500">Fondo</span>
+                            {brandColorOptions.map((color) => (
+                              <button
+                                key={`${layer.id}-bg-${color.value}`}
+                                type="button"
+                                title={`Aplicar al fondo: ${color.label}`}
+                                aria-label={`Aplicar ${color.value} al fondo`}
+                                onClick={() => updateTextLayer(layer.id, { backgroundColor: color.value, backgroundEnabled: true })}
+                                className={`h-8 w-8 rounded-full border shadow-sm transition hover:scale-105 ${layer.backgroundEnabled && layer.backgroundColor.toUpperCase() === color.value ? "ring-2 ring-zinc-950 ring-offset-2" : "border-zinc-200"}`}
+                                style={{ backgroundColor: color.value }}
+                              />
+                            ))}
+                            <button type="button" onClick={() => updateTextLayer(layer.id, { backgroundEnabled: false })} className="h-8 rounded-full border border-zinc-200 bg-white px-3 text-[11px] font-bold text-zinc-600">Sin fondo</button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="mt-3 grid grid-cols-3 gap-2">
                       {(["left","center","right"] as const).map((align) => <button key={align} type="button" onClick={() => updateTextLayer(layer.id, { align })} className={`rounded-xl border px-2 py-2 text-xs font-semibold ${layer.align === align ? "border-zinc-950 bg-zinc-950 text-white" : "border-zinc-200 bg-white text-zinc-700"}`}>{align}</button>)}
                     </div>
