@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
 import {
   Brand,
   ClientAsset,
@@ -35,6 +36,9 @@ type GeneratedLocalImage = {
   originalBase64?: string;
   finalBase64?: string;
   logoOverlayApplied?: boolean;
+  variantKind?: "reference-ai" | "editable-base" | "single";
+  variantLabel?: string;
+  variantPairIndex?: number;
 };
 
 type EditableTextLayer = {
@@ -331,16 +335,26 @@ export default function GenerationRequestPage() {
     setClient(brands.find((brand) => brand.id === found?.clientId) || null);
     const previousImages = generatedRecords
       .filter((record) => record.requestId === requestId)
-      .sort((a, b) => Number(a.variantIndex || 0) - Number(b.variantIndex || 0))
+      .sort((a, b) => {
+        const pairA = Number(a.variantPairIndex || a.variantIndex || 0);
+        const pairB = Number(b.variantPairIndex || b.variantIndex || 0);
+        if (pairA !== pairB) return pairA - pairB;
+        const order = (kind: string) => kind === "reference-ai" ? 0 : kind === "editable-base" ? 1 : 2;
+        return order(String(a.variantKind || "single")) - order(String(b.variantKind || "single"));
+      })
       .map((record) => {
         const original = record.originalImageUrl || record.originalImageDataUrl || record.imageUrl || record.imageDataUrl || "";
         const final = record.finalImageUrl || record.finalImageDataUrl || (record.logoOverlayApplied ? (record.imageUrl || record.imageDataUrl) : "");
+        const variantKind = record.variantKind || record.renderMode || "single";
         return {
           id: record.id,
           base64: cleanBase64(original),
           originalBase64: cleanBase64(original),
           finalBase64: final ? cleanBase64(final) : undefined,
-          logoOverlayApplied: Boolean(record.logoOverlayApplied)
+          logoOverlayApplied: Boolean(record.logoOverlayApplied),
+          variantKind,
+          variantLabel: record.variantLabel || (variantKind === "reference-ai" ? "Referencia IA" : variantKind === "editable-base" ? "Base editable" : `Variante ${record.variantIndex || ""}`),
+          variantPairIndex: Number(record.variantPairIndex || record.variantIndex || 0)
         };
       })
       .filter((image) => image.base64);
@@ -471,6 +485,34 @@ export default function GenerationRequestPage() {
     return "logotipo";
   }
 
+
+  function buildPromptForMode(mode: "ai-text" | "editable-layers") {
+    if (!request) return "";
+    return buildGenerationPrompt({
+      clientName: request.clientName,
+      clientIndustry: request.clientIndustry,
+      format: request.format,
+      goal: request.goal,
+      contentType: request.contentType,
+      textRenderMode: mode,
+      mainMessage: request.mainMessage,
+      textBlocks: (request as any).textBlocks || [],
+      selectedEmotions: request.selectedEmotions || [],
+      selectedVisualElements: request.selectedVisualElements || [],
+      specificInstructions: request.specificInstructions || "",
+      brandBrainSnapshot: request.brandBrainSnapshot as any,
+      selectedAssetsSnapshot: request.selectedAssetsSnapshot || [],
+      requestAttachments: (request as any).requestAttachments || [],
+      logoOverlay: request.logoOverlay || { enabled: false }
+    });
+  }
+
+  function getGenerationModeLabel(mode?: string) {
+    if (mode === "dual-output") return "Doble versión: referencia + editable";
+    if (mode === "editable-layers") return "Solo base editable";
+    return "Solo referencia con texto IA";
+  }
+
   function updateLogoOverlay(patch: Partial<LogoOverlayXY>) {
     setLogoOverlay((current) => ({ ...current, ...patch }));
   }
@@ -502,8 +544,11 @@ export default function GenerationRequestPage() {
 
   async function generateImages() {
     if (!request) return;
+    const outputMode = (request as any).textRenderMode === "dual-output" ? "dual-output" : (request as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
+    const outputMultiplier = outputMode === "dual-output" ? 2 : 1;
+    const generatedCount = variantCount * outputMultiplier;
     if (aiBillingBalance && aiBillingBalance.includedAiGenerations > 0) {
-      const projected = aiBillingBalance.aiGenerations + variantCount;
+      const projected = aiBillingBalance.aiGenerations + generatedCount;
       const exceeds = projected > aiBillingBalance.includedAiGenerations;
       if (exceeds && !aiBillingBalance.onDemandEnabled) {
         setError(`Este cliente tiene límite de ${aiBillingBalance.includedAiGenerations} generaciones IA al mes. Ya lleva ${aiBillingBalance.aiGenerations}. Activa cobro bajo demanda o aumenta el límite en Clientes.`);
@@ -526,70 +571,102 @@ export default function GenerationRequestPage() {
         enabled: logoOverlay.enabled && Boolean(logoOverlay.fileUrl)
       };
 
+      const referencePrompt = (request as any).referenceGeneratedPrompt || request.generatedPrompt || buildPromptForMode("ai-text");
+      const editablePrompt = (request as any).editableGeneratedPrompt || buildPromptForMode("editable-layers");
+
       await updateGenerationRequest(requestId, {
         status: "generating",
         executedModel: selectedModel,
         selectedAssetIds,
         selectedAssetsSnapshot: selectedAssets,
-        logoOverlay: nextLogoOverlay
+        logoOverlay: nextLogoOverlay,
+        referenceGeneratedPrompt: referencePrompt,
+        editableGeneratedPrompt: editablePrompt
       } as any);
 
-      const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: request.generatedPrompt,
-          format: request.format,
-          model: selectedModel,
-          variantCount,
-          referenceImages: [
-            ...requestAttachmentReferences,
-            ...visualReferences.map((asset) => ({ url: asset.fileUrl, name: asset.name }))
-          ],
-          logoOverlay: nextLogoOverlay
-        })
-      });
+      const referenceImages = [
+        ...requestAttachmentReferences,
+        ...visualReferences.map((asset) => ({ url: asset.fileUrl, name: asset.name }))
+      ];
 
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "No se pudo generar imagen.");
+      async function requestImages(mode: "ai-text" | "editable-layers") {
+        const response = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: mode === "editable-layers" ? editablePrompt : referencePrompt,
+            format: request.format,
+            model: selectedModel,
+            variantCount,
+            referenceImages,
+            logoOverlay: nextLogoOverlay
+          })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "No se pudo generar imagen.");
+        return payload;
+      }
+
+      const runs = outputMode === "dual-output"
+        ? [
+            { kind: "reference-ai" as const, label: "Referencia IA", payload: await requestImages("ai-text") },
+            { kind: "editable-base" as const, label: "Base editable", payload: await requestImages("editable-layers") }
+          ]
+        : [
+            { kind: outputMode === "editable-layers" ? "editable-base" as const : "single" as const, label: outputMode === "editable-layers" ? "Base editable" : "Referencia IA", payload: await requestImages(outputMode === "editable-layers" ? "editable-layers" : "ai-text") }
+          ];
 
       const images: GeneratedLocalImage[] = [];
+      let recordIndex = 0;
 
-      for (let index = 0; index < (payload.imagesBase64 || []).length; index++) {
-        const base64 = cleanBase64(payload.imagesBase64[index]);
-        const dataUrl = dataUrlFromBase64(base64);
-        const stored = await uploadGeneratedImageDataUrl(requestId, dataUrl, `variant-${index + 1}`);
-        const ref: any = await saveGeneratedImageRecord({
-          requestId,
-          clientId: request.clientId,
-          clientName: request.clientName,
-          imageUrl: stored.imageUrl,
-          storagePath: stored.storagePath,
-          originalImageUrl: stored.imageUrl,
-          originalStoragePath: stored.storagePath,
-          model: payload.executedModel || selectedModel,
-          variantIndex: index + 1,
-          logoOverlayApplied: false,
-          status: "generated"
-        } as any);
-        images.push({
-          id: ref?.id || `${Date.now()}-${index}`,
-          base64,
-          originalBase64: base64,
-          logoOverlayApplied: false
-        });
+      for (const run of runs) {
+        for (let index = 0; index < (run.payload.imagesBase64 || []).length; index++) {
+          recordIndex += 1;
+          const base64 = cleanBase64(run.payload.imagesBase64[index]);
+          const dataUrl = dataUrlFromBase64(base64);
+          const pairIndex = index + 1;
+          const label = outputMode === "dual-output" ? `variant-${pairIndex}-${run.kind}` : `variant-${pairIndex}`;
+          const stored = await uploadGeneratedImageDataUrl(requestId, dataUrl, label);
+          const ref: any = await saveGeneratedImageRecord({
+            requestId,
+            clientId: request.clientId,
+            clientName: request.clientName,
+            imageUrl: stored.imageUrl,
+            storagePath: stored.storagePath,
+            originalImageUrl: stored.imageUrl,
+            originalStoragePath: stored.storagePath,
+            model: run.payload.executedModel || selectedModel,
+            variantIndex: recordIndex,
+            variantPairIndex: pairIndex,
+            variantKind: run.kind,
+            variantLabel: run.label,
+            textRenderMode: outputMode,
+            logoOverlayApplied: false,
+            status: "generated"
+          } as any);
+          images.push({
+            id: ref?.id || `${Date.now()}-${recordIndex}`,
+            base64,
+            originalBase64: base64,
+            logoOverlayApplied: false,
+            variantKind: run.kind,
+            variantLabel: run.label,
+            variantPairIndex: pairIndex
+          });
+        }
       }
 
       setGeneratedImages(images);
       setSelectedImageIndex(0);
 
+      const firstPayload = runs[0]?.payload || {};
       await updateGenerationRequest(requestId, {
         status: "completed",
-        executedModel: payload.executedModel || selectedModel,
-        generationMode: payload.generationMode || "gemini"
+        executedModel: firstPayload.executedModel || selectedModel,
+        generationMode: outputMode === "dual-output" ? "dual-reference-editable" : firstPayload.generationMode || "gemini"
       } as any);
 
-      setSuccess("Imagen generada correctamente.");
+      setSuccess(outputMode === "dual-output" ? "Doble versión generada: referencia IA + base editable." : "Imagen generada correctamente.");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al generar.");
@@ -823,7 +900,7 @@ export default function GenerationRequestPage() {
                 <InfoBox label="Objetivo" value={request.goal} />
                 <InfoBox label="Formato" value={request.format} />
                 <InfoBox label="Tipo" value={request.contentType} />
-                <InfoBox label="Modo de texto" value={(request as any).textRenderMode === "editable-layers" ? "Texto editable por BUST It Now" : "IA escribe el texto"} />
+                <InfoBox label="Modo de salida" value={getGenerationModeLabel((request as any).textRenderMode)} />
                 <InfoBox label="Modelo actual" value={models.find((model) => model.id === selectedModel)?.label || selectedModel} />
               </div>
 
@@ -897,12 +974,12 @@ export default function GenerationRequestPage() {
                 {aiBillingBalance ? (
                   <div className={`mt-5 rounded-3xl border p-4 text-sm ${aiBillingBalance.includedAiGenerations && aiBillingBalance.aiGenerations + variantCount > aiBillingBalance.includedAiGenerations ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
                     <strong>Consumo IA del mes</strong>
-                    <p className="mt-1">{aiBillingBalance.aiGenerations}/{aiBillingBalance.includedAiGenerations || "sin límite"} generaciones usadas en {billingMonth}. Esta acción suma {variantCount}.</p>
+                    <p className="mt-1">{aiBillingBalance.aiGenerations}/{aiBillingBalance.includedAiGenerations || "sin límite"} generaciones usadas en {billingMonth}. Esta acción suma {(request as any).textRenderMode === "dual-output" ? variantCount * 2 : variantCount}.</p>
                     {aiBillingBalance.includedAiGenerations && aiBillingBalance.aiGenerations + variantCount > aiBillingBalance.includedAiGenerations ? <p className="mt-1">Excedente estimado bajo demanda: {money(Math.max(0, aiBillingBalance.aiGenerations + variantCount - aiBillingBalance.includedAiGenerations) * aiBillingBalance.extraAiGenerationRate)}.</p> : null}
                   </div>
                 ) : null}
 
-                <button type="button" onClick={generateImages} disabled={isGenerating} className="mt-5 h-14 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{isGenerating ? "Generando imagen..." : "Generar imagen"}</button>
+                <button type="button" onClick={generateImages} disabled={isGenerating} className="mt-5 h-14 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{isGenerating ? "Generando..." : (request as any).textRenderMode === "dual-output" ? "Generar doble versión" : "Generar imagen"}</button>
 
                 {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
                 {success ? <div className="mt-5 rounded-3xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-medium text-green-700">{success}</div> : null}
@@ -940,6 +1017,7 @@ export default function GenerationRequestPage() {
                         <article key={image.id} className={`rounded-3xl border-2 p-3 transition ${selectedImageIndex === index ? "border-emerald-500 ring-4 ring-emerald-100" : "border-zinc-200"}`}>
                           <a href={dataUrlFromBase64(visibleImage)} target="_blank" rel="noopener noreferrer" className="relative block w-full overflow-hidden rounded-2xl bg-zinc-100" title="Abrir imagen en ventana nueva">
                             <img src={dataUrlFromBase64(visibleImage)} alt={`Generada ${index + 1}`} loading="lazy" decoding="async" className="w-full rounded-2xl" />
+                            {image.variantLabel ? <span className={`absolute left-3 top-3 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${image.variantKind === "editable-base" ? "bg-emerald-600 text-white" : "bg-zinc-950 text-white"}`}>{image.variantPairIndex ? `${image.variantPairIndex} · ` : ""}{image.variantLabel}</span> : null}
                             {image.logoOverlayApplied ? (
                               <span className="absolute bottom-3 left-3 rounded-full bg-zinc-950 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-white">Logo aplicado</span>
                             ) : null}
@@ -948,7 +1026,7 @@ export default function GenerationRequestPage() {
                             <button type="button" onClick={() => { setSelectedImageIndex(index); updateLogoOverlay({ enabled: true }); setIsLogoModalOpen(true); }} className="inline-flex h-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-950">Insertar logo</button>
                             <a download={downloadName} href={dataUrlFromBase64(visibleImage)} className="inline-flex h-11 items-center justify-center rounded-2xl bg-zinc-950 px-4 text-sm font-semibold text-white">Descargar</a>
                           </div>
-                          <button type="button" onClick={() => { setSelectedImageIndex(index); setTextEditorOpen(true); }} className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800">Editar texto</button>
+                          <button type="button" onClick={() => { setSelectedImageIndex(index); setTextEditorOpen(true); }} className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800">{image.variantKind === "reference-ai" ? "Editar texto encima" : "Editar texto"}</button>
                           {image.logoOverlayApplied ? (
                             <button type="button" onClick={() => removeLogoFromSelectedImage(index)} className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-950">Quitar logo</button>
                           ) : null}
@@ -1023,7 +1101,7 @@ export default function GenerationRequestPage() {
               </div>
               <div className="rounded-[1.7rem] border border-zinc-200 bg-zinc-50 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Modo recomendado</p>
-                <p className="mt-2 text-sm leading-6 text-zinc-700">{(request as any).textRenderMode === "editable-layers" ? "Este brief está preparado para imagen base sin texto + capas editables." : "Este brief fue generado con texto IA. Puedes superponer capas, pero el texto pegado en la imagen no se borra automáticamente."}</p>
+                <p className="mt-2 text-sm leading-6 text-zinc-700">{(request as any).textRenderMode === "dual-output" ? "Este brief generó una referencia con texto IA y una base editable. Usa la referencia como guía y la base editable para el arte final." : (request as any).textRenderMode === "editable-layers" ? "Este brief está preparado para imagen base sin texto + capas editables." : "Este brief fue generado con texto IA. Puedes superponer capas, pero el texto pegado en la imagen no se borra automáticamente."}</p>
               </div>
 
               <div className="max-h-[62vh] space-y-4 overflow-auto pr-1">

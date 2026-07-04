@@ -199,7 +199,7 @@ export default function BustItNowPage() {
   const [format, setFormat] = useState("instagram-post");
   const [goal, setGoal] = useState("sell");
   const [contentType, setContentType] = useState("promotion");
-  const [textRenderMode, setTextRenderMode] = useState<"ai-text" | "editable-layers">("ai-text");
+  const [textRenderMode, setTextRenderMode] = useState<"ai-text" | "editable-layers" | "dual-output">("dual-output");
   const [mainMessage, setMainMessage] = useState("");
   const [textBlocks, setTextBlocks] = useState<TextBlock[]>([emptyBlock()]);
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>([]);
@@ -446,15 +446,15 @@ export default function BustItNowPage() {
     return [saved];
   }
 
-  function buildPrompt(requestAttachmentsOverride?: any[]) {
+  function buildPromptForMode(mode: "ai-text" | "editable-layers", requestAttachmentsOverride?: any[]) {
     const logoAsset = assets.find((asset) => asset.id === selectedLogoAssetId);
-    const built = buildGenerationPrompt({
+    return buildGenerationPrompt({
       clientName: client?.name,
       clientIndustry: client?.industry,
       format,
       goal,
       contentType,
-      textRenderMode,
+      textRenderMode: mode,
       mainMessage,
       textBlocks: cleanBlocks(),
       selectedEmotions,
@@ -477,6 +477,11 @@ export default function BustItNowPage() {
         size: logoSize
       } : { enabled: false }
     });
+  }
+
+  function buildPrompt(requestAttachmentsOverride?: any[]) {
+    const activeMode = textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
+    const built = buildPromptForMode(activeMode, requestAttachmentsOverride);
     setPrompt(built);
     return built;
   }
@@ -486,7 +491,10 @@ export default function BustItNowPage() {
     if (!mainMessage.trim()) return alert("Escribe el mensaje principal.");
     if (cleanBlocks().length === 0) return alert("Agrega al menos un bloque de texto.");
     const requestAttachments = await persistAttachmentForBrief();
-    const built = buildPrompt(requestAttachments);
+    const referencePrompt = buildPromptForMode("ai-text", requestAttachments);
+    const editablePrompt = buildPromptForMode("editable-layers", requestAttachments);
+    const built = textRenderMode === "editable-layers" ? editablePrompt : referencePrompt;
+    setPrompt(built);
     const ref: any = await saveGenerationRequest({
       clientId: client.id!,
       clientName: client.name,
@@ -506,6 +514,8 @@ export default function BustItNowPage() {
       brandBrainSnapshot: client.brandBrain,
       logoOverlay: { enabled: logoOverlayEnabled, assetId: selectedLogoAssetId, position: logoPosition, size: logoSize },
       generatedPrompt: built,
+      referenceGeneratedPrompt: referencePrompt,
+      editableGeneratedPrompt: editablePrompt,
       executedModel: selectedModel,
       status
     });
@@ -516,7 +526,8 @@ export default function BustItNowPage() {
 
   async function generate() {
     if (aiBillingBalance && aiBillingBalance.includedAiGenerations > 0) {
-      const projected = aiBillingBalance.aiGenerations + variantCount;
+      const generatedCount = variantCount * (textRenderMode === "dual-output" ? 2 : 1);
+      const projected = aiBillingBalance.aiGenerations + generatedCount;
       if (projected > aiBillingBalance.includedAiGenerations && !aiBillingBalance.onDemandEnabled) {
         setError(`Este cliente tiene límite de ${aiBillingBalance.includedAiGenerations} generaciones IA al mes. Ya lleva ${aiBillingBalance.aiGenerations}. Ajusta el límite o activa cobro bajo demanda en Clientes.`);
         return;
@@ -530,23 +541,31 @@ export default function BustItNowPage() {
     let requestId = "";
     try {
       requestId = await saveBriefOnly("generating") || "";
-      const built = prompt || buildPrompt();
-      const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: built,
-          format,
-          model: selectedModel,
-          variantCount,
-          referenceImages: selectedAssets.map((asset) => ({ url: asset.fileUrl, name: asset.name }))
-        })
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "No se pudo generar.");
-      setGeneratedImages(payload.imagesBase64 || []);
-      if (requestId) await updateGenerationRequest(requestId, { status: "completed", executedModel: payload.executedModel, generationMode: payload.generationMode });
-      setSuccess("Imagen generada correctamente.");
+      const referenceImages = selectedAssets.map((asset) => ({ url: asset.fileUrl, name: asset.name }));
+      async function requestImages(mode: "ai-text" | "editable-layers") {
+        const built = mode === "editable-layers" ? buildPromptForMode("editable-layers") : buildPromptForMode("ai-text");
+        const response = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: built,
+            format,
+            model: selectedModel,
+            variantCount,
+            referenceImages
+          })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "No se pudo generar.");
+        return payload;
+      }
+      const payloads = textRenderMode === "dual-output"
+        ? [await requestImages("ai-text"), await requestImages("editable-layers")]
+        : [await requestImages(textRenderMode === "editable-layers" ? "editable-layers" : "ai-text")];
+      setGeneratedImages(payloads.flatMap((payload) => payload.imagesBase64 || []));
+      const firstPayload = payloads[0] || {};
+      if (requestId) await updateGenerationRequest(requestId, { status: "completed", executedModel: firstPayload.executedModel || selectedModel, generationMode: textRenderMode === "dual-output" ? "dual-reference-editable" : firstPayload.generationMode });
+      setSuccess(textRenderMode === "dual-output" ? "Doble versión generada: referencia IA + base editable." : "Imagen generada correctamente.");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al generar.");
@@ -562,7 +581,7 @@ export default function BustItNowPage() {
     setFormat(item.format);
     setGoal(item.goal);
     setContentType(item.contentType);
-    setTextRenderMode((item as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text");
+    setTextRenderMode((item as any).textRenderMode === "dual-output" ? "dual-output" : (item as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text");
     setTextBlocks((item.textBlocks as any) || [emptyBlock()]);
     setSelectedEmotions(item.selectedEmotions || []);
     setSelectedVisualElements(item.selectedVisualElements || []);
@@ -654,26 +673,34 @@ export default function BustItNowPage() {
                     <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
                       <p className="text-sm font-semibold text-zinc-950">Modo de texto</p>
                       <p className="mt-1 text-xs leading-5 text-zinc-600">Los mismos bloques pueden viajar al prompt o convertirse en capas editables después de generar la imagen.</p>
-                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
                         <button
                           type="button"
                           onClick={() => setTextRenderMode("ai-text")}
                           className={`rounded-2xl border p-4 text-left transition ${textRenderMode === "ai-text" ? "border-zinc-950 bg-white shadow-sm" : "border-zinc-200 bg-white/70 hover:border-zinc-400"}`}
                         >
-                          <strong className="block text-sm text-zinc-950">IA escribe el texto</strong>
-                          <span className="mt-1 block text-xs leading-5 text-zinc-600">Modo actual. Rápido para propuestas completas y exploración visual.</span>
+                          <strong className="block text-sm text-zinc-950">Solo referencia con texto IA</strong>
+                          <span className="mt-1 block text-xs leading-5 text-zinc-600">La IA genera la propuesta completa con texto. Ideal para bocetos e inspiración.</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setTextRenderMode("editable-layers")}
                           className={`rounded-2xl border p-4 text-left transition ${textRenderMode === "editable-layers" ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-zinc-200 bg-white/70 hover:border-emerald-400"}`}
                         >
-                          <strong className="block text-sm text-zinc-950">Texto editable por BUST It Now</strong>
-                          <span className="mt-1 block text-xs leading-5 text-zinc-600">La IA genera base sin texto y los bloques se montan como capas editables.</span>
+                          <strong className="block text-sm text-zinc-950">Solo base editable</strong>
+                          <span className="mt-1 block text-xs leading-5 text-zinc-600">La IA genera una base visual sin texto y los bloques se montan como capas editables.</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTextRenderMode("dual-output")}
+                          className={`rounded-2xl border p-4 text-left transition ${textRenderMode === "dual-output" ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-zinc-200 bg-white/70 hover:border-emerald-400"}`}
+                        >
+                          <strong className="block text-sm text-zinc-950">Doble versión: referencia + editable</strong>
+                          <span className="mt-1 block text-xs leading-5 text-zinc-600">Recomendado. Genera guía visual con texto IA y una base limpia para editar.</span>
                         </button>
                       </div>
                     </div>
-                    {textRenderMode === "editable-layers" ? (
+                    {textRenderMode === "editable-layers" || textRenderMode === "dual-output" ? (
                       <div className="mt-4 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-xs leading-5 text-emerald-900">
                         Tipografías cargadas para este cliente: <strong>{fontAssets.length}</strong>. Se usarán en el editor de texto editable. Puedes subir OTF/TTF/WOFF en Clientes → Assets.
                       </div>
@@ -944,7 +971,7 @@ export default function BustItNowPage() {
                       </div>
                       <p className="mt-4 line-clamp-3 text-sm font-semibold leading-6 text-zinc-950">{request.mainMessage}</p>
                       <p className="mt-2 text-xs text-zinc-500">{request.format} · {request.contentType} · {request.executedModel || "Sin modelo"}</p>
-                      <p className="mt-1 text-xs font-semibold text-zinc-700">{(request as any).textRenderMode === "editable-layers" ? "Texto editable" : "Texto IA"}</p>
+                      <p className="mt-1 text-xs font-semibold text-zinc-700">{(request as any).textRenderMode === "dual-output" ? "Referencia + editable" : (request as any).textRenderMode === "editable-layers" ? "Texto editable" : "Texto IA"}</p>
                       {(request.requestAttachments || []).length ? <p className="mt-2 text-xs font-medium text-zinc-700">Incluye imagen puntual del brief</p> : null}
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         <button type="button" onClick={() => openHistoryItem(request)} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-950 hover:bg-zinc-50">Reusar brief</button>

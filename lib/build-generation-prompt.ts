@@ -62,7 +62,7 @@ export type BuildPromptInput = {
    * editable-layers: the image model must create the visual composition without text;
    * BUST It Now will place the same text blocks later as editable layers.
    */
-  textRenderMode?: "ai-text" | "editable-layers";
+  textRenderMode?: "ai-text" | "editable-layers" | "dual-output";
 };
 
 function formatLabel(format?: string) {
@@ -200,7 +200,7 @@ function buildTextBlocksText(data: BuildPromptInput, textRenderMode: "ai-text" |
     return blocks.map((block, index) => {
       const instruction = block.instruction ? ` Specific instruction: ${block.instruction}` : "";
       if (textRenderMode === "editable-layers") {
-        return `${index + 1}. Editable layer text: "${block.text}" | Visual role: ${block.roleLabel} | Priority: ${block.priorityLabel}. DO NOT render this text, any letters, fake placeholder words, CTA, dates, prices, or typography names inside the generated image. Use this layer only to reserve clean space, visual hierarchy, contrast zones, and composition balance for the post-editor.${instruction}`;
+        return `${index + 1}. Editable layer text: "${block.text}" | Visual role: ${block.roleLabel} | Priority: ${block.priorityLabel}. DO NOT render this text, any letters, fake placeholder words, CTA, dates, prices, or typography names inside the generated image. Use this layer only to understand the communication intent, emotional weight, and art-direction context. Do not create a specific box, button, label, frame, bullet, or reserved placeholder area for this layer.${instruction}`;
       }
       const exactRule = block.locked
         ? "Use this text EXACTLY as written. Do not rewrite, translate, correct, abbreviate, change capitalization, fix spelling, or add words to it."
@@ -300,10 +300,10 @@ PROJECT CONTEXT
 
 MAIN COMMUNICATION
 ${textRenderMode === "editable-layers" ? `- Strategic message for composition only: ${data.mainMessage || ""}
-- IMPORTANT: Do not render, write, imitate, trace, or approximate any words from this message inside the image. Use it only to understand the scene, mood, hierarchy, and empty areas needed for editable text layers.` : `- Main message: ${data.mainMessage || ""}`}
+- IMPORTANT: Do not render, write, imitate, trace, or approximate any words from this message inside the image. Use it only to understand the scene, mood, subject matter, commercial intention, and overall art direction.` : `- Main message: ${data.mainMessage || ""}`}
 
 ${textRenderMode === "editable-layers" ? "TEXT LAYERS FOR THE POST-EDITOR" : "TEXT BLOCKS TO USE IN THE DESIGN"}
-${textRenderMode === "editable-layers" ? "These are the official text layers for this piece. The generated image must NOT include readable text. Use these layers only as a composition map: reserve clean spaces, contrast, hierarchy, and areas where BUST It Now will place editable text later with real fonts." : "These are the official text blocks for this piece. Treat them as flexible design elements, not as a fixed template. Arrange them dynamically according to role, priority, and visual hierarchy."}
+${textRenderMode === "editable-layers" ? "These are the official text layers for this piece. The generated image must NOT include readable text. Use these layers only to understand what the visual must communicate. Do not reserve exact spaces, boxes, buttons, bullets, frames, or forced containers for each layer; BUST It Now will place editable text later with real fonts." : "These are the official text blocks for this piece. Treat them as flexible design elements, not as a fixed template. Arrange them dynamically according to role, priority, and visual hierarchy."}
 ${textBlocksText}
 
 VISUAL / EMOTIONAL DIRECTION
@@ -348,11 +348,11 @@ ART DIRECTION RULES
 TEXT RULES
 ${textRenderMode === "editable-layers" ? `- ABSOLUTE EMPTY-TEXT MODE: Do NOT place readable text, letters, numbers, fake text, placeholder copy, typography names, CTAs, dates, prices, legal disclaimers, logos, brand-name lockups, or any text-like marks inside the generated image.
 - Never write generic placeholder labels such as "CTA", "CTA NOW", "SALE", "PROMO", "CLICK HERE", "TITLE", "HEADLINE", "TEXT", "DATE", "PRICE", "LOGO", "Lorem ipsum", or any invented words.
-- If the composition needs a call-to-action area, create only a blank visual container/button shape with no words, no letters, and no symbols inside it.
-- Create a polished text-free base composition with intentional empty/clean areas for the post-editor layers listed above.
+- Do not create CTA buttons, empty labels, reserved title zones, forced blank boxes, bullet containers, or artificial text areas just because the text layers include CTA, date, price, or headline roles.
+- Create a polished text-free visual composition that feels natural and complete on its own, while remaining usable as a background for editable text later.
 - The text layers are real content that BUST It Now will place after image generation using editable typography.
 - Avoid text-like marks or gibberish. Background signs, screens, labels, or mock headlines must be removed or abstracted.
-- The final image must look like an elegant blank advertising layout ready for text overlay, not like a finished ad with placeholder text.` : `- Use only the official text blocks listed above when placing text inside the image.
+- The final image must look like a strong advertising visual without readable text, not like a layout with placeholder text areas.` : `- Use only the official text blocks listed above when placing text inside the image.
 - Do not force every block to appear at the same size; use hierarchy based on priority.
 - Do not invent extra words, numbers, dates, product names, or claims.
 - Do not include a date unless there is an official text block with role date.

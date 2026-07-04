@@ -281,7 +281,7 @@ export type BustItNowJob = {
   generatedPrompt?: string;
   executedModel?: string;
   generationMode?: string;
-  textRenderMode?: "ai-text" | "editable-layers";
+  textRenderMode?: "ai-text" | "editable-layers" | "dual-output";
   editableTextLayers?: any[];
   status: string;
   assignedTo?: string;
@@ -370,7 +370,7 @@ export type GenerationRequest = {
   generatedPrompt?: string;
   executedModel?: string;
   generationMode?: string;
-  textRenderMode?: "ai-text" | "editable-layers";
+  textRenderMode?: "ai-text" | "editable-layers" | "dual-output";
   editableTextLayers?: any[];
   status: string;
 };
