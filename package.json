@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "2.2.0-logo-overlay-xy",
+  "version": "2.3.0-cleanup-copy-modes",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -13,8 +13,7 @@
     "openai": "^6.38.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "sharp": "^0.34.5",
-    "firebase-admin": "^13.6.0"
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

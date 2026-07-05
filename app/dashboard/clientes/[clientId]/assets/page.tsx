@@ -18,7 +18,6 @@ type PendingAsset = {
 
 const assetTypes = [
   { id: "logo", label: "Logo" },
-  { id: "font", label: "Tipografía / fuente" },
   { id: "reference", label: "Referencia visual" },
   { id: "product", label: "Producto / servicio" },
   { id: "element", label: "Elemento gráfico" },
@@ -29,10 +28,6 @@ const categories = ["Principal", "Secundario", "Campaña", "Temporada", "Product
 
 function safePreview(file: File) {
   return file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
-}
-function isFontFile(file: File) {
-  const name = file.name.toLowerCase();
-  return (file.type || "").includes("font") || /\.(otf|ttf|woff2?|eot)$/i.test(name);
 }
 function splitTags(value: string) {
   return value.split(",").map((tag) => tag.trim()).filter(Boolean);
@@ -63,19 +58,16 @@ export default function ClientAssetsPage(){
   function handleFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
-    const next = files.map((file)=>{
-      const isFont = isFontFile(file);
-      return {
-        id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2,7)}`,
-        file,
-        preview: safePreview(file),
-        name: file.name.replace(/\.[^/.]+$/,"").replace(/[-_]+/g," "),
-        type: isFont ? "font" : "reference",
-        category: isFont ? "Tipografía" : "",
-        tags: isFont ? "tipografia, fuente, bust-it-now" : "",
-        notes: isFont ? "Fuente disponible para el editor de texto editable de BUST It Now." : ""
-      };
-    });
+    const next = files.map((file)=>({
+      id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2,7)}`,
+      file,
+      preview: safePreview(file),
+      name: file.name.replace(/\.[^/.]+$/,"").replace(/[-_]+/g," "),
+      type: "reference",
+      category: "",
+      tags: "",
+      notes: ""
+    }));
     setPending((current)=>[...current,...next]);
     event.target.value = "";
   }
@@ -150,7 +142,7 @@ export default function ClientAssetsPage(){
           <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Assets</p><strong className="mt-2 block text-3xl">{assets.length}</strong></div>
           <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Destacados</p><strong className="mt-2 block text-3xl">{featuredCount}</strong></div>
           <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Pendientes</p><strong className="mt-2 block text-3xl">{pending.length}</strong></div>
-          <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Tipografías</p><strong className="mt-2 block text-3xl">{assets.filter(a=>a.type==="font").length}</strong></div>
+          <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Logos</p><strong className="mt-2 block text-3xl">{assets.filter(a=>a.type==="logo").length}</strong></div>
         </section>
 
         <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
@@ -162,7 +154,7 @@ export default function ClientAssetsPage(){
             </div>
             <label className="inline-flex h-12 cursor-pointer items-center justify-center rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">
               Seleccionar archivos
-              <input type="file" multiple accept="image/*,.otf,.ttf,.woff,.woff2,.eot" className="hidden" onChange={handleFiles}/>
+              <input type="file" multiple className="hidden" onChange={handleFiles}/>
             </label>
           </div>
 
@@ -173,7 +165,7 @@ export default function ClientAssetsPage(){
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {pending.map((item)=>(
                 <article key={item.id} className="rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
-                  {item.preview ? <img src={item.preview} alt={item.name} className="h-40 w-full rounded-2xl object-cover"/> : <div className="flex h-40 flex-col items-center justify-center rounded-2xl bg-zinc-200 text-sm font-semibold text-zinc-600"><span className="text-4xl">Aa</span><span>{item.type === "font" ? "Fuente" : "Archivo"}</span></div>}
+                  {item.preview ? <img src={item.preview} alt={item.name} className="h-40 w-full rounded-2xl object-cover"/> : <div className="flex h-40 items-center justify-center rounded-2xl bg-zinc-200 text-sm font-semibold text-zinc-600">Archivo</div>}
                   <div className="mt-4 space-y-3">
                     <input value={item.name} onChange={(e)=>updatePending(item.id,{name:e.target.value})} className="h-11 w-full rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950" placeholder="Nombre"/>
                     <div className="grid grid-cols-2 gap-3">
@@ -207,7 +199,7 @@ export default function ClientAssetsPage(){
           {filteredAssets.length===0 ? <div className="mt-5 rounded-3xl border border-dashed border-zinc-300 bg-zinc-50 px-5 py-8 text-center text-sm text-zinc-600">No hay assets en esta vista.</div> : <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {filteredAssets.map((asset)=>(
               <article key={asset.id} className={`rounded-3xl border p-4 transition ${asset.isFeatured ? "border-amber-300 bg-amber-50" : "border-zinc-200 bg-zinc-50"}`}>
-                {isImage(asset) ? <img src={asset.fileUrl} alt={asset.name} className="h-40 w-full rounded-2xl object-cover"/> : <div className="flex h-40 flex-col items-center justify-center rounded-2xl bg-zinc-200 text-sm font-semibold text-zinc-600"><span className="text-5xl">Aa</span><span>{asset.type === "font" ? "Tipografía" : "Archivo"}</span></div>}
+                {isImage(asset) ? <img src={asset.fileUrl} alt={asset.name} className="h-40 w-full rounded-2xl object-cover"/> : <div className="flex h-40 items-center justify-center rounded-2xl bg-zinc-200 text-sm font-semibold text-zinc-600">Archivo</div>}
                 <div className="mt-4">
                   <div className="flex items-start justify-between gap-3">
                     <strong className="text-sm text-zinc-950">{asset.name}</strong>

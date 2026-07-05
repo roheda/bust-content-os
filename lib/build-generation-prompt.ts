@@ -33,7 +33,6 @@ export type BuildPromptInput = {
     dos?: string[];
     donts?: string[];
     recommendedModels?: string[];
-    importantDates?: string[];
   };
   selectedAssetsSnapshot?: Array<{
     name?: string;
@@ -58,12 +57,6 @@ export type BuildPromptInput = {
     position?: string;
     size?: string;
   };
-  /**
-   * ai-text: the image model may render the official text blocks inside the image.
-   * editable-layers: the image model must create the visual composition without text;
-   * BUST It Now will place the same text blocks later as editable layers.
-   */
-  textRenderMode?: "ai-text" | "editable-layers" | "dual-output";
 };
 
 function formatLabel(format?: string) {
@@ -169,15 +162,6 @@ function shouldRemoveLogoInstruction(rule: string) {
   return mentionsLogo && mentionsLogoPlacement;
 }
 
-
-type SelectedAssetSnapshot = NonNullable<BuildPromptInput["selectedAssetsSnapshot"]>[number];
-
-function isFontAssetSnapshot(asset: SelectedAssetSnapshot) {
-  const value = `${asset?.name || ""} ${asset?.type || ""} ${asset?.category || ""} ${(asset?.tags || []).join(" ")}`.toLowerCase();
-  const fileUrl = String(asset?.fileUrl || "").toLowerCase();
-  return value.includes("tipografia") || value.includes("tipografía") || value.includes("fuente") || value.includes("font") || /\.(otf|ttf|woff2?|eot)(\?|$)/i.test(fileUrl);
-}
-
 function cleanRules(rules?: string[], removeLogoInstructions = false) {
   const clean = (rules || [])
     .map((rule) => rule.trim())
@@ -203,18 +187,15 @@ function blockHasRole(blocks: ReturnType<typeof getOfficialTextBlocks>, roles: s
   return blocks.some((block) => roles.includes(block.role));
 }
 
-function buildTextBlocksText(data: BuildPromptInput, textRenderMode: "ai-text" | "editable-layers" = "ai-text") {
+function buildTextBlocksText(data: BuildPromptInput) {
   const blocks = getOfficialTextBlocks(data);
 
   if (blocks.length > 0) {
     return blocks.map((block, index) => {
-      const instruction = block.instruction ? ` Specific instruction: ${block.instruction}` : "";
-      if (textRenderMode === "editable-layers") {
-        return `${index + 1}. Editable layer text: "${block.text}" | Visual role: ${block.roleLabel} | Priority: ${block.priorityLabel}. DO NOT render this text, any letters, fake placeholder words, CTA, dates, prices, or typography names inside the generated image. Use this layer only to understand the communication intent, emotional weight, and art-direction context. Do not create a specific box, button, label, frame, bullet, or reserved placeholder area for this layer.${instruction}`;
-      }
       const exactRule = block.locked
         ? "Use this text EXACTLY as written. Do not rewrite, translate, correct, abbreviate, change capitalization, fix spelling, or add words to it."
         : "You may adapt hierarchy and placement, but keep the meaning aligned with the text.";
+      const instruction = block.instruction ? ` Specific instruction: ${block.instruction}` : "";
       return `${index + 1}. Text: "${block.text}" | Visual role: ${block.roleLabel} | Priority: ${block.priorityLabel}. ${exactRule}${instruction}`;
     }).join("\n");
   }
@@ -226,24 +207,15 @@ function buildTextBlocksText(data: BuildPromptInput, textRenderMode: "ai-text" |
     data.copy?.cta ? `4. Text: "${data.copy.cta}" | Visual role: call to action | Priority: low priority. Use this text EXACTLY as written.` : "",
   ].filter(Boolean);
 
-  if (textRenderMode === "editable-layers") {
-    return legacyBlocks.length
-      ? legacyBlocks.join("\n").replace(/Text:/g, "Editable layer text:") + "\nDo NOT render these texts inside the generated image. They will be placed later as editable layers by BUST It Now."
-      : "No editable text layers were specified.";
-  }
   return legacyBlocks.length ? legacyBlocks.join("\n") : "No required in-image text blocks were specified.";
 }
 
-function buildVisualElementsText(data: BuildPromptInput, textRenderMode: "ai-text" | "editable-layers" = "ai-text") {
+function buildVisualElementsText(data: BuildPromptInput) {
   const blocks = getOfficialTextBlocks(data);
   const omitted: string[] = [];
   const filteredElements = (data.selectedVisualElements || []).filter((element) => {
     const normalized = normalizeText(element);
     if (normalized.includes("logo")) {
-      omitted.push(element);
-      return false;
-    }
-    if (textRenderMode === "editable-layers" && (normalized === "fecha" || normalized === "precio" || normalized === "cta" || normalized.includes("call to action") || normalized.includes("texto"))) {
       omitted.push(element);
       return false;
     }
@@ -269,13 +241,12 @@ function buildVisualElementsText(data: BuildPromptInput, textRenderMode: "ai-tex
 
 export function buildGenerationPrompt(data: BuildPromptInput) {
   const logoOverlayEnabled = data.logoOverlay?.enabled === true;
-  const textRenderMode: "ai-text" | "editable-layers" = data.textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
   const requestAttachmentsText = data.requestAttachments?.length
     ? data.requestAttachments.map((attachment, index) => {
         const attachmentName = attachment.name || "Specific attachment for this piece";
         const attachmentRole = attachment.role || "specific reference";
         const attachmentNotes = sanitizeAttachmentNotes(attachment.notes);
-        return `${index + 1}. ${attachmentName} (${attachmentRole}). This exact attached image is part of the brief and must be considered as a direct visual reference. Instruction: ${attachmentNotes || "Follow this attachment closely according to its role."}`;
+        return `${index + 1}. ${attachmentName} (${attachmentRole}). Instruction: ${attachmentNotes}`;
       }).join("\n")
     : "No specific request attachments.";
 
@@ -283,17 +254,16 @@ export function buildGenerationPrompt(data: BuildPromptInput) {
     ? `The official logo must NOT be generated by the AI. Generate the design without any logo, brand mark, monogram, top-center brand lockup, fake emblem, or brand-name logo. Leave clean visual space in the ${logoPositionLabel(data.logoOverlay?.position)}. The system will place the real official logo after image generation as a fixed overlay layer.`
     : "No logo overlay requested. Do NOT include any logo, brand mark, monogram, top-center brand lockup, big brand initial, fake emblem, or brand-name logo. Use the brand only through colors, mood, layout, and visual style.";
 
-  const visualAssets = (data.selectedAssetsSnapshot || []).filter((asset) => !isFontAssetSnapshot(asset));
-  const assetsText = visualAssets.length
-    ? visualAssets.map((asset, index) => {
+  const assetsText = data.selectedAssetsSnapshot?.length
+    ? data.selectedAssetsSnapshot.map((asset, index) => {
         const tags = asset.tags?.length ? ` Tags: ${asset.tags.join(", ")}.` : "";
         const notes = asset.notes ? ` Notes: ${sanitizeAttachmentNotes(asset.notes)}.` : "";
         return `${index + 1}. ${asset.name || "Asset"} (${asset.type || "asset"}${asset.category ? ` / ${asset.category}` : ""}).${tags}${notes}`;
       }).join("\n")
-    : "No general brand visual assets selected. Font files are intentionally excluded from image prompts and are used only by the editable text editor.";
+    : "No general brand visual assets selected.";
 
-  const textBlocksText = buildTextBlocksText(data, textRenderMode);
-  const visualElementsText = buildVisualElementsText(data, textRenderMode);
+  const textBlocksText = buildTextBlocksText(data);
+  const visualElementsText = buildVisualElementsText(data);
   const cleanDos = cleanRules(data.brandBrainSnapshot?.dos, true);
   const cleanDonts = cleanRules(data.brandBrainSnapshot?.donts, false);
   const dos = cleanDos.length ? cleanDos.join("; ") : "Keep the communication aligned with the brand and make the main message easy to read.";
@@ -310,11 +280,10 @@ PROJECT CONTEXT
 - Content type: ${data.contentType || "general content"}
 
 MAIN COMMUNICATION
-${textRenderMode === "editable-layers" ? `- Strategic message for composition only: ${data.mainMessage || ""}
-- IMPORTANT: Do not render, write, imitate, trace, or approximate any words from this message inside the image. Use it only to understand the scene, mood, subject matter, commercial intention, and overall art direction.` : `- Main message: ${data.mainMessage || ""}`}
+- Main message: ${data.mainMessage || ""}
 
-${textRenderMode === "editable-layers" ? "TEXT LAYERS FOR THE POST-EDITOR" : "TEXT BLOCKS TO USE IN THE DESIGN"}
-${textRenderMode === "editable-layers" ? "These are the official text layers for this piece. The generated image must NOT include readable text. Use these layers only to understand what the visual must communicate. Do not reserve exact spaces, boxes, buttons, bullets, frames, or forced containers for each layer; BUST It Now will place editable text later with real fonts." : "These are the official text blocks for this piece. Treat them as flexible design elements, not as a fixed template. Arrange them dynamically according to role, priority, and visual hierarchy."}
+TEXT BLOCKS TO USE IN THE DESIGN
+These are the official text blocks for this piece. Treat them as flexible design elements, not as a fixed template. Arrange them dynamically according to role, priority, and visual hierarchy.
 ${textBlocksText}
 
 VISUAL / EMOTIONAL DIRECTION
@@ -323,7 +292,7 @@ VISUAL / EMOTIONAL DIRECTION
 - Extra instructions: ${data.specificInstructions || "None"}
 
 SPECIFIC ATTACHMENTS FOR THIS PIECE
-Use the attached image files as direct references for this exact brief. If the attachment role is product, dish, person, promotion, background, or visual reference, preserve the relevant subject, proportions, colors, and context as much as the generation model allows. Do not ignore these attachments when the brief is reused. Do not copy protected marks, watermarks, or source-image text directly.
+Use attachments only as visual references for mood, context, product, or atmosphere. Do not copy protected marks, watermarks, or source-image text directly.
 ${requestAttachmentsText}
 
 POST-GENERATION LOGO OVERLAY
@@ -333,8 +302,7 @@ BRAND BRAIN
 - Brand description: ${data.brandBrainSnapshot?.brandDescription || "Not specified"}
 - Tone: ${data.brandBrainSnapshot?.tone || "Not specified"}
 - Colors: ${data.brandBrainSnapshot?.colors?.join(", ") || "Not specified"}
-- Typography: official font names/files from Brand Brain are intentionally NOT sent as visible text instructions. Never render the typography field as a headline, label, signature, brand word, or any visible copy. Use it only as an invisible style reference when text rendering is enabled; the real fonts are applied later by the editor.
-- Important client dates: ${data.brandBrainSnapshot?.importantDates?.join(", ") || "Not specified"}
+- Typography guidance: ${data.brandBrainSnapshot?.typography || "Not specified"}
 - Visual style: ${data.brandBrainSnapshot?.visualStyle?.join(", ") || "Not specified"}
 
 DO
@@ -358,15 +326,7 @@ ART DIRECTION RULES
 - Avoid random decorative clutter that does not reinforce the message.
 
 TEXT RULES
-${textRenderMode === "editable-layers" ? `- ABSOLUTE EMPTY-TEXT MODE: Do NOT place readable text, letters, numbers, fake text, placeholder copy, typography names, CTAs, dates, prices, legal disclaimers, logos, brand-name lockups, or any text-like marks inside the generated image.
-- Never write generic placeholder labels such as "CTA", "CTA NOW", "SALE", "PROMO", "CLICK HERE", "TITLE", "HEADLINE", "TEXT", "DATE", "PRICE", "LOGO", "Lorem ipsum", or any invented words.
-- Never write typography or font names from the Brand Brain, such as OTF/TTF font family names, as visible words in the image.
-- Do not create CTA buttons, empty labels, reserved title zones, forced blank boxes, bullet containers, or artificial text areas just because the text layers include CTA, date, price, or headline roles.
-- Create a polished text-free visual composition that feels natural and complete on its own, while remaining usable as a background for editable text later.
-- The text layers are real content that BUST It Now will place after image generation using editable typography.
-- Avoid text-like marks or gibberish. Background signs, screens, labels, or mock headlines must be removed or abstracted.
-- The final image must look like a strong advertising visual without readable text, not like a layout with placeholder text areas.` : `- Use only the official text blocks listed above when placing text inside the image.
-- Typography or font names from the Brand Brain are invisible style references only; never place them as headlines, titles, labels, signatures, brand words, decorative marks, or visible copy.
+- Use only the official text blocks listed above when placing text inside the image.
 - Do not force every block to appear at the same size; use hierarchy based on priority.
 - Do not invent extra words, numbers, dates, product names, or claims.
 - Do not include a date unless there is an official text block with role date.
@@ -374,7 +334,7 @@ ${textRenderMode === "editable-layers" ? `- ABSOLUTE EMPTY-TEXT MODE: Do NOT pla
 - Do not include a CTA unless there is an official text block with role CTA.
 - Do not add any logo text, brand-name placeholder, brand-name header, monogram, or logo label.
 - If a block is marked exact, it must appear exactly as written, including accents, spelling, punctuation, and capitalization.
-- If text appears inside the image, it must be clean, legible, and placed with clear hierarchy.`}
+- If text appears inside the image, it must be clean, legible, and placed with clear hierarchy.
 
 BRAND SAFETY RULES
 - Do not distort, rewrite, or fabricate brand names.
@@ -383,7 +343,7 @@ BRAND SAFETY RULES
 - Do not create false product details that are not supported by the brief or attachments.
 
 OUTPUT RULES
-- Produce a finished, high-quality social media advertising image${textRenderMode === "editable-layers" ? " base without any readable text, no placeholder CTA text, and no invented copy" : ""}.
+- Produce a finished, high-quality social media advertising image.
 - Match the selected format and aspect ratio.
 - Avoid bland stock-template aesthetics.
 - Avoid clutter, low contrast, weak hierarchy, or overly flat compositions.

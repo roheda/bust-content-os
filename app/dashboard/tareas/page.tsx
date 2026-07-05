@@ -1,112 +1,50 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import {
-  ClientOperationalOverride,
-  ContentRequest,
-  OperationalContentRule,
-  PlatformUser,
-  Production,
-  ReferenceFile,
-  TaskComment,
-  TeamDailyCapacity,
-  businessDaysBetween,
-  getCapacityForPerson,
-  getCapacityTone,
-  getEffectiveWorkDate,
-  getOperationalPlan,
-  isImageFile,
-  isVideoFile,
-  listClientOperationalOverrides,
-  listOperationalContentRules,
-  listProductions,
-  listRequests,
-  listTeamDailyCapacities,
-  listUsers,
-  organizationTeam,
-  todayDateKey,
-  updateRequest
-} from "@/lib/data";
+import { ContentRequest, Production, ReferenceFile, TaskComment, isImageFile, listProductions, listRequests, updateRequest } from "@/lib/data";
 
-const people = ["Todos", ...organizationTeam.map((member)=>member.name)];
-const areas = ["Todas","Diseño","Audiovisual"];
+const people = ["Todos","Ana Diseño","Luis Diseño","Carlos Editor","Mariana Editora","Pedro Video","Mafer KAM","Rodrigo"];
+const areas = ["Todas","Diseño","Audiovisual","Copy","Mixto"];
 const commentTargets = ["Content","Key Account","Diseño","Audiovisual","Cliente","Interno"];
 const workStatuses = [
   ["asignada","Asignada"],
   ["en_revision","En revisión"],
-  ["rebotada","Rebotada"]
+  ["rebotada","Rebotada"],
+  ["pendiente_aprobacion","En aprobación"]
 ];
 
 export default function TasksPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [productions,setProductions]=useState<Production[]>([]);
-  const [users,setUsers]=useState<PlatformUser[]>([]);
-  const [costRules,setCostRules]=useState<OperationalContentRule[]>([]);
-  const [clientOverrides,setClientOverrides]=useState<ClientOperationalOverride[]>([]);
-  const [teamCapacities,setTeamCapacities]=useState<TeamDailyCapacity[]>([]);
-  const [carryOverCount,setCarryOverCount]=useState(0);
-  const [view,setView]=useState<"hoy"|"calendario"|"lista"|"persona">("hoy");
+  const [view,setView]=useState<"calendario"|"lista"|"persona">("calendario");
   const [calendarMode,setCalendarMode]=useState<"semana"|"mes">("semana");
   const [cursor,setCursor]=useState(new Date());
   const [person,setPerson]=useState("Todos");
   const [area,setArea]=useState("Todas");
   const [statusFilter,setStatusFilter]=useState("all");
-  const [workflowFilter,setWorkflowFilter]=useState("pending");
+  const [workflowFilter,setWorkflowFilter]=useState("active");
   const [overdueFilter,setOverdueFilter]=useState("all");
   const [selected,setSelected]=useState<ContentRequest|null>(null);
   const [comment,setComment]=useState("");
-  const [mentionSearch,setMentionSearch]=useState("");
-  const [commentTarget,setCommentTarget]=useState("Interno");
+  const [commentTarget,setCommentTarget]=useState("Content");
   const [finalLink,setFinalLink]=useState("");
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
   const [contextPost,setContextPost]=useState<ContentRequest|null>(null);
 
   async function load(){
-    const [loadedRequests, loadedProductions, loadedUsers, loadedRules, loadedOverrides, loadedCapacities] = await Promise.all([
-      listRequests(),
-      listProductions(),
-      listUsers().catch(()=>[]),
-      listOperationalContentRules(),
-      listClientOperationalOverrides(),
-      listTeamDailyCapacities()
-    ]);
-    setCostRules(loadedRules);
-    setClientOverrides(loadedOverrides);
-    setTeamCapacities(loadedCapacities);
-    const normalized = await autoCarryOverTasks(loadedRequests, loadedRules, loadedOverrides);
-    setCarryOverCount(normalized.carried);
-    setRequests(normalized.items);
-    setProductions(loadedProductions);
-    setUsers(loadedUsers);
+    setRequests(await listRequests());
+    setProductions(await listProductions());
   }
 
   useEffect(()=>{load()},[]);
 
-  useEffect(()=>{
-    if(typeof window === "undefined" || !requests.length) return;
-    const taskId = new URLSearchParams(window.location.search).get("task");
-    if(!taskId || selected?.id === taskId) return;
-    openTaskById(taskId);
-  },[requests, selected?.id]);
-
-  useEffect(()=>{
-    if(typeof window === "undefined") return;
-    const handler = (event: Event) => {
-      const taskId = (event as CustomEvent<string>).detail;
-      if(taskId) openTaskById(taskId);
-    };
-    window.addEventListener("bust-open-task", handler as EventListener);
-    return () => window.removeEventListener("bust-open-task", handler as EventListener);
-  },[requests]);
-
   const filtered = useMemo(()=>requests.filter(x=>{
-    const taskStates = ["asignada","en_revision","rebotada","pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","finalizada"].includes(x.status || "") && x.status !== "eliminada";
+    const taskStates = ["asignada","en_revision","rebotada","pendiente_aprobacion","finalizada"].includes(x.status || "") && x.status !== "eliminada";
     const overdue = isOverdue(x);
     const workflowOk =
       workflowFilter==="all" ? true :
-      workflowFilter==="pending" ? ["asignada","en_revision","rebotada","pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout"].includes(x.status||"") :
       workflowFilter==="active" ? ["asignada","en_revision"].includes(x.status||"") :
-      workflowFilter==="approval" ? ["pendiente_aprobacion","pendiente_aprobacion_kam"].includes(x.status||"") :
+      workflowFilter==="approval" ? x.status==="pendiente_aprobacion" :
       workflowFilter==="rejected" ? x.status==="rebotada" :
       workflowFilter==="finished" ? x.status==="finalizada" :
       true;
@@ -136,64 +74,15 @@ export default function TasksPage(){
 
   const mentionsFeed = useMemo(()=>{
     return requests.flatMap(req=>(req.comments||[]).map(c=>({request:req,comment:c})))
-      .filter(row=>!(row.comment.resolvedAt || row.comment.status==="resolved"))
-      .filter(row=>row.comment.mentions.length || (row.comment.target !== "Interno" && row.comment.author !== "Sistema"))
+      .filter(row=>row.comment.mentions.length || row.comment.target !== "Interno")
       .sort((a,b)=>b.comment.createdAt.localeCompare(a.comment.createdAt));
   },[requests]);
 
-  const mentionOptions = useMemo(()=>{
-    const fromUsers = users.map((user)=>({name:user.name, role:user.roleLabel || user.roleKey || user.department || "Usuario", token: makeMentionToken(user.name || user.email)}));
-    const fromOrg = organizationTeam.map((member)=>({name:member.name, role:`${member.area} · ${member.role}`, token: makeMentionToken(member.name)}));
-    const areas = ["Content","Key Account","Diseño","Audiovisual","Cliente","Interno"].map((name)=>({name, role:"Área", token: makeMentionToken(name)}));
-    const merged = [...fromUsers,...fromOrg,...areas].filter(item=>item.name && item.token);
-    return Array.from(new Map(merged.map((item)=>[item.token,item])).values()).sort((a,b)=>a.name.localeCompare(b.name,"es"));
-  },[users]);
-
-  const filteredMentionOptions = useMemo(()=>{
-    if(!mentionSearch) return [];
-    const needle = normalizeForMention(mentionSearch);
-    return mentionOptions.filter(option => normalizeForMention(option.name).includes(needle) || normalizeForMention(option.token).includes(needle) || normalizeForMention(option.role).includes(needle)).slice(0,8);
-  },[mentionSearch, mentionOptions]);
-
   const overdueCount = filtered.filter(isOverdue).length;
 
-  const todayKeyValue = todayDateKey();
-  const todayTasks = filtered.filter(task=>getTaskDate(task) === todayKeyValue);
-  const finishedCount = filtered.filter(task=>task.status === "finalizada").length;
-
-  async function openTask(task:ContentRequest){
-    const shouldStart = task.status === "asignada";
-    const updatedTask = shouldStart ? {...task,status:"en_revision"} : task;
-    setSelected(updatedTask);
+  function openTask(task:ContentRequest){
+    setSelected(task);
     setFinalLink(task.finalPostLink || "");
-    if(shouldStart && task.id){
-      const nextLog:TaskComment = {
-        id:`${Date.now()}`,
-        author:"Sistema",
-        target:"Interno",
-        body:"Tarea abierta por el responsable. Estado actualizado a En revisión.",
-        mentions:[],
-        createdAt:new Date().toISOString()
-      };
-      const comments = [...(task.comments||[]), nextLog];
-      await updateRequest(task.id,{status:"en_revision",comments});
-      setSelected({...updatedTask,comments});
-      await load();
-    }
-  }
-
-  function openTaskById(taskId:string){
-    const found = requests.find((item)=>item.id === taskId);
-    if(found) openTask(found);
-  }
-
-  function closeTask(){
-    setSelected(null);
-    setContextPost(null);
-    setPreview(null);
-    if(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("task")){
-      window.history.replaceState(null,"","/dashboard/tareas");
-    }
   }
 
   function move(delta:number){
@@ -205,7 +94,6 @@ export default function TasksPage(){
 
   async function setStatus(status:string){
     if(!selected?.id)return;
-    if(status === "pendiente_aprobacion")return alert("Para enviar a aprobación usa el botón Enviar a aprobación y pega el link final.");
     const label = statusLabel(status);
     const nextLog:TaskComment = {
       id: `${Date.now()}`,
@@ -223,29 +111,8 @@ export default function TasksPage(){
   }
 
   function extractMentions(value:string){
-    const matches = value.match(/@[\wÁÉÍÓÚáéíóúÑñ._-]+/g) || [];
-    return Array.from(new Set(matches.map((item)=>item.trim())));
-  }
-
-  function handleCommentChange(value:string){
-    setComment(value);
-    const match = value.match(/(^|\s)@([\wÁÉÍÓÚáéíóúÑñ._-]*)$/);
-    setMentionSearch(match ? match[2] : "");
-  }
-
-  function insertMention(token:string){
-    setComment((current)=>{
-      const next = current.replace(/(^|\s)@[\wÁÉÍÓÚáéíóúÑñ._-]*$/, (match, prefix)=>`${prefix}@${token} `);
-      return next === current ? `${current} @${token} ` : next;
-    });
-    setMentionSearch("");
-  }
-
-  function handleMentionKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>){
-    if((event.key === "Enter" || event.key === "Tab") && mentionSearch && filteredMentionOptions.length === 1){
-      event.preventDefault();
-      insertMention(filteredMentionOptions[0].token);
-    }
+    const matches = value.match(/@[\wÁÉÍÓÚáéíóúÑñ.-]+/g) || [];
+    return Array.from(new Set(matches));
   }
 
   async function addComment(){
@@ -257,14 +124,12 @@ export default function TasksPage(){
       target: commentTarget,
       body: comment.trim(),
       mentions: extractMentions(comment),
-      status: "open",
       createdAt: new Date().toISOString()
     };
     const comments = [...(selected.comments||[]), nextComment];
     await updateRequest(selected.id,{comments});
     setSelected({...selected,comments});
     setComment("");
-    setMentionSearch("");
     await load();
   }
 
@@ -313,9 +178,10 @@ export default function TasksPage(){
   }
 
   const batchContext = selected?.batchId ? requests.filter(x=>x.batchId===selected.batchId).sort((a,b)=>(a.number||0)-(b.number||0)) : [];
+  const selectedTimeline = selected ? buildTaskTimeline(selected) : [];
 
   return <AppShell active="Tareas">
-    <section className="hero tasks-hero">
+    <section className="hero">
       <div>
         <p className="eyebrow">Equipo</p>
         <h1>Tareas</h1>
@@ -323,28 +189,23 @@ export default function TasksPage(){
       </div>
     </section>
 
-    <div className="tasks-toolbar" aria-label="Controles compactos de tareas">
-      <div className="view-switch task-view-switch">
-        <button className={view==="hoy"?"active":""} onClick={()=>setView("hoy")}>Hoy</button>
-        <button className={view==="calendario"?"active":""} onClick={()=>setView("calendario")}>Calendario</button>
-        <button className={view==="lista"?"active":""} onClick={()=>setView("lista")}>Lista</button>
-        <button className={view==="persona"?"active":""} onClick={()=>setView("persona")}>Por persona</button>
-      </div>
+    <div className="view-switch">
+      <button className={view==="calendario"?"active":""} onClick={()=>setView("calendario")}>Calendario</button>
+      <button className={view==="lista"?"active":""} onClick={()=>setView("lista")}>Lista de tareas</button>
+      <button className={view==="persona"?"active":""} onClick={()=>setView("persona")}>Por persona</button>
+    </div>
 
-      <div className="calendar-controls task-calendar-controls">
+    <div className="calendar-controls">
       {view==="calendario" && <>
-        <span className="calendar-current-label">{formatCalendarLabel(cursor, calendarMode)}</span>
         <button className={calendarMode==="semana"?"active":""} onClick={()=>setCalendarMode("semana")}>Semana</button>
         <button className={calendarMode==="mes"?"active":""} onClick={()=>setCalendarMode("mes")}>Mes</button>
         <button onClick={()=>move(-1)}>← Anterior</button>
         <button onClick={()=>setCursor(new Date())}>Hoy</button>
         <button onClick={()=>move(1)}>Siguiente →</button>
-        <span className="mini workdays-note">Solo días hábiles</span>
       </>}
       <select value={person} onChange={e=>setPerson(e.target.value)}>{people.map(x=><option key={x}>{x}</option>)}</select>
       <select value={area} onChange={e=>setArea(e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select>
       <select value={workflowFilter} onChange={e=>setWorkflowFilter(e.target.value)}>
-        <option value="pending">Pendientes</option>
         <option value="active">Activas</option>
         <option value="approval">En aprobación</option>
         <option value="rejected">Rebotadas</option>
@@ -361,18 +222,14 @@ export default function TasksPage(){
         <option value="overdue">Solo vencidas</option>
         <option value="current">Solo vigentes</option>
       </select>
-      </div>
     </div>
 
-    <section className="grid kpis tasks-kpis">
-      {[["Hoy",String(todayTasks.length)],["Pendientes",String(filtered.filter(x=>!["finalizada","pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout"].includes(x.status||"")).length)],["Vencidas",String(overdueCount)],["Arrastradas",String(carryOverCount || filtered.filter(x=>isCarriedTask(x)).length)],["Finalizadas",String(finishedCount)],["Filtro",person==="Todos"?area:person]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+    <section className="grid kpis">
+      {[["Tareas",String(filtered.length)],["Vencidas",String(overdueCount)],["Finalizadas",String(requests.filter(x=>x.status==="finalizada").length)],["Dudas",String(mentionsFeed.length)],["Persona",person],["Área",area]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
-
-    <section className="calendar-workspace no-doubts-panel">
+    <section className="calendar-workspace">
       <div>
-        {view==="hoy" && <TodayView tasks={filtered} onOpen={openTask}/>}
-
         {view==="calendario" && (calendarMode==="semana"
           ? <WeekView days={weekDays} tasksByDate={tasksByDate} onOpen={openTask}/>
           : <MonthView days={monthDays} cursor={cursor} tasksByDate={tasksByDate} onOpen={openTask}/>)}
@@ -381,6 +238,17 @@ export default function TasksPage(){
         {view==="persona" && <PersonView tasks={filtered} onOpen={openTask}/>}
       </div>
 
+      <aside className="chat-panel">
+        <h3>Panel de dudas / menciones</h3>
+        <p className="mini">Comentarios con @menciones o dirigidos a Content / Key Account / áreas.</p>
+        {!mentionsFeed.length && <p className="mini">Aún no hay dudas activas.</p>}
+        {mentionsFeed.slice(0,30).map(({request,comment})=><button className="chat-item" key={`${request.id}-${comment.id}`} onClick={()=>openTask(request)}>
+          <strong>{request.clientName} · {request.contentType}</strong>
+          <span className="mini">Para: {comment.target} · {new Date(comment.createdAt).toLocaleString("es-MX")}</span>
+          <p>{comment.body}</p>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{comment.mentions.map(m=><span className="mention" key={m}>{m}</span>)}</div>
+        </button>)}
+      </aside>
     </section>
 
     {selected && <div className="modal-backdrop">
@@ -389,9 +257,9 @@ export default function TasksPage(){
           <div>
             <p className="eyebrow">Tarea asignada</p>
             <h2 style={{margin:"0 0 4px"}}>{selected.clientName} · {selected.contentType}</h2>
-            <p className="mini">Trabajar: {getTaskDate(selected)||"Sin fecha"} · Límite interno: {selected.internalDueDate||selected.dueDate||"Sin fecha"} · Publica: {selected.publishDate||selected.clientDueDate||"Sin fecha"} · Lote: {selected.batchName||"Sin lote"}</p>
+            <p className="mini">Fecha operativa: {getTaskDate(selected)||"Sin fecha"} · Publica: {selected.publishDate||"Sin fecha"} · Lote: {selected.batchName||"Sin lote"}</p>
           </div>
-          <button className="btn red" onClick={closeTask}>Cerrar</button>
+          <button className="btn red" onClick={()=>setSelected(null)}>Cerrar</button>
         </div>
 
         <div className="task-modal-grid">
@@ -410,14 +278,15 @@ export default function TasksPage(){
             </div>
 
             {selected.status!=="finalizada" ? <div className="finalize-box">
-              <h4>Mandar a aprobación</h4>
-              <p className="mini">Para mandar a aprobación debes pegar el link final del post en Drive.</p>
-              <input value={finalLink} onChange={e=>setFinalLink(e.target.value)} placeholder="Link final de Drive"/>
+              <h4>Link de entrega</h4>
+              <p className="mini">Pega el link final del post en Drive, Canva o carpeta de entrega. Este campo queda más visible para evitar errores.</p>
+              <input className="final-link-input" value={finalLink} onChange={e=>setFinalLink(e.target.value)} placeholder="Pega aquí el link de Drive, Canva, archivo o carpeta"/>
+              {finalLink.trim() && <a className="link-card" href={finalLink.trim()} target="_blank" style={{marginTop:10}}><span>{finalLink.trim()}</span><small>Abrir →</small></a>}
               <button className="btn blue" style={{marginTop:10}} onClick={sendToApproval}>Enviar a aprobación</button>
             </div> : <div className="finalize-box">
               <h4>Tarea cerrada</h4>
               <p className="mini">Esta tarea ya fue aprobada y finalizada. Se conserva como historial.</p>
-              {selected.finalPostLink && <a className="link-card" href={normalizeExternalUrl(selected.finalPostLink)} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a>}
+              {selected.finalPostLink && <a className="link-card" href={selected.finalPostLink} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a>}
             </div>}
 
             <div className="detail-section">
@@ -456,30 +325,26 @@ export default function TasksPage(){
 
           <aside>
             <div className="detail-section">
-              <h4>Comentarios y @menciones</h4>
+              <h4>Comentarios y dudas</h4>
+              <div className="field">
+                <label>Dirigir a</label>
+                <select value={commentTarget} onChange={e=>setCommentTarget(e.target.value)}>{commentTargets.map(x=><option key={x}>{x}</option>)}</select>
+              </div>
               <div className="field">
                 <label>Comentario</label>
-                <div className="mention-input-wrap">
-                  <textarea value={comment} onChange={e=>handleCommentChange(e.target.value)} onKeyDown={handleMentionKeyDown} placeholder="Escribe un comentario. Usa @ para mencionar a una persona o área; Enter completa la única coincidencia."/>
-                  {!!filteredMentionOptions.length && <div className="mention-suggestions">
-                    {filteredMentionOptions.map(option=><button type="button" key={option.token} onClick={()=>insertMention(option.token)}>
-                      <strong>@{option.token}</strong>
-                      <span>{option.name} · {option.role}</span>
-                    </button>)}
-                  </div>}
-                </div>
+                <textarea value={comment} onChange={e=>setComment(e.target.value)} placeholder="Escribe una duda. Usa @content, @kam, @mafer, @editor, etc."/>
               </div>
               <button className="btn blue" onClick={addComment}>Agregar comentario</button>
 
               <div style={{marginTop:14}}>
-                {((selected.comments||[]).slice().reverse()).map(c=><div className={`comment-box ${c.resolvedAt || c.status==="resolved" ? "resolved" : ""}`} key={c.id}>
-                  <strong>{c.author} → {c.target}</strong>
-                  <span className="mini">{new Date(c.createdAt).toLocaleString("es-MX")}</span>
-                  <p>{c.body}</p>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{c.mentions.map(m=><span className="mention" key={m}>{m}</span>)}</div>
-                  {(c.resolvedAt || c.status==="resolved") && <span className="resolved-badge">Resuelto{c.resolvedBy ? ` por ${c.resolvedBy}` : ""}</span>}
+                <h4>Log completo de la tarea</h4>
+                {selectedTimeline.map(entry=><div className="comment-box" key={entry.id}>
+                  <strong>{entry.author} → {entry.target}</strong>
+                  <span className="mini">{entry.createdAt ? new Date(entry.createdAt).toLocaleString("es-MX") : "Sin fecha exacta"}</span>
+                  <p>{entry.body}</p>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{entry.mentions.map(m=><span className="mention" key={m}>{m}</span>)}</div>
                 </div>)}
-                {!(selected.comments||[]).length && <p className="mini">Sin comentarios todavía.</p>}
+                {!selectedTimeline.length && <p className="mini">Sin movimientos todavía.</p>}
               </div>
             </div>
           </aside>
@@ -528,84 +393,60 @@ export default function TasksPage(){
 }
 
 
-function normalizeForMention(value:string){
-  return (value||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9._-]+/g, "");
+function normalizeCreatedAt(value:unknown){
+  if(!value)return "";
+  if(typeof value === "string")return value;
+  if(value && typeof value === "object" && "toDate" in value){
+    try{return ((value as {toDate:()=>Date}).toDate()).toISOString();}catch{return "";}
+  }
+  return "";
 }
 
-function makeMentionToken(value:string){
-  return normalizeForMention(value).slice(0,40);
-}
-
-function normalizeExternalUrl(value?:string){
-  const url=(value||"").trim();
-  if(!url)return "#";
-  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
-}
-
-
-async function autoCarryOverTasks(items:ContentRequest[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[]){
-  const today = todayDateKey();
-  const closeds = ["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","aprobada","finalizada","programada","publicada","cancelada","eliminada"];
-  const stale = items.filter(item=>item.id && item.plannedWorkDate && item.plannedWorkDate < today && !closeds.includes(item.status||""));
-  if(!stale.length) return {items, carried:0};
-  await Promise.all(stale.map(item=>{
-    const original = item.carriedOverFromDate || item.plannedWorkDate || today;
-    const days = Math.max(1, Math.abs(businessDaysBetween(original,today)));
-    const plan = getOperationalPlan(item,rules,overrides);
-    return updateRequest(item.id!,{
-      plannedWorkDate: today,
-      carriedOver: true,
-      carriedOverFromDate: original,
-      carriedOverDays: days,
-      operationalWeight: 1,
-      operationalRisk: "orange"
-    });
-  }));
-  const updated = items.map(item=> stale.some(staleItem=>staleItem.id===item.id)
-    ? {...item,plannedWorkDate:today,carriedOver:true,carriedOverFromDate:item.carriedOverFromDate||item.plannedWorkDate,carriedOverDays:Math.max(1,Math.abs(businessDaysBetween(item.carriedOverFromDate||item.plannedWorkDate||today,today))),operationalRisk:"orange" as const}
-    : item);
-  return {items:updated, carried:stale.length};
-}
-
-function isClosedTask(item:ContentRequest){
-  return ["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","aprobada","finalizada","programada","publicada","cancelada","eliminada"].includes(item.status||"");
-}
-
-function isCarriedTask(item:ContentRequest){
-  return Boolean(item.carriedOver || (item.plannedWorkDate && item.plannedWorkDate < todayDateKey() && !isClosedTask(item)));
-}
-
-function buildCapacitySummary(tasks:ContentRequest[], capacities:TeamDailyCapacity[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[]){
-  const active = tasks.filter(task=>!isClosedTask(task));
-  const grouped:Record<string,{person:string;date:string;load:number;capacity:number;carried:number;tasks:ContentRequest[]}> = {};
-  active.forEach(task=>{
-    const person = task.assignedTo || "Sin asignar";
-    const area = task.assignedArea || task.suggestedArea || "";
-    const date = getTaskDate(task) || todayDateKey();
-    const key = `${person}__${date}`;
-    const plan = getOperationalPlan(task,rules,overrides);
-    grouped[key] = grouped[key] || {person,date,load:0,capacity:getCapacityForPerson(person,area,capacities),carried:0,tasks:[]};
-    grouped[key].load += 1;
-    grouped[key].carried += isCarriedTask(task) ? 1 : 0;
-    grouped[key].tasks.push(task);
+function buildTaskTimeline(item:ContentRequest){
+  const base:TaskComment[] = [];
+  const createdAt = normalizeCreatedAt((item as any).createdAt);
+  base.push({
+    id:"system-created",
+    author:"Sistema",
+    target:"Origen",
+    body:`Solicitud creada para ${item.clientName || "Sin cliente"}. Lote: ${item.batchName || "Sin lote"}. Tipo: ${item.contentType || "Sin tipo"}. Publicación: ${item.publishDate || "Sin fecha"}.`,
+    mentions:[],
+    createdAt:createdAt || item.publishDate || item.batchDueDate || new Date().toISOString()
   });
-  const rows = Object.values(grouped).map(row=>({ ...row, tone:getCapacityTone(row.load,row.capacity) }))
-    .sort((a,b)=>a.date.localeCompare(b.date) || b.tone.ratio - a.tone.ratio || a.person.localeCompare(b.person,"es"))
-    .slice(0,18);
-  return {rows, overloadedCount:rows.filter(row=>row.tone.tone==="orange" || row.tone.tone==="red").length};
-}
+  if(item.batchDueDate || item.dueDate){
+    base.push({
+      id:"system-due-date",
+      author:"Sistema",
+      target:"Planeación",
+      body:`Fecha límite operativa definida: ${item.dueDate || item.batchDueDate}.`,
+      mentions:[],
+      createdAt:createdAt || new Date().toISOString()
+    });
+  }
+  if(item.assignedTo || item.assignedArea){
+    base.push({
+      id:"system-assignment-current",
+      author:"Sistema",
+      target:"Asignación",
+      body:`Asignación actual: ${item.assignedTo || "Sin responsable"} · Área: ${item.assignedArea || item.suggestedArea || "Sin área"} · Prioridad: ${item.priority || "Media"}.`,
+      mentions:[],
+      createdAt:createdAt || new Date().toISOString()
+    });
+  }
+  if(item.finalPostLink){
+    base.push({
+      id:"system-final-link",
+      author:"Sistema",
+      target:"Entrega",
+      body:`Link de entrega registrado: ${item.finalPostLink}.`,
+      mentions:[],
+      createdAt:createdAt || new Date().toISOString()
+    });
+  }
 
-function CapacityLoadPanel({rows}:{rows:ReturnType<typeof buildCapacitySummary>["rows"]}){
-  return <section className="card capacity-load-panel">
-    <div className="capacity-panel-head"><div><p className="eyebrow">Capacidad diaria</p><h3>Semáforo de cuellos de botella</h3></div><span className="mini">Lo no cerrado se arrastra al día siguiente y consume capacidad.</span></div>
-    {!rows.length ? <p className="mini">No hay tareas activas para calcular carga.</p> : <div className="capacity-load-grid">
-      {rows.map(row=><div className={`capacity-load-card ${row.tone.tone}`} key={`${row.person}-${row.date}`}>
-        <div><strong>{row.person}</strong><span>{row.date}</span></div>
-        <b>{row.load.toFixed(1)} / {row.capacity}</b>
-        <small>{row.tone.label} · {Math.round(row.tone.ratio*100)}% {row.carried ? `· ${row.carried} arrastrada(s)` : ""}</small>
-      </div>)}
-    </div>}
-  </section>;
+  return [...base, ...(item.comments||[])]
+    .filter(entry=>entry.body)
+    .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
 }
 
 function statusLabel(status:string){
@@ -613,9 +454,7 @@ function statusLabel(status:string){
     asignada: "Asignada",
     en_revision: "En revisión",
     rebotada: "Rebotada",
-    pendiente_aprobacion: "Aprobación Content",
-    pendiente_aprobacion_kam: "Aprobación KAM",
-    aprobada_pendiente_copyout: "En Contenidos",
+    pendiente_aprobacion: "En aprobación",
     aprobada: "Aprobada",
     finalizada: "Finalizada"
   };
@@ -623,14 +462,14 @@ function statusLabel(status:string){
 }
 
 function getTaskDate(item:ContentRequest){
-  return getEffectiveWorkDate(item);
+  return item.dueDate || item.batchDueDate || item.publishDate || "";
 }
 
 function isOverdue(item:ContentRequest){
-  const date = item.internalDueDate || item.dueDate || item.batchDueDate || item.publishDate || "";
+  const date = getTaskDate(item);
   if(!date)return false;
-  const today = todayDateKey();
-  return date < today && !["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","aprobada","finalizada"].includes(item.status||"");
+  const today = new Date().toISOString().slice(0,10);
+  return date < today && !["pendiente_aprobacion","aprobada","finalizada"].includes(item.status||"");
 }
 
 function key(date:Date){
@@ -642,7 +481,7 @@ function getWeekDays(date:Date){
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate()+diff);
-  return Array.from({length:5}).map((_,i)=>{
+  return Array.from({length:7}).map((_,i)=>{
     const x = new Date(d);
     x.setDate(d.getDate()+i);
     return x;
@@ -659,66 +498,7 @@ function getMonthDays(date:Date){
     const x = new Date(start);
     x.setDate(start.getDate()+i);
     return x;
-  }).filter(day=>day.getDay() !== 0 && day.getDay() !== 6);
-}
-
-
-function formatCalendarLabel(date: Date, mode: "semana" | "mes") {
-  const formatter = new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" });
-  if (mode === "mes") return formatter.format(date).replace(/^./, (c) => c.toUpperCase());
-  const days = getWeekDays(date);
-  const start = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short" }).format(days[0]);
-  const end = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(days[days.length-1]);
-  return `Semana ${start} – ${end}`;
-}
-
-function TodayView({tasks,onOpen}:{tasks:ContentRequest[];onOpen:(item:ContentRequest)=>void}){
-  const today = todayDateKey();
-  const active = tasks.filter(task=>!isClosedTask(task));
-  const carried = active.filter(task=>isCarriedTask(task) || isOverdue(task)).sort(sortDailyTasks);
-  const todayList = active.filter(task=>getTaskDate(task) === today && !carried.some(item=>item.id===task.id)).sort(sortDailyTasks);
-  const nextList = active.filter(task=>getTaskDate(task) > today).sort(sortDailyTasks).slice(0,10);
-  return <div className="daily-workspace">
-    <section className="daily-focus-card today-main-card">
-      <div className="daily-card-head"><div><p className="eyebrow">Trabajo diario</p><h3>Para trabajar hoy</h3></div><span className="pill green">{todayList.length} tarea(s)</span></div>
-      {todayList.map(task=><DailyTaskCard key={task.id} task={task} onOpen={onOpen}/>) }
-      {!todayList.length && <p className="mini">No hay tareas programadas para hoy con estos filtros.</p>}
-    </section>
-    <section className="daily-focus-card urgent-card">
-      <div className="daily-card-head"><div><p className="eyebrow">Prioridad</p><h3>Arrastradas o vencidas</h3></div><span className={carried.length ? "pill orange" : "pill green"}>{carried.length}</span></div>
-      {carried.map(task=><DailyTaskCard key={task.id} task={task} onOpen={onOpen} compact/>) }
-      {!carried.length && <p className="mini">Sin arrastres ni vencidas. Buen ritmo.</p>}
-    </section>
-    <section className="daily-focus-card next-card">
-      <div className="daily-card-head"><div><p className="eyebrow">Próximo</p><h3>Siguientes tareas</h3></div><span className="pill">{nextList.length}</span></div>
-      {nextList.map(task=><DailyTaskCard key={task.id} task={task} onOpen={onOpen} compact/>) }
-      {!nextList.length && <p className="mini">No hay próximas tareas con estos filtros.</p>}
-    </section>
-  </div>;
-}
-
-function DailyTaskCard({task,onOpen,compact=false}:{task:ContentRequest;onOpen:(item:ContentRequest)=>void;compact?:boolean}){
-  const carried = isCarriedTask(task);
-  const overdue = isOverdue(task);
-  return <button className={`daily-task-card ${compact ? "compact" : ""} ${carried ? "carried" : ""} ${overdue ? "overdue" : ""}`} onClick={()=>onOpen(task)}>
-    <div>
-      <strong>{task.clientName} · {task.contentType}</strong>
-      <span>{task.assignedTo || "Sin responsable"} · {task.assignedArea || task.suggestedArea || "Sin área"}</span>
-    </div>
-    <div className="daily-task-dates">
-      <b>{carried ? "Arrastrada" : overdue ? "Vencida" : "Trabajar"}</b>
-      <span>{getTaskDate(task)||"Sin fecha"}</span>
-    </div>
-    {!compact && <p>{task.creativeIdea || task.topic || "Sin detalle creativo"}</p>}
-  </button>;
-}
-
-function sortDailyTasks(a:ContentRequest,b:ContentRequest){
-  const carriedScore = Number(isCarriedTask(b) || isOverdue(b)) - Number(isCarriedTask(a) || isOverdue(a));
-  if(carriedScore) return carriedScore;
-  const dateCompare = (getTaskDate(a)||"").localeCompare(getTaskDate(b)||"");
-  if(dateCompare) return dateCompare;
-  return (a.clientName||"").localeCompare(b.clientName||"","es");
+  });
 }
 
 function WeekView({days,tasksByDate,onOpen}:{days:Date[];tasksByDate:Record<string,ContentRequest[]>;onOpen:(item:ContentRequest)=>void}){
@@ -735,7 +515,7 @@ function MonthView({days,cursor,tasksByDate,onOpen}:{days:Date[];cursor:Date;tas
 
 function DayBox({date,tasks,onOpen,muted=false,variant}:{date:Date;tasks:ContentRequest[];onOpen:(item:ContentRequest)=>void;muted?:boolean;variant:"week"|"month"}){
   const label = date.toLocaleDateString("es-MX",{weekday:"short"});
-  return <div className={variant==="week"?"week-day":"month-day"} style={{opacity:muted ? .55 : 1}}>
+  return <div className={variant==="week"?"week-day":"month-day"} style={{opacity:muted?.55:1}}>
     <div className="day-title"><strong>{label} {date.getDate()}</strong><span>{tasks.length}</span></div>
     {tasks.map(task=><TaskChip task={task} onOpen={onOpen} key={task.id}/>)}
   </div>;
@@ -744,11 +524,10 @@ function DayBox({date,tasks,onOpen,muted=false,variant}:{date:Date;tasks:Content
 function TaskChip({task,onOpen}:{task:ContentRequest;onOpen:(item:ContentRequest)=>void}){
   const overdue = isOverdue(task);
   const done = ["pendiente_aprobacion","aprobada","finalizada"].includes(task.status||"");
-  const carried = isCarriedTask(task);
-  return <button className={`task-chip ${overdue?"overdue":""} ${done?"done":""} ${carried?"carried":""}`} onClick={()=>onOpen(task)}>
+  return <button className={`task-chip ${overdue?"overdue":""} ${done?"done":""}`} onClick={()=>onOpen(task)}>
     <strong>{task.clientName}</strong>
     <span>{task.contentType} · {task.assignedTo||"Sin asignar"}</span>
-    <span className="mini-status">{carried ? `ARRASTRADA ${task.carriedOverDays||1}d` : overdue ? "VENCIDA" : statusLabel(task.status||"")}</span>
+    <span className="mini-status">{overdue ? "VENCIDA" : statusLabel(task.status||"")}</span>
   </button>;
 }
 
@@ -756,7 +535,7 @@ function ListView({tasks,onOpen}:{tasks:ContentRequest[];onOpen:(item:ContentReq
   if(!tasks.length)return <div className="card"><p>No hay tareas con estos filtros.</p></div>;
   return <div>{tasks.sort((a,b)=>getTaskDate(a).localeCompare(getTaskDate(b))).map(task=><button className={`list-task-card ${isOverdue(task)?"task-chip overdue":""}`} key={task.id} onClick={()=>onOpen(task)}>
     <strong>{task.clientName} · {task.contentType}</strong>
-    <span className="mini">Trabajar: {getTaskDate(task)||"Sin fecha"} · Interna: {task.internalDueDate||task.dueDate||"Sin fecha"} · Responsable: {task.assignedTo||"Sin asignar"} · Estado: {isOverdue(task) ? "VENCIDA" : statusLabel(task.status||"")}</span>
+    <span className="mini">Fecha operativa: {getTaskDate(task)||"Sin fecha"} · Responsable: {task.assignedTo||"Sin asignar"} · Estado: {isOverdue(task) ? "VENCIDA" : statusLabel(task.status||"")}</span>
     <span className="mini">{task.creativeIdea}</span>
   </button>)}</div>;
 }
@@ -770,86 +549,6 @@ function PersonView({tasks,onOpen}:{tasks:ContentRequest[];onOpen:(item:ContentR
       {items.map(task=><TaskChip task={task} onOpen={onOpen} key={task.id}/>)}
     </div>)}
   </div>;
-}
-
-function EfficiencyView({tasks,onOpen}:{tasks:ContentRequest[];onOpen:(item:ContentRequest)=>void}){
-  const actionable = tasks.filter(task=>!["finalizada","pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout"].includes(task.status||""));
-  const ranked = actionable.map(task=>({task,score:efficiencyScore(task),reason:efficiencyReason(task)})).sort((a,b)=>b.score-a.score || getTaskDate(a.task).localeCompare(getTaskDate(b.task))).slice(0,12);
-  const groupedByType = actionable.reduce((acc:Record<string,ContentRequest[]>,task)=>{
-    const key = `${task.assignedArea || task.suggestedArea || "Sin área"} · ${task.contentType || "Sin tipo"}`;
-    acc[key]=acc[key]||[];
-    acc[key].push(task);
-    return acc;
-  },{});
-  const risks = actionable.filter(task=>isOverdue(task) || (task.priority||"")==="Urgente" || !task.finalPostLink && task.status==="en_revision").slice(0,6);
-  return <div className="efficiency-panel">
-    <div className="efficiency-hero card">
-      <p className="eyebrow">Asistente operativo</p>
-      <h3>Orden sugerido de trabajo</h3>
-      <p className="mini">Esta vista ayuda a Diseño y Audiovisual a decidir qué trabajar primero según vencimiento, prioridad, estado y bloqueos. Es una guía para mejorar foco, no reemplaza criterio del líder.</p>
-    </div>
-    <div className="grid two-col">
-      <section className="card">
-        <h3>Haz primero</h3>
-        {ranked.map(({task,reason},index)=><button className="efficiency-task" type="button" key={task.id} onClick={()=>onOpen(task)}>
-          <span className="efficiency-rank">{index+1}</span>
-          <div><strong>{task.clientName} · {task.contentType}</strong><p>{reason}</p><span className="mini text-clamp-1">{task.creativeIdea || task.copyIn || "Sin detalle"}</span></div>
-        </button>)}
-        {!ranked.length && <p className="mini">No hay tareas activas por priorizar.</p>}
-      </section>
-      <section className="card">
-        <h3>Bloques de trabajo sugeridos</h3>
-        {Object.entries(groupedByType).slice(0,8).map(([key,items])=><div className="efficiency-block" key={key}>
-          <strong>{key}</strong>
-          <span>{items.length} pieza(s). Conviene trabajarlas juntas para reducir cambios de contexto.</span>
-        </div>)}
-        {!Object.keys(groupedByType).length && <p className="mini">Sin bloques sugeridos.</p>}
-      </section>
-    </div>
-    <section className="card">
-      <h3>Riesgos a revisar</h3>
-      <div className="table-wrap"><table className="table"><thead><tr><th>Tarea</th><th>Responsable</th><th>Fecha operativa</th><th>Riesgo</th></tr></thead><tbody>
-        {risks.map(task=><tr key={task.id}><td><strong>{task.clientName}</strong><br/><span className="mini text-clamp-1">{task.contentType} · {task.objective}</span></td><td>{task.assignedTo||"Sin asignar"}</td><td>{getTaskDate(task)||"Sin fecha"}</td><td>{efficiencyReason(task)}</td></tr>)}
-      </tbody></table></div>
-      {!risks.length && <p className="mini">No hay riesgos fuertes con los filtros actuales.</p>}
-    </section>
-  </div>;
-}
-
-function efficiencyScore(task:ContentRequest){
-  let score = 0;
-  if(isOverdue(task)) score += 100;
-  if((task.priority||"") === "Urgente") score += 60;
-  if((task.priority||"") === "Alta") score += 35;
-  if(task.status === "rebotada") score += 45;
-  if(task.status === "en_revision") score += 25;
-  const date = getTaskDate(task);
-  if(date){
-    const today = new Date();
-    const due = new Date(`${date}T12:00:00`);
-    const days = Math.ceil((due.getTime()-today.getTime())/86400000);
-    if(days <= 0) score += 40;
-    else if(days <= 1) score += 30;
-    else if(days <= 3) score += 18;
-    else if(days <= 5) score += 8;
-  }else score += 10;
-  return score;
-}
-
-function efficiencyReason(task:ContentRequest){
-  if(isOverdue(task)) return "Vencida: atender o justificar hoy.";
-  if(task.status === "rebotada") return "Rebotada: corregir antes de tomar nuevas piezas.";
-  if((task.priority||"") === "Urgente") return "Urgente: priorizar en el primer bloque del día.";
-  if(task.status === "en_revision" && !task.finalPostLink) return "En revisión sin link final: cerrar entregable.";
-  const date = getTaskDate(task);
-  if(date){
-    const today = new Date();
-    const due = new Date(`${date}T12:00:00`);
-    const days = Math.ceil((due.getTime()-today.getTime())/86400000);
-    if(days <= 1) return "Entrega próxima: conviene cerrar hoy.";
-    if(days <= 3) return "Entrega cercana: avanzar antes de que se vuelva urgente.";
-  }
-  return "Buen candidato para agrupar por cliente/tipo.";
 }
 
 function splitLinks(value:string){
@@ -866,7 +565,7 @@ function FilePreviewGrid({files,onPreview}:{files:ReferenceFile[];onPreview:(fil
   if(!files?.length)return <p className="mini">Sin archivos.</p>;
   return <div className="preview-grid">
     {files.map((file,index)=><button type="button" className="preview-thumb" key={index} onClick={()=>onPreview(file)}>
-      {isImageFile(file)?<img src={file.url} alt="Referencia"/>:isVideoFile(file)?<video src={file.url} muted playsInline preload="metadata"/>:<span>Archivo</span>}
+      {isImageFile(file)?<img src={file.url} alt="Referencia"/>:<span>Archivo</span>}
     </button>)}
   </div>;
 }
@@ -878,7 +577,7 @@ function PreviewModal({file,onClose}:{file:ReferenceFile;onClose:()=>void}){
         <strong>{file.name}</strong>
         <button className="btn red" onClick={onClose}>Cerrar</button>
       </div>
-      {isImageFile(file)?<img src={file.url} alt={file.name}/>:isVideoFile(file)?<video src={file.url} controls playsInline/>:<p>Archivo no previsualizable.</p>}
+      {isImageFile(file)?<img src={file.url} alt={file.name}/>:<p>Archivo no previsualizable.</p>}
     </div>
   </div>;
 }
