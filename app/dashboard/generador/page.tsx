@@ -1,10 +1,11 @@
 "use client";
 import Link from "next/link";
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, memo, useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
 import {
   Brand,
+  calculateClientBillingBalance,
   ClientAsset,
   ContentRequest,
   GenerationRequest,
@@ -14,6 +15,8 @@ import {
   listGenerationRequests,
   listRequests,
   saveGenerationRequest,
+  saveClientTextAsset,
+  uploadReferenceFiles,
   updateGenerationRequest
 } from "@/lib/data";
 
@@ -27,12 +30,32 @@ type TextBlock = {
 };
 
 type RequestAttachment = {
-  file: File;
+  file?: File;
   preview: string;
   name: string;
   role: string;
   notes: string;
+  fileUrl?: string;
+  mimeType?: string;
 };
+
+
+function getRecordTime(value: any): number {
+  if (!value) return 0;
+  if (typeof value === "string") return Date.parse(value) || 0;
+  if (typeof value === "number") return value;
+  if (typeof value.toDate === "function") return value.toDate().getTime();
+  if (typeof value.seconds === "number") return value.seconds * 1000;
+  return 0;
+}
+
+function getBriefSortTime(item: any): number {
+  return Math.max(
+    getRecordTime(item?.generatedAt),
+    getRecordTime(item?.updatedAt),
+    getRecordTime(item?.createdAt)
+  );
+}
 
 const formats = [
   { id: "instagram-post", label: "Post Instagram 4:5" },
@@ -134,6 +157,22 @@ function isLogo(asset: ClientAsset) {
   return isImage(asset) && (value.includes("logo") || value.includes("logotipo"));
 }
 
+function isTextAsset(asset: ClientAsset) {
+  const value = `${asset.type} ${asset.category} ${(asset.tags || []).join(" ")} ${asset.name} ${(asset as any).text || ""}`.toLowerCase();
+  return value.includes("bloque-texto") || asset.type === "texto" || asset.mimeType === "text/plain";
+}
+
+function isFontAsset(asset: ClientAsset) {
+  const value = `${asset.type} ${asset.category} ${(asset.tags || []).join(" ")} ${asset.name} ${asset.mimeType || ""} ${asset.originalFileName || ""}`.toLowerCase();
+  return asset.type === "font" || value.includes("tipografia") || value.includes("fuente") || /\.(otf|ttf|woff2?|eot)(\?|$)/i.test(`${asset.fileUrl || ""} ${asset.storagePath || ""}`);
+}
+
+function getAssetCategory(asset: ClientAsset) {
+  if (isLogo(asset)) return "Logos";
+  if (isTextAsset(asset)) return "Textos";
+  return asset.category || asset.type || "Otros";
+}
+
 function formatStatus(status?: string) {
   if (status === "completed") return "Generado";
   if (status === "generating") return "Generando";
@@ -150,7 +189,7 @@ function getGeneratedImageUrl(image: any) {
 }
 
 export default function BustItNowPage() {
-  const [tab, setTab] = useState<"brief" | "tareas" | "historial" | "mapa">("brief");
+  const [tab, setTab] = useState<"brief" | "tareas" | "briefs" | "historial" | "mapa">("brief");
   const [clients, setClients] = useState<Brand[]>([]);
   const [requests, setRequests] = useState<ContentRequest[]>([]);
   const [history, setHistory] = useState<GenerationRequest[]>([]);
@@ -160,6 +199,7 @@ export default function BustItNowPage() {
   const [format, setFormat] = useState("instagram-post");
   const [goal, setGoal] = useState("sell");
   const [contentType, setContentType] = useState("promotion");
+  const [textRenderMode, setTextRenderMode] = useState<"ai-text" | "editable-layers">("ai-text");
   const [mainMessage, setMainMessage] = useState("");
   const [textBlocks, setTextBlocks] = useState<TextBlock[]>([emptyBlock()]);
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>([]);
@@ -179,6 +219,9 @@ export default function BustItNowPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [clientFilter, setClientFilter] = useState("all");
+  const [assetCategoryFilter, setAssetCategoryFilter] = useState("all");
+  const [textAssetRoleFilter, setTextAssetRoleFilter] = useState("all");
+  const [savingTextAssetId, setSavingTextAssetId] = useState("");
 
   async function load() {
     const [c, r, h, g] = await Promise.all([
@@ -196,23 +239,46 @@ export default function BustItNowPage() {
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
+    setAssetCategoryFilter("all");
+    setTextAssetRoleFilter("all");
+
     if (!clientId) {
       setAssets([]);
       setSelectedAssetIds([]);
+      setSelectedLogoAssetId("");
       return;
     }
+
     listClientAssets(clientId).then((rows) => {
       const sorted = [...rows].sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured));
       setAssets(sorted);
-      setSelectedAssetIds(sorted.filter((asset) => asset.isFeatured && !isLogo(asset)).map((asset) => asset.id || "").filter(Boolean));
+      setSelectedAssetIds([]);
       const firstLogo = sorted.find(isLogo);
-      if (firstLogo) setSelectedLogoAssetId(firstLogo.id || "");
+      setSelectedLogoAssetId(firstLogo?.id || "");
     });
   }, [clientId]);
 
   const client = clients.find((item) => item.id === clientId);
-  const selectedAssets = assets.filter((asset) => selectedAssetIds.includes(asset.id || ""));
-  const logoAssets = assets.filter(isLogo);
+  const billingMonth = new Date().toISOString().slice(0, 7);
+  const aiBillingBalance = useMemo(() => client ? calculateClientBillingBalance({ client, month: billingMonth, requests: [], productions: [], generatedImages: generatedRecords }) : null, [client, billingMonth, generatedRecords]);
+  const selectedAssets = useMemo(() => assets.filter((asset) => selectedAssetIds.includes(asset.id || "")), [assets, selectedAssetIds]);
+  const selectedVisualAssets = useMemo(() => selectedAssets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset)), [selectedAssets]);
+  const logoAssets = useMemo(() => assets.filter(isLogo), [assets]);
+  const fontAssets = useMemo(() => assets.filter(isFontAsset), [assets]);
+  const visualAssetCategories = useMemo(() => {
+    const categories: string[] = Array.from(new Set(assets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset)).map((asset) => String(getAssetCategory(asset))).filter(Boolean)));
+    return categories.sort((a, b) => a.localeCompare(b, "es"));
+  }, [assets]);
+  const visibleAssets = useMemo(() => {
+    return assets.filter((asset) => !isTextAsset(asset) && !isFontAsset(asset) && (assetCategoryFilter === "all" || getAssetCategory(asset) === assetCategoryFilter));
+  }, [assets, assetCategoryFilter]);
+  const textAssetRoleOptions = useMemo(() => {
+    const values: string[] = Array.from(new Set(assets.filter(isTextAsset).map((asset) => String((asset as any).visualRole || asset.category || "free"))));
+    return values.sort((a, b) => a.localeCompare(b, "es"));
+  }, [assets]);
+  const visibleTextAssets = useMemo(() => {
+    return assets.filter((asset) => isTextAsset(asset) && (textAssetRoleFilter === "all" || ((asset as any).visualRole || asset.category || "free") === textAssetRoleFilter));
+  }, [assets, textAssetRoleFilter]);
   const sentTasks = useMemo(
     () => requests.filter((item) => Boolean(item.generatorStatus) && (clientFilter === "all" || item.clientId === clientFilter)),
     [requests, clientFilter]
@@ -222,20 +288,99 @@ export default function BustItNowPage() {
     [history, clientFilter]
   );
 
-  const feedItems = useMemo(() => {
+  const briefItems = useMemo(() => {
     return filteredHistory
-      .map((request) => {
-        const generated = generatedRecords.find((image) => image.requestId === request.id);
+      .slice()
+      .sort((a, b) => {
+        const byDate = getBriefSortTime(b) - getBriefSortTime(a);
+        if (byDate !== 0) return byDate;
+        return String(b.id || "").localeCompare(String(a.id || ""));
+      });
+  }, [filteredHistory]);
+
+  const feedItems = useMemo(() => {
+    return generatedRecords
+      .filter((image) => clientFilter === "all" || image.clientId === clientFilter)
+      .map((image) => {
+        const relatedRequest = history.find((request) => request.id === image.requestId);
         return {
-          request,
-          imageUrl: getGeneratedImageUrl(generated)
+          image,
+          request: (relatedRequest || {
+            id: image.requestId,
+            clientId: image.clientId,
+            clientName: image.clientName,
+            mainMessage: `Variante ${image.variantIndex || ""}`.trim(),
+            format: "",
+            goal: "",
+            contentType: "",
+            selectedEmotions: [],
+            selectedVisualElements: [],
+            specificInstructions: "",
+            textBlocks: [],
+            selectedAssetIds: [],
+            selectedAssetsSnapshot: [],
+            status: image.status || "generated",
+            executedModel: image.executedModel || ""
+          }) as GenerationRequest,
+          imageUrl: getGeneratedImageUrl({ ...image, imageDataUrl: image.finalImageDataUrl || image.imageDataUrl })
         };
       })
-      .sort((a, b) => String(b.request.id || "").localeCompare(String(a.request.id || "")));
-  }, [filteredHistory, generatedRecords]);
+      .filter((item) => item.imageUrl)
+      .sort((a, b) => {
+        const byDate = getBriefSortTime(b.image) - getBriefSortTime(a.image);
+        if (byDate !== 0) return byDate;
+        return String(b.image.id || "").localeCompare(String(a.image.id || ""));
+      });
+  }, [generatedRecords, clientFilter, history]);
 
   function toggle(value: string, arr: string[], setter: (values: string[]) => void) {
     setter(arr.includes(value) ? arr.filter((item) => item !== value) : [...arr, value]);
+  }
+
+  const toggleAsset = useCallback((assetId: string) => {
+    if (!assetId) return;
+    setSelectedAssetIds((current) => current.includes(assetId) ? current.filter((item) => item !== assetId) : [...current, assetId]);
+  }, []);
+
+  function addTextAssetToBrief(asset: ClientAsset) {
+    const text = String((asset as any).text || asset.notes || asset.name || "").trim();
+    if (!text) return;
+    setTextBlocks((blocks) => [
+      ...blocks,
+      {
+        ...emptyBlock(),
+        text,
+        role: String((asset as any).visualRole || asset.category || "free"),
+        priority: String((asset as any).priority || "medium"),
+        instruction: asset.notes || ""
+      }
+    ]);
+    setSuccess("Bloque de texto agregado al brief.");
+  }
+
+  async function saveBlockAsAsset(block: TextBlock) {
+    if (!client?.id) return alert("Selecciona un cliente antes de guardar el bloque como asset.");
+    if (!block.text.trim()) return alert("Escribe texto antes de guardarlo como asset.");
+
+    setSavingTextAssetId(block.id);
+    setError("");
+    setSuccess("");
+    try {
+      await saveClientTextAsset(client.id, client.name, {
+        name: `${roles.find((role) => role.id === block.role)?.label || "Texto"}: ${block.text.slice(0, 42)}`,
+        role: block.role,
+        priority: block.priority,
+        text: block.text.trim(),
+        instruction: block.instruction.trim()
+      });
+      const rows = await listClientAssets(client.id);
+      setAssets([...rows].sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured)));
+      setSuccess("Bloque guardado como asset de texto.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo guardar el bloque como asset.");
+    } finally {
+      setSavingTextAssetId("");
+    }
   }
 
   function updateBlock(id: string, patch: Partial<TextBlock>) {
@@ -266,17 +411,51 @@ export default function BustItNowPage() {
       setError("La referencia puntual debe ser una imagen PNG, JPG o WEBP.");
       return;
     }
-    setAttachment({ file, preview: URL.createObjectURL(file), name: file.name, role: "producto-principal", notes: "" });
+    setAttachment({ file, preview: URL.createObjectURL(file), name: file.name, role: "producto-principal", notes: "", mimeType: file.type });
   }
 
-  function buildPrompt() {
+  function currentAttachmentSnapshot(requestAttachmentsOverride?: any[]) {
+    if (requestAttachmentsOverride) return requestAttachmentsOverride;
+    return attachment ? [{
+      name: attachment.name,
+      role: attachment.role,
+      notes: attachment.notes,
+      fileUrl: attachment.fileUrl || attachment.preview,
+      mimeType: attachment.mimeType || attachment.file?.type || ""
+    }] : [];
+  }
+
+  async function persistAttachmentForBrief() {
+    if (!attachment) return [];
+    if (attachment.fileUrl) return currentAttachmentSnapshot();
+    if (!client?.id) throw new Error("Selecciona un cliente antes de guardar el brief.");
+
+    if (!attachment.file) throw new Error("Selecciona una imagen puntual válida antes de guardar el brief.");
+    const uploaded = await uploadReferenceFiles([attachment.file], `generation-briefs/${client.id}`);
+    const first = uploaded[0];
+    if (!first?.url) throw new Error("No se pudo subir la imagen puntual del brief.");
+
+    const saved = {
+      name: attachment.name,
+      role: attachment.role,
+      notes: attachment.notes,
+      fileUrl: first.url,
+      mimeType: first.type || attachment.file.type
+    };
+
+    setAttachment((current) => current ? { ...current, fileUrl: first.url, mimeType: first.type || current.file?.type || "" } : current);
+    return [saved];
+  }
+
+  function buildPromptForMode(mode: "ai-text" | "editable-layers", requestAttachmentsOverride?: any[]) {
     const logoAsset = assets.find((asset) => asset.id === selectedLogoAssetId);
-    const built = buildGenerationPrompt({
+    return buildGenerationPrompt({
       clientName: client?.name,
       clientIndustry: client?.industry,
       format,
       goal,
       contentType,
+      textRenderMode: mode,
       mainMessage,
       textBlocks: cleanBlocks(),
       selectedEmotions,
@@ -288,14 +467,8 @@ export default function BustItNowPage() {
         visualStyle: client?.visualStyle ? [client.visualStyle] : [],
         dos: client?.contentPillars ? [client.contentPillars] : []
       },
-      selectedAssetsSnapshot: selectedAssets,
-      requestAttachments: attachment ? [{
-        name: attachment.name,
-        role: attachment.role,
-        notes: attachment.notes,
-        fileUrl: attachment.preview,
-        mimeType: attachment.file.type
-      }] : [],
+      selectedAssetsSnapshot: selectedVisualAssets,
+      requestAttachments: currentAttachmentSnapshot(requestAttachmentsOverride),
       logoOverlay: logoOverlayEnabled ? {
         enabled: true,
         assetId: selectedLogoAssetId,
@@ -305,6 +478,11 @@ export default function BustItNowPage() {
         size: logoSize
       } : { enabled: false }
     });
+  }
+
+  function buildPrompt(requestAttachmentsOverride?: any[]) {
+    const activeMode = textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
+    const built = buildPromptForMode(activeMode, requestAttachmentsOverride);
     setPrompt(built);
     return built;
   }
@@ -313,7 +491,9 @@ export default function BustItNowPage() {
     if (!client) return alert("Selecciona un cliente.");
     if (!mainMessage.trim()) return alert("Escribe el mensaje principal.");
     if (cleanBlocks().length === 0) return alert("Agrega al menos un bloque de texto.");
-    const built = buildPrompt();
+    const requestAttachments = await persistAttachmentForBrief();
+    const built = buildPromptForMode(textRenderMode, requestAttachments);
+    setPrompt(built);
     const ref: any = await saveGenerationRequest({
       clientId: client.id!,
       clientName: client.name,
@@ -322,31 +502,34 @@ export default function BustItNowPage() {
       format,
       goal,
       contentType,
+      textRenderMode,
       selectedEmotions,
       selectedVisualElements,
       specificInstructions: specificInstructions.trim(),
       textBlocks: cleanBlocks(),
       selectedAssetIds,
-      selectedAssetsSnapshot: selectedAssets,
-      requestAttachments: attachment ? [{
-        name: attachment.name,
-        role: attachment.role,
-        notes: attachment.notes,
-        fileUrl: attachment.preview,
-        mimeType: attachment.file.type
-      }] : [],
+      selectedAssetsSnapshot: selectedVisualAssets,
+      requestAttachments,
       brandBrainSnapshot: client.brandBrain,
       logoOverlay: { enabled: logoOverlayEnabled, assetId: selectedLogoAssetId, position: logoPosition, size: logoSize },
       generatedPrompt: built,
       executedModel: selectedModel,
       status
     });
-    setSuccess("Brief guardado en historial.");
+    setSuccess("Brief guardado en Briefs.");
     await load();
     return ref?.id || "";
   }
 
   async function generate() {
+    if (aiBillingBalance && aiBillingBalance.includedAiGenerations > 0) {
+      const generatedCount = variantCount;
+      const projected = aiBillingBalance.aiGenerations + generatedCount;
+      if (projected > aiBillingBalance.includedAiGenerations && !aiBillingBalance.onDemandEnabled) {
+        setError(`Este cliente tiene límite de ${aiBillingBalance.includedAiGenerations} generaciones IA al mes. Ya lleva ${aiBillingBalance.aiGenerations}. Ajusta el límite o activa cobro bajo demanda en Clientes.`);
+        return;
+      }
+    }
     setError("");
     setSuccess("");
     setGeneratedImages([]);
@@ -355,22 +538,27 @@ export default function BustItNowPage() {
     let requestId = "";
     try {
       requestId = await saveBriefOnly("generating") || "";
-      const built = prompt || buildPrompt();
-      const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: built,
-          format,
-          model: selectedModel,
-          variantCount,
-          referenceImages: selectedAssets.map((asset) => ({ url: asset.fileUrl, name: asset.name }))
-        })
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "No se pudo generar.");
+      const referenceImages = selectedVisualAssets.filter(isImage).map((asset) => ({ url: asset.fileUrl, name: asset.name }));
+      async function requestImages(mode: "ai-text" | "editable-layers") {
+        const built = mode === "editable-layers" ? buildPromptForMode("editable-layers") : buildPromptForMode("ai-text");
+        const response = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: built,
+            format,
+            model: selectedModel,
+            variantCount,
+            referenceImages
+          })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "No se pudo generar.");
+        return payload;
+      }
+      const payload = await requestImages(textRenderMode);
       setGeneratedImages(payload.imagesBase64 || []);
-      if (requestId) await updateGenerationRequest(requestId, { status: "completed", executedModel: payload.executedModel, generationMode: payload.generationMode });
+      if (requestId) await updateGenerationRequest(requestId, { status: "completed", executedModel: payload.executedModel || selectedModel, generationMode: payload.generationMode || "gemini" });
       setSuccess("Imagen generada correctamente.");
       await load();
     } catch (err) {
@@ -387,10 +575,20 @@ export default function BustItNowPage() {
     setFormat(item.format);
     setGoal(item.goal);
     setContentType(item.contentType);
+    setTextRenderMode((item as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text");
     setTextBlocks((item.textBlocks as any) || [emptyBlock()]);
     setSelectedEmotions(item.selectedEmotions || []);
     setSelectedVisualElements(item.selectedVisualElements || []);
     setSpecificInstructions(item.specificInstructions || "");
+    const savedAttachment = (item.requestAttachments || [])[0] as any;
+    setAttachment(savedAttachment?.fileUrl ? {
+      preview: savedAttachment.fileUrl,
+      name: savedAttachment.name || "Imagen puntual del brief",
+      role: savedAttachment.role || "referencia-visual",
+      notes: savedAttachment.notes || "",
+      fileUrl: savedAttachment.fileUrl,
+      mimeType: savedAttachment.mimeType || ""
+    } : null);
     setPrompt(item.generatedPrompt || "");
     setTab("brief");
   }
@@ -398,17 +596,20 @@ export default function BustItNowPage() {
   return (
     <AppShell active="BUST It Now">
       <main className="min-h-screen bg-zinc-100 text-zinc-950">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
-          <header className="rounded-[2rem] bg-zinc-950 p-6 text-white shadow-xl shadow-zinc-300/60 sm:p-8">
-            <p className="mb-2 text-sm font-semibold uppercase tracking-[0.22em] text-zinc-400">BUST IT NOW</p>
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Generador de piezas</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-300">Selecciona una marca, carga su Brand Brain, reutiliza sus bloques de texto y elige los assets que sí deben viajar al request.</p>
+        <div className="flex w-full flex-col gap-8">
+          <header className="hero generator-apple-hero">
+            <div className="generator-hero-copy">
+              <p className="eyebrow">BUST It Now</p>
+              <h1>Generador de piezas</h1>
+              <p>Selecciona una marca, carga su Brand Brain, reutiliza sus bloques de texto y elige los assets que sí deben viajar al request.</p>
+            </div>
           </header>
 
           <nav className="flex flex-wrap gap-2">
             {[
-              ["brief", "Generador / Brief"],
+              ["brief", "Nuevo brief"],
               ["tareas", "Solicitudes desde Tareas"],
+              ["briefs", "Briefs"],
               ["historial", "Historial"],
               ["mapa", "Integración"]
             ].map(([id, label]) => (
@@ -444,6 +645,7 @@ export default function BustItNowPage() {
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">Cliente</p>
                         <p className="mt-2 text-lg font-semibold text-zinc-950">{client.name}</p>
                         <p className="mt-1 text-sm text-zinc-600">{client.industry || "Sin categoría"}</p>
+                        {aiBillingBalance ? <p className="mt-3 rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-zinc-700">IA mes: {aiBillingBalance.aiGenerations}/{aiBillingBalance.includedAiGenerations || "sin límite"} · Bajo demanda {aiBillingBalance.onDemandEnabled ? "activo" : "inactivo"}</p> : null}
                       </div>
                     ) : null}
                   </section>
@@ -461,6 +663,34 @@ export default function BustItNowPage() {
                         { id: "4", label: "4 variantes" }
                       ]} />
                     </div>
+
+                    <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
+                      <p className="text-sm font-semibold text-zinc-950">Modo de texto</p>
+                      <p className="mt-1 text-xs leading-5 text-zinc-600">Elige una sola salida: la IA puede escribir el texto dentro de la imagen o generar solo la composición para editar el texto después.</p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => setTextRenderMode("ai-text")}
+                          className={`rounded-2xl border p-4 text-left transition ${textRenderMode === "ai-text" ? "border-zinc-950 bg-white shadow-sm" : "border-zinc-200 bg-white/70 hover:border-zinc-400"}`}
+                        >
+                          <strong className="block text-sm text-zinc-950">IA genera texto</strong>
+                          <span className="mt-1 block text-xs leading-5 text-zinc-600">La IA genera la propuesta completa con texto. Ideal para bocetos e inspiración.</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTextRenderMode("editable-layers")}
+                          className={`rounded-2xl border p-4 text-left transition ${textRenderMode === "editable-layers" ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-zinc-200 bg-white/70 hover:border-emerald-400"}`}
+                        >
+                          <strong className="block text-sm text-zinc-950">Solo composición / texto editable</strong>
+                          <span className="mt-1 block text-xs leading-5 text-zinc-600">La IA genera una base visual sin texto y los bloques se montan como capas editables.</span>
+                        </button>
+                      </div>
+                    </div>
+                    {textRenderMode === "editable-layers" ? (
+                      <div className="mt-4 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-xs leading-5 text-emerald-900">
+                        Tipografías cargadas para este cliente: <strong>{fontAssets.length}</strong>. Se usarán en el editor de texto editable. Puedes subir OTF/TTF/WOFF en Clientes → Assets.
+                      </div>
+                    ) : null}
                   </section>
 
                   <section className="border-t border-zinc-200 pt-6">
@@ -498,9 +728,17 @@ export default function BustItNowPage() {
                             className="min-h-20 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none focus:border-zinc-950"
                             placeholder="Texto exacto que debe aparecer"
                           />
-                          <div className="mt-3 grid gap-3 md:grid-cols-3">
+                          <div className="mt-3 grid gap-3 md:grid-cols-4">
                             <FieldSelect label="Rol visual" value={block.role} onChange={(value) => updateBlock(block.id, { role: value })} options={roles} />
                             <FieldSelect label="Prioridad" value={block.priority} onChange={(value) => updateBlock(block.id, { priority: value })} options={priorities} />
+                            <button
+                              type="button"
+                              onClick={() => saveBlockAsAsset(block)}
+                              disabled={savingTextAssetId === block.id || !block.text.trim()}
+                              className="mt-6 h-11 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+                            >
+                              {savingTextAssetId === block.id ? "Guardando..." : "Guardar asset"}
+                            </button>
                             <button
                               type="button"
                               onClick={() => setTextBlocks(textBlocks.length > 1 ? textBlocks.filter((item) => item.id !== block.id) : [emptyBlock()])}
@@ -525,7 +763,11 @@ export default function BustItNowPage() {
                     <p className="mt-2 text-sm leading-6 text-zinc-600">Sube aquí un producto, platillo o imagen puntual que deba considerarse solo para este brief.</p>
                     <div className="mt-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
                       <label className="mb-3 block text-sm font-medium text-zinc-800">Imagen puntual</label>
-                      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAttachment} className="block w-full text-sm" />
+                      <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">
+                        Seleccionar archivo
+                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAttachment} className="sr-only" />
+                      </label>
+                      <span className="ml-3 align-middle text-sm text-zinc-500">{attachment?.name || "Sin archivo seleccionado"}</span>
 
                       {attachment ? (
                         <div className="mt-4 grid gap-4 md:grid-cols-[180px_1fr]">
@@ -591,42 +833,63 @@ export default function BustItNowPage() {
                       Tono: {client?.brandBrain?.tone || client?.tone || "Pendiente"}<br />
                       Colores: {(client?.brandBrain?.colors || []).join(", ") || "Pendiente"}<br />
                       Tipografía: {client?.brandBrain?.typography || "Pendiente"}<br />
-                      Assets: {assets.length}
+                      Assets: {assets.length} · Tipografías: {fontAssets.length}
                     </div>
                   </section>
 
                   <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Assets del cliente</p>
                     <h2 className="mt-2 text-2xl font-semibold tracking-tight">Elegir para este brief</h2>
+                    <p className="mt-2 text-xs text-zinc-500">Los assets empiezan sin preselección. Los seleccionados se iluminan en verde.</p>
+                    {visualAssetCategories.length ? (
+                      <PillFilter
+                        className="mt-4"
+                        options={[{ id: "all", label: "Todos" }, ...visualAssetCategories.map((category) => ({ id: category, label: category }))]}
+                        value={assetCategoryFilter}
+                        onChange={setAssetCategoryFilter}
+                      />
+                    ) : null}
                     {assets.length === 0 ? (
                       <p className="mt-4 text-sm text-zinc-500">Selecciona cliente para ver assets.</p>
                     ) : (
-                      <div className="mt-5 grid grid-cols-3 gap-2">
-                        {assets.map((asset) => (
-                          <button
-                            type="button"
-                            key={asset.id}
-                            onClick={() => toggle(asset.id || "", selectedAssetIds, setSelectedAssetIds)}
-                            className={`group relative overflow-hidden rounded-2xl border text-left transition ${selectedAssetIds.includes(asset.id || "") ? "border-zinc-950" : "border-zinc-200 hover:border-zinc-500"}`}
-                          >
-                            {isImage(asset) ? (
-                              <img src={asset.fileUrl} alt={asset.name} className="aspect-square w-full object-cover" />
-                            ) : (
-                              <div className="flex aspect-square w-full items-center justify-center bg-zinc-200 text-xs font-semibold text-zinc-600">Archivo</div>
-                            )}
-                            <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-zinc-950 shadow">{selectedAssetIds.includes(asset.id || "") ? "✓" : "+"}</span>
+                      <AssetPicker assets={visibleAssets} selectedAssetIds={selectedAssetIds} onToggle={toggleAsset} />
+                    )}
+                  </section>
+
+                  <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Assets de texto</p>
+                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Bloques guardados</h2>
+                    <p className="mt-2 text-xs text-zinc-500">Filtra por rol visual y da clic para reutilizar un bloque en este brief.</p>
+                    {textAssetRoleOptions.length ? (
+                      <PillFilter
+                        className="mt-4"
+                        options={[{ id: "all", label: "Todos" }, ...textAssetRoleOptions.map((role) => ({ id: role, label: roles.find((item) => item.id === role)?.label || role }))]}
+                        value={textAssetRoleFilter}
+                        onChange={setTextAssetRoleFilter}
+                      />
+                    ) : null}
+                    {visibleTextAssets.length ? (
+                      <div className="mt-5 grid gap-3">
+                        {visibleTextAssets.map((asset) => (
+                          <button key={asset.id} type="button" onClick={() => addTextAssetToBrief(asset)} className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-left transition hover:border-emerald-400 hover:bg-emerald-50">
+                            <div className="flex items-center justify-between gap-3">
+                              <strong className="text-sm text-zinc-950">{asset.name}</strong>
+                              <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">{roles.find((item) => item.id === ((asset as any).visualRole || asset.category))?.label || (asset as any).visualRole || asset.category}</span>
+                            </div>
+                            <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-600">{String((asset as any).text || asset.notes || "")}</p>
                           </button>
                         ))}
                       </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-zinc-500">Aún no hay bloques de texto guardados como assets.</p>
                     )}
                   </section>
 
                   <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Acciones</p>
                     <div className="mt-5 grid gap-3">
-                      <button type="button" onClick={buildPrompt} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50">Construir prompt</button>
-                      <button type="button" onClick={() => saveBriefOnly()} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50">Guardar brief de generación</button>
-                      <button type="button" onClick={generate} disabled={loading} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{loading ? "Generando..." : "Generar imagen"}</button>
+                      <button type="button" onClick={() => buildPrompt()} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50">Construir prompt</button>
+                      <button type="button" onClick={() => saveBriefOnly()} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">Guardar brief de generación</button>
                     </div>
                     {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
                     {success ? <div className="mt-5 rounded-3xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-medium text-green-700">{success}</div> : null}
@@ -641,19 +904,6 @@ export default function BustItNowPage() {
                 </section>
               ) : null}
 
-              {generatedImages.length > 0 ? (
-                <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-                  <h2 className="text-2xl font-semibold tracking-tight">Imágenes generadas</h2>
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    {generatedImages.map((image, index) => (
-                      <article key={index} className="rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
-                        <img src={`data:image/png;base64,${image}`} alt={`Generada ${index + 1}`} className="w-full rounded-2xl" />
-                        <a download={`bust-it-now-${index + 1}.png`} href={`data:image/png;base64,${image}`} className="mt-4 inline-flex h-11 items-center justify-center rounded-2xl bg-zinc-950 px-4 text-sm font-semibold text-white">Descargar</a>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
             </>
           ) : null}
 
@@ -678,6 +928,48 @@ export default function BustItNowPage() {
             </section>
           ) : null}
 
+          {tab === "briefs" ? (
+            <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Briefs</p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-tight">Briefs listos para generar</h2>
+                  <p className="mt-2 text-sm text-zinc-600">Aquí vive cada brief guardado. Se ordenan del más reciente al más antiguo para abrir primero lo último generado.</p>
+                </div>
+                <select value={clientFilter} onChange={(event) => setClientFilter(event.target.value)} className="h-11 rounded-2xl border border-zinc-200 bg-white px-3 text-sm">
+                  <option value="all">Todos los clientes</option>
+                  {clients.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </div>
+
+              {briefItems.length === 0 ? (
+                <p className="mt-5 text-sm text-zinc-500">No hay briefs guardados.</p>
+              ) : (
+                <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {briefItems.map((request) => (
+                    <article key={request.id} className="rounded-[1.7rem] border border-zinc-200 bg-zinc-50 p-5 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-950 text-xs font-bold text-white">{request.clientName?.slice(0, 1) || "B"}</div>
+                        <div>
+                          <strong className="block text-sm text-zinc-950">{request.clientName}</strong>
+                          <span className="text-xs text-zinc-500">{formatStatus(request.status)}</span>
+                        </div>
+                      </div>
+                      <p className="mt-4 line-clamp-3 text-sm font-semibold leading-6 text-zinc-950">{request.mainMessage}</p>
+                      <p className="mt-2 text-xs text-zinc-500">{request.format} · {request.contentType} · {request.executedModel || "Sin modelo"}</p>
+                      <p className="mt-1 text-xs font-semibold text-zinc-700">{(request as any).textRenderMode === "editable-layers" ? "Texto editable" : "Texto IA"}</p>
+                      {(request.requestAttachments || []).length ? <p className="mt-2 text-xs font-medium text-zinc-700">Incluye imagen puntual del brief</p> : null}
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => openHistoryItem(request)} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-950 hover:bg-zinc-50">Reusar brief</button>
+                        {request.id ? <Link href={`/dashboard/generador/${request.id}`} className="rounded-2xl bg-zinc-950 px-3 py-2 text-center text-xs font-semibold text-white">Abrir / generar</Link> : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
+
           {tab === "historial" ? (
             <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
               <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -696,8 +988,8 @@ export default function BustItNowPage() {
                 <p className="mt-5 text-sm text-zinc-500">No hay generaciones en historial.</p>
               ) : (
                 <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {feedItems.map(({ request, imageUrl }) => (
-                    <article key={request.id} className="overflow-hidden rounded-[1.7rem] border border-zinc-200 bg-zinc-50 shadow-sm">
+                  {feedItems.map(({ request, image, imageUrl }) => (
+                    <article key={image.id || `${request.id}-${image.variantIndex}`} className="overflow-hidden rounded-[1.7rem] border border-zinc-200 bg-zinc-50 shadow-sm">
                       <div className="flex items-center gap-3 border-b border-zinc-200 bg-white px-4 py-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-950 text-xs font-bold text-white">{request.clientName?.slice(0, 1) || "B"}</div>
                         <div>
@@ -706,7 +998,9 @@ export default function BustItNowPage() {
                         </div>
                       </div>
                       {imageUrl ? (
-                        <img src={imageUrl} alt={request.mainMessage} className="aspect-square w-full object-cover" />
+                        <a href={imageUrl} target="_blank" rel="noopener noreferrer" title="Abrir imagen en ventana nueva">
+                          <img src={imageUrl} alt={request.mainMessage} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
+                        </a>
                       ) : (
                         <div className="flex aspect-square w-full items-center justify-center bg-zinc-200 p-6 text-center text-sm font-medium text-zinc-500">Sin imagen generada</div>
                       )}
@@ -764,6 +1058,50 @@ function ChipGroup({ values, selected, onToggle }: { values: string[]; selected:
     </div>
   );
 }
+
+function PillFilter({ options, value, onChange, className = "" }: { options: { id: string; label: string }[]; value: string; onChange: (value: string) => void; className?: string }) {
+  return (
+    <div className={`flex flex-wrap gap-2 ${className}`}>
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          onClick={() => onChange(option.id)}
+          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${value === option.id ? "bg-emerald-600 text-white shadow-lg shadow-emerald-200" : "border border-zinc-200 bg-white text-zinc-700 hover:border-emerald-400 hover:text-emerald-700"}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const AssetPicker = memo(function AssetPicker({ assets, selectedAssetIds, onToggle }: { assets: ClientAsset[]; selectedAssetIds: string[]; onToggle: (assetId: string) => void }) {
+  if (!assets.length) return <p className="mt-4 text-sm text-zinc-500">No hay assets para este filtro.</p>;
+
+  return (
+    <div className="mt-5 grid grid-cols-3 gap-2">
+      {assets.map((asset) => {
+        const selected = selectedAssetIds.includes(asset.id || "");
+        return (
+          <button
+            type="button"
+            key={asset.id}
+            onClick={() => onToggle(asset.id || "")}
+            className={`group relative overflow-hidden rounded-2xl border-2 text-left transition ${selected ? "border-emerald-500 ring-4 ring-emerald-200 shadow-lg shadow-emerald-100" : "border-zinc-200 hover:border-emerald-400"}`}
+          >
+            {isImage(asset) ? (
+              <img src={asset.fileUrl} alt={asset.name} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
+            ) : (
+              <div className="flex aspect-square w-full items-center justify-center bg-zinc-200 text-xs font-semibold text-zinc-600">Archivo</div>
+            )}
+            <span className={`absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold shadow ${selected ? "bg-emerald-500 text-white" : "bg-white text-zinc-950"}`}>{selected ? "✓" : "+"}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+});
 
 function Info({ title, text }: { title: string; text: string }) {
   return (

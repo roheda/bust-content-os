@@ -2,12 +2,13 @@
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import TextTooltip from "@/components/TextTooltip";
-import { ContentRequest, TaskComment, deleteStorageFiles, listRequests, subscribeRequests, updateRequest } from "@/lib/data";
+import { Brand, ContentRequest, TaskComment, deleteStorageFiles, listRequests, listUniqueBrands, subscribeRequests, updateRequest } from "@/lib/data";
 
 type SortKey = "client"|"task"|"type"|"platforms"|"copyOut"|"publishDate"|"link"|"status";
 
 export default function ContenidosPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
+  const [clients,setClients]=useState<Brand[]>([]);
   const [copyOutDrafts,setCopyOutDrafts]=useState<Record<string,string>>({});
   const [improvingCopyId,setImprovingCopyId]=useState<string|null>(null);
   const [bulkImproving,setBulkImproving]=useState(false);
@@ -21,8 +22,13 @@ export default function ContenidosPage(){
   const [sortKey,setSortKey]=useState<SortKey>("publishDate");
   const [sortDirection,setSortDirection]=useState<"asc"|"desc">("asc");
 
-  async function load(){setRequests((await listRequests()).filter(x=>x.status!=="eliminada"));}
+  async function load(){
+    const [loadedRequests, loadedClients] = await Promise.all([listRequests(), listUniqueBrands().catch(()=>[])]);
+    setRequests(loadedRequests.filter(x=>x.status!=="eliminada"));
+    setClients(loadedClients);
+  }
   useEffect(()=>{
+    load();
     const unsubscribe = subscribeRequests((items)=>setRequests(items.filter(x=>x.status!=="eliminada")),()=>load());
     return ()=>unsubscribe();
   },[]);
@@ -38,8 +44,10 @@ export default function ContenidosPage(){
   }
   function normalizedStatus(item:ContentRequest){
     if(item.status==="finalizada")return "finalizada";
-    const copy = (copyOutDrafts[item.id||""] ?? item.copyOut ?? "").trim();
-    return copy ? "copy_listo" : "pendiente_copy";
+    if(item.copyStatus==="aprobado" || item.copyStatus==="listo_para_revision")return "copy_listo";
+    if(item.copyStatus==="pendiente" || item.copyStatus==="en_proceso" || item.status==="pendiente_copy")return "pendiente_copy";
+    const savedCopy = (item.copyOut ?? "").trim();
+    return savedCopy ? "copy_listo" : "pendiente_copy";
   }
   function statusLabel(value:string){
     return value==="finalizada" ? "Finalizada" : value==="copy_listo" ? "Copy listo" : "Pendiente de copy";
@@ -140,31 +148,21 @@ export default function ContenidosPage(){
   }
 
   async function requestImprovedCopyOut(item:ContentRequest){
-    const currentCopy = (copyOutDrafts[item.id||""] ?? item.copyOut ?? item.copyIn ?? item.creativeIdea ?? "").trim();
-    if(!currentCopy)throw new Error("Escribe una base de copy o revisa que la solicitud tenga idea creativa.");
-    const response = await fetch("/api/improve-copy-out",{
+    const currentCopy = (copyOutDrafts[item.id||""] ?? item.copyOut ?? "").trim();
+    const client = clients.find(x=>x.id===item.clientId) || { id:item.clientId, name:item.clientName, industry:"", tone:"", brandNotes:"" } as Brand;
+    const approvedCopies = approvedCopyExamples(item).map((row:any)=>row.copyOut || String(row)).filter(Boolean);
+    const response = await fetch("/api/generate-copy",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
-        copyDraft:currentCopy,
-        clientName:item.clientName,
-        contentType:item.contentType,
-        objective:item.objective,
-        platforms:item.platforms||[],
-        visualFormat:item.visualFormat||"",
-        feedPlacement:item.feedPlacement||"",
-        creativeIdea:item.creativeIdea||"",
-        copyIn:item.copyIn||"",
-        keyMessage:item.keyMessage||"",
-        cta:item.cta||"",
-        buyerPersonaName:item.buyerPersonaName||"Sin enfoque particular",
-        buyerPersonaContext:buyerPersonaContext(item),
-        successfulCopies:approvedCopyExamples(item)
+        item:{...item,currentCopy,buyerPersonaContext:buyerPersonaContext(item)},
+        client,
+        approvedCopies
       })
     });
     const payload = await response.json();
-    if(!response.ok)throw new Error(payload.error||"No se pudo mejorar el copy final.");
-    return payload.improvedCopyOut||currentCopy;
+    if(!response.ok)throw new Error(payload.error||"No se pudo generar copy con IA.");
+    return payload.copy || currentCopy || item.copyIn || item.creativeIdea || "";
   }
   async function improveOne(item:ContentRequest){
     if(!item.id)return;
@@ -188,18 +186,19 @@ export default function ContenidosPage(){
     finally{setBulkImproving(false);}
   }
 
-  async function saveCopy(item:ContentRequest, finish=false){
+  async function saveCopy(item:ContentRequest, finish=false, markReady=false){
     if(!item.id)return;
     const copyOut=(copyOutDrafts[item.id] ?? item.copyOut ?? "").trim();
-    if(!copyOut)return alert("Escribe el copy final.");
+    if(!copyOut)return alert("Escribe o genera el copy final.");
     const comments=[...(item.comments||[])];
     if(finish){
       comments.push({id:`${Date.now()}`,author:"Sistema",target:"Interno",body:"Copy final guardado y contenido finalizado.",mentions:[],createdAt:new Date().toISOString()});
       const temporaryReferenceFiles=(item.referenceFiles||[]).filter((file)=>file.temporary||file.storagePath);
       await deleteStorageFiles(temporaryReferenceFiles);
-      await updateRequest(item.id,{copyOut,status:"finalizada",approvalStatus:"aprobada",referenceFiles:(item.referenceFiles||[]).filter((file)=>!temporaryReferenceFiles.includes(file)),comments});
+      await updateRequest(item.id,{copyOut,copyStatus:"aprobado",status:"finalizada",approvalStatus:"aprobada",referenceFiles:(item.referenceFiles||[]).filter((file)=>!temporaryReferenceFiles.includes(file)),comments});
     }else{
-      await updateRequest(item.id,{copyOut});
+      comments.push({id:`${Date.now()}`,author:"Sistema",target:"Interno",body:markReady?"Copy marcado como listo para revisión.":"Copy guardado en proceso.",mentions:[],createdAt:new Date().toISOString()});
+      await updateRequest(item.id,{copyOut,copyStatus:markReady?"listo_para_revision":"en_proceso",status:markReady?"aprobada_pendiente_copyout":"pendiente_copy",comments});
     }
     setCopyOutDrafts(prev=>({...prev,[item.id||""]:copyOut}));
   }
@@ -305,6 +304,7 @@ export default function ContenidosPage(){
         <span className="content-actions-cell">
           <button className="copy-icon-button" type="button" aria-label="Copiar copy" title="Copiar copy" onClick={()=>copyCopyOut(item)}><span aria-hidden="true">{copiedId===item.id?"✓":"⧉"}</span></button>
           {item.status!=="finalizada" && <button className="btn" onClick={()=>saveCopy(item,false)}>Guardar</button>}
+          {item.status!=="finalizada" && <button className="btn" onClick={()=>saveCopy(item,false,true)}>Marcar copy listo</button>}
           {item.status!=="finalizada" && <button className="btn blue" onClick={()=>finishOne(item)}>Finalizar</button>}
         </span>
       </div>)}

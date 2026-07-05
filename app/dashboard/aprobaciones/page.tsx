@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { ContentRequest, TaskComment, listRequests, updateRequest } from "@/lib/data";
+import { ContentRequest, TaskComment, listRequests, subscribeRequests, updateRequest } from "@/lib/data";
 
 const reasons = [
   "Errores ortográficos",
@@ -15,189 +15,131 @@ const reasons = [
   "Otro"
 ];
 
+type ReviewStage = "content" | "kam";
+type SortKey = "client"|"task"|"type"|"platforms"|"responsible"|"publishDate"|"link"|"status";
+
 export default function ApprovalsPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [selected,setSelected]=useState<ContentRequest|null>(null);
+  const [selectedStage,setSelectedStage]=useState<ReviewStage>("content");
   const [reason,setReason]=useState(reasons[0]);
   const [notes,setNotes]=useState("");
 
-  const [pendingClientFilter,setPendingClientFilter]=useState("all");
-  const [pendingBatchFilter,setPendingBatchFilter]=useState("all");
-  const [pendingSearch,setPendingSearch]=useState("");
+  const [clientFilter,setClientFilter]=useState("all");
+  const [batchFilter,setBatchFilter]=useState("all");
+  const [stageFilter,setStageFilter]=useState<"content"|"kam"|"devueltas"|"historial"|"all">("content");
+  const [search,setSearch]=useState("");
+  const [sortKey,setSortKey]=useState<SortKey>("publishDate");
+  const [sortDirection,setSortDirection]=useState<"asc"|"desc">("asc");
 
-  const [copyOutDrafts,setCopyOutDrafts]=useState<Record<string,string>>({});
+  async function load(){setRequests((await listRequests()).filter(x=>x.status!=="eliminada"));}
+  useEffect(()=>{
+    const unsubscribe = subscribeRequests((items)=>setRequests(items.filter(x=>x.status!=="eliminada")),()=>load());
+    return ()=>unsubscribe();
+  },[]);
 
-  const [finalClientFilter,setFinalClientFilter]=useState("all");
-  const [finalBatchFilter,setFinalBatchFilter]=useState("all");
-  const [finalSort,setFinalSort]=useState<"asc"|"desc">("asc");
-  const [finalSelected,setFinalSelected]=useState<string[]>([]);
+  function taskTitle(item:ContentRequest){
+    return item.topic || item.creativeIdea || `${item.contentType || "Pieza"} · ${item.objective || "Objetivo"}`;
+  }
+  function typeLabel(item:ContentRequest){return [item.contentType,item.objective].filter(Boolean).join(" · ") || "Sin tipo";}
+  function platformsLabel(item:ContentRequest){return item.platforms?.length ? item.platforms.join(", ") : (item.visualFormat || item.feedPlacement || "Sin plataformas");}
+  function normalizeExternalUrl(value?:string){const url=(value||"").trim(); if(!url)return "#"; return /^https?:\/\//i.test(url) ? url : `https://${url}`;}
 
-  async function load(){setRequests((await listRequests()).filter(x=>x.status!=="eliminada"))}
-  useEffect(()=>{load()},[]);
+  function isContentPending(item:ContentRequest){return item.status==="pendiente_aprobacion" || item.approvalStatus==="pendiente";}
+  function isKamPending(item:ContentRequest){return item.status==="pendiente_aprobacion_kam" || item.approvalStatus==="content_aprobada";}
+  function isApprovedForContents(item:ContentRequest){return item.status==="aprobada_pendiente_copyout" || item.status==="aprobada_pendiente_contenidos" || (item.approvalStatus==="aprobada" && item.status!=="finalizada");}
+  function statusLabel(item:ContentRequest){
+    if(isContentPending(item))return "Pendiente Content";
+    if(isKamPending(item))return "Pendiente KAM";
+    if(isApprovedForContents(item))return "Aprobada para Contenidos";
+    if(item.status==="rebotada" || item.approvalStatus==="rechazada")return "Devuelta";
+    if(item.status==="finalizada")return "Finalizada";
+    return item.status || "Sin estado";
+  }
 
   const clients = useMemo(()=>{
     const map = new Map<string,string>();
     requests.forEach(x=>map.set(x.clientId||"sin-cliente",x.clientName||"Sin cliente"));
     return Array.from(map.entries()).map(([id,name])=>({id,name}));
   },[requests]);
-
-  const pendingBatches = useMemo(()=>{
+  const batches = useMemo(()=>{
     const map = new Map<string,string>();
-    requests
-      .filter(x=>x.status==="pendiente_aprobacion" || x.approvalStatus==="pendiente")
-      .filter(x=>pendingClientFilter==="all" || x.clientId===pendingClientFilter)
-      .forEach(x=>map.set(x.batchId||"sin-lote",x.batchName||"Sin lote"));
+    requests.filter(x=>clientFilter==="all" || x.clientId===clientFilter).forEach(x=>map.set(x.batchId||"sin-lote",x.batchName||"Sin lote"));
     return Array.from(map.entries()).map(([id,name])=>({id,name}));
-  },[requests,pendingClientFilter]);
+  },[requests,clientFilter]);
 
-  const pending = useMemo(()=>requests.filter(x=>{
-    const text = `${x.clientName} ${x.batchName} ${x.contentType} ${x.objective} ${x.creativeIdea} ${x.assignedTo}`.toLowerCase();
-    return (x.status==="pendiente_aprobacion" || x.approvalStatus==="pendiente") &&
-      (pendingClientFilter==="all" || x.clientId===pendingClientFilter) &&
-      (pendingBatchFilter==="all" || (x.batchId||"sin-lote")===pendingBatchFilter) &&
-      (!pendingSearch.trim() || text.includes(pendingSearch.trim().toLowerCase()));
-  }),[requests,pendingClientFilter,pendingBatchFilter,pendingSearch]);
-
-  const approvedForCopyOut = useMemo(()=>requests.filter(x=>x.status==="aprobada_pendiente_copyout" || (x.approvalStatus==="aprobada" && x.status!=="finalizada")), [requests]);
-  const rejected = useMemo(()=>requests.filter(x=>x.approvalStatus==="rechazada"),[requests]);
-
-  const finalized = useMemo(()=>requests.filter(x=>{
-    return x.status==="finalizada" &&
-      (finalClientFilter==="all" || x.clientId===finalClientFilter) &&
-      (finalBatchFilter==="all" || (x.batchId||"sin-lote")===finalBatchFilter);
+  const filtered = useMemo(()=>requests.filter(x=>{
+    const text = `${x.clientName} ${x.batchName} ${taskTitle(x)} ${typeLabel(x)} ${platformsLabel(x)} ${x.assignedTo||""} ${x.finalPostLink||""} ${x.creativeIdea||""}`.toLowerCase();
+    const stageOk = stageFilter==="all" ||
+      (stageFilter==="content" && isContentPending(x)) ||
+      (stageFilter==="kam" && isKamPending(x)) ||
+      (stageFilter==="devueltas" && (x.status==="rebotada" || x.approvalStatus==="rechazada")) ||
+      (stageFilter==="historial" && (isApprovedForContents(x) || x.status==="finalizada"));
+    return stageOk &&
+      (clientFilter==="all" || x.clientId===clientFilter) &&
+      (batchFilter==="all" || (x.batchId||"sin-lote")===batchFilter) &&
+      (!search.trim() || text.includes(search.trim().toLowerCase()));
   }).sort((a,b)=>{
-    const av = a.publishDate || "";
-    const bv = b.publishDate || "";
-    return finalSort==="asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-  }),[requests,finalClientFilter,finalBatchFilter,finalSort]);
-
-  const clientsWithFinalized = useMemo(()=>{
-    const map = new Map<string,string>();
-    requests.filter(x=>x.status==="finalizada").forEach(x=>map.set(x.clientId||"sin-cliente",x.clientName||"Sin cliente"));
-    return Array.from(map.entries()).map(([id,name])=>({id,name}));
-  },[requests]);
-
-  const batchesWithFinalized = useMemo(()=>{
-    const map = new Map<string,string>();
-    requests
-      .filter(x=>x.status==="finalizada" && (finalClientFilter==="all" || x.clientId===finalClientFilter))
-      .forEach(x=>map.set(x.batchId||"sin-lote",x.batchName||"Sin lote"));
-    return Array.from(map.entries()).map(([id,name])=>({id,name}));
-  },[requests,finalClientFilter]);
-
-  const groupedPending = useMemo(()=>groupByClientBatch(pending),[pending]);
-  const groupedCopyOut = useMemo(()=>groupByClientBatch(approvedForCopyOut),[approvedForCopyOut]);
-  const groupedFinalized = useMemo(()=>groupByClientBatch(finalized),[finalized]);
-
-  async function approve(item:ContentRequest){
-    if(!item.id)return;
-    const log:TaskComment = {
-      id:`${Date.now()}`,
-      author:"Sistema",
-      target:"Interno",
-      body:"Aprobado. Pasa a captura de Copy Out.",
-      mentions:[],
-      createdAt:new Date().toISOString()
-    };
-    const comments = [...(item.comments||[]), log];
-    await updateRequest(item.id,{
-      status:"aprobada_pendiente_copyout",
-      copyStatus:"listo_para_revision",
-      approvalStatus:"aprobada",
-      approvalRejectionReason:"",
-      approvalNotes:"",
-      comments
+    const values = (item:ContentRequest):Record<SortKey,string>=>({
+      client:item.clientName||"",
+      task:taskTitle(item),
+      type:typeLabel(item),
+      platforms:platformsLabel(item),
+      responsible:item.assignedTo||"",
+      publishDate:item.publishDate||"",
+      link:item.finalPostLink||"",
+      status:statusLabel(item)
     });
-    await load();
-    setSelected(null);
-    alert("Tarea aprobada. Pendiente Copy Out.");
+    const result = values(a)[sortKey].localeCompare(values(b)[sortKey],"es",{numeric:true,sensitivity:"base"});
+    return sortDirection==="asc" ? result : -result;
+  }),[requests,clientFilter,batchFilter,stageFilter,search,sortKey,sortDirection]);
+
+  const pendingContent = requests.filter(isContentPending).length;
+  const pendingKam = requests.filter(isKamPending).length;
+  const approvedContents = requests.filter(isApprovedForContents).length;
+  const rejected = requests.filter(x=>x.status==="rebotada" || x.approvalStatus==="rechazada").length;
+
+  function toggleSort(key:SortKey){
+    if(sortKey===key){setSortDirection(sortDirection==="asc"?"desc":"asc");return;}
+    setSortKey(key);setSortDirection("asc");
+  }
+  function sortLabel(key:SortKey){return sortKey===key ? (sortDirection==="asc"?" ↑":" ↓") : "";}
+
+  function startReview(item:ContentRequest, stage:ReviewStage){
+    setSelected(item);setSelectedStage(stage);setReason(reasons[0]);setNotes("");
+  }
+
+  async function approveContent(item:ContentRequest){
+    if(!item.id)return;
+    const log:TaskComment={id:`${Date.now()}`,author:"Sistema",target:"KAM",body:"Content aprobó la pieza. Pasa a revisión KAM.",mentions:["@kam"],status:"open",createdAt:new Date().toISOString()};
+    await updateRequest(item.id,{status:"pendiente_aprobacion_kam",approvalStatus:"content_aprobada",approvalRejectionReason:"",approvalNotes:"",comments:[...(item.comments||[]),log]});
+    setSelected(null);await load();alert("Aprobada por Content. Ahora pasa a KAM.");
+  }
+
+  async function approveKam(item:ContentRequest){
+    if(!item.id)return;
+    const log:TaskComment={id:`${Date.now()}`,author:"Sistema",target:"Copy",body:"KAM aprobó la pieza. Pasa a Contenidos para copy final y publicación.",mentions:["@copy"],status:"open",createdAt:new Date().toISOString()};
+    await updateRequest(item.id,{status:"aprobada_pendiente_copyout",approvalStatus:"aprobada",approvalRejectionReason:"",approvalNotes:"",comments:[...(item.comments||[]),log]});
+    setSelected(null);await load();alert("Aprobada por KAM. Ya está en Contenidos.");
   }
 
   async function reject(item:ContentRequest){
     if(!item.id)return;
     if(!reason)return alert("Selecciona motivo.");
+    const target = selectedStage==="kam" ? "Content" : (item.assignedArea || item.suggestedArea || "Responsable");
+    const mention = selectedStage==="kam" ? "@content" : target.toLowerCase().includes("audio") ? "@audiovisual" : "@diseño";
     const noteText = notes.trim() ? ` Nota: ${notes.trim()}` : "";
-    const log:TaskComment = {
+    const log:TaskComment={
       id:`${Date.now()}`,
       author:"Sistema",
-      target:"Interno",
-      body:`Rebotado por ${reason}.${noteText}`,
-      mentions:[],
+      target,
+      body:`Pieza devuelta por ${selectedStage==="kam"?"KAM":"Content"}. Motivo: ${reason}.${noteText}`,
+      mentions:[mention],
+      status:"open",
       createdAt:new Date().toISOString()
     };
-    const comments = [...(item.comments||[]), log];
-    await updateRequest(item.id,{
-      status:"rebotada",
-      approvalStatus:"rechazada",
-      approvalRejectionReason:reason,
-      approvalNotes:notes,
-      comments
-    });
-    await load();
-    setSelected(null);
-    setNotes("");
-    alert("Tarea rechazada y rebotada");
-  }
-
-  async function saveCopyOut(item:ContentRequest){
-    if(!item.id)return;
-    const copyOut = (copyOutDrafts[item.id] ?? item.copyOut ?? "").trim();
-    if(!copyOut)return alert("Escribe el Copy Out final.");
-    const log:TaskComment = {
-      id:`${Date.now()}`,
-      author:"Sistema",
-      target:"Interno",
-      body:"Copy Out capturado. Tarea finalizada.",
-      mentions:[],
-      createdAt:new Date().toISOString()
-    };
-    const comments = [...(item.comments||[]), log];
-    await updateRequest(item.id,{
-      copyOut,
-      copyStatus:"aprobado",
-      status:"finalizada",
-      approvalStatus:"aprobada",
-      comments
-    });
-    setCopyOutDrafts({...copyOutDrafts,[item.id]:""});
-    await load();
-    alert("Copy Out guardado y tarea finalizada");
-  }
-
-  function toggleFinalized(id:string){
-    setFinalSelected(finalSelected.includes(id) ? finalSelected.filter(x=>x!==id) : [...finalSelected,id]);
-  }
-
-  function toggleGroup(items:ContentRequest[]){
-    const ids = items.map(x=>x.id!).filter(Boolean);
-    const allSelected = ids.every(id=>finalSelected.includes(id));
-    setFinalSelected(allSelected ? finalSelected.filter(id=>!ids.includes(id)) : Array.from(new Set([...finalSelected,...ids])));
-  }
-
-  function exportFinalized(){
-    const rows = (finalSelected.length ? finalized.filter(x=>finalSelected.includes(x.id||"")) : finalized);
-    if(!rows.length)return alert("No hay tareas para exportar.");
-    const headers = ["Cliente","Lote","Tipo","Objetivo","Responsable","Fecha publicación","Link final","Copy Out","Estado","Idea creativa"];
-    const csvRows = [headers, ...rows.map(x=>[
-      x.clientName||"",
-      x.batchName||"Sin lote",
-      x.contentType||"",
-      x.objective||"",
-      x.assignedTo||"",
-      x.publishDate||"",
-      x.finalPostLink||"",
-      x.copyOut||"",
-      x.status||"",
-      (x.creativeIdea||"").replace(/\n/g," ")
-    ])];
-    const csv = csvRows.map(row=>row.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
-    const blob = new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `tareas-finalizadas-${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await updateRequest(item.id,{status:"rebotada",approvalStatus:"rechazada",approvalRejectionReason:reason,approvalNotes:notes,comments:[...(item.comments||[]),log]});
+    setSelected(null);setNotes("");await load();alert("Pieza devuelta con motivo.");
   }
 
   return <AppShell active="Aprobaciones">
@@ -205,70 +147,78 @@ export default function ApprovalsPage(){
       <div>
         <p className="eyebrow">Control de calidad</p>
         <h1>Aprobaciones</h1>
-        <p>Revisa piezas, aprueba, captura Copy Out final y conserva historial listo para publicación.</p>
+        <p>Doble aprobación: primero Content valida ejecución y brief; después KAM valida marca, cliente y salida comercial.</p>
       </div>
     </section>
 
     <section className="grid kpis">
-      {[["Por aprobar",String(pending.length)],["Aprobadas sin Copy Out",String(approvedForCopyOut.length)],["Finalizadas",String(finalized.length)],["Rebotadas",String(rejected.length)],["Total",String(requests.length)],["Aprobadas",String(requests.filter(x=>x.approvalStatus==="aprobada").length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Pendientes Content",String(pendingContent)],["Pendientes KAM",String(pendingKam)],["Aprobadas para Contenidos",String(approvedContents)],["Devueltas",String(rejected)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
     <section className="card">
-      <h3>Por aprobar</h3>
-      <div className="approval-filter-bar">
-        <select value={pendingClientFilter} onChange={e=>{setPendingClientFilter(e.target.value);setPendingBatchFilter("all");}}>
+      <div className="finalized-group-title"><div><h3>Bandeja de aprobaciones</h3><p className="mini">Revisa por etapa sin mezclar el llenado de copy. El copy final vive en Contenidos.</p></div></div>
+      <div className="finalized-toolbar">
+        <select value={stageFilter} onChange={e=>setStageFilter(e.target.value as any)}>
+          <option value="content">Pendientes Content</option>
+          <option value="kam">Pendientes KAM</option>
+          <option value="devueltas">Devueltas</option>
+          <option value="historial">Aprobadas / historial</option>
+          <option value="all">Todas</option>
+        </select>
+        <select value={clientFilter} onChange={e=>{setClientFilter(e.target.value);setBatchFilter("all");}}>
           <option value="all">Todos los clientes</option>
           {clients.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
-        <select value={pendingBatchFilter} onChange={e=>setPendingBatchFilter(e.target.value)}>
+        <select value={batchFilter} onChange={e=>setBatchFilter(e.target.value)}>
           <option value="all">Todos los lotes</option>
-          {pendingBatches.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+          {batches.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
-        <input value={pendingSearch} onChange={e=>setPendingSearch(e.target.value)} placeholder="Buscar por cliente, lote, tarea..."/>
-        <button className="btn" onClick={()=>{setPendingClientFilter("all");setPendingBatchFilter("all");setPendingSearch("");}}>Limpiar</button>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar tarea, responsable, link..." />
+        <button className="btn" onClick={()=>{setStageFilter("content");setClientFilter("all");setBatchFilter("all");setSearch("");}}>Limpiar</button>
       </div>
 
-      {groupedPending.map(group=><div className="finalized-group" key={`${group.clientName}-${group.batchName}`}>
-        <div className="finalized-group-title">
-          <div>
-            <h3>{group.clientName}</h3>
-            <p className="mini">{group.batchName} · {group.items.length} pendiente(s)</p>
-          </div>
-        </div>
-        {group.items.map(item=><div className="approval-card" key={item.id}>
-          <div style={{display:"flex",justifyContent:"space-between",gap:12}}>
-            <div>
-              <strong>{item.contentType} · {item.objective}</strong>
-              <p className="mini">Responsable: {item.assignedTo||"Sin responsable"} · Publica: {item.publishDate||"Sin fecha"}</p>
-              <p className="mini">{item.creativeIdea}</p>
-              {item.finalPostLink && <a className="link-card" href={item.finalPostLink} target="_blank"><span>{item.finalPostLink}</span><small>Abrir →</small></a>}
-            </div>
-            <button className="btn" onClick={()=>{setSelected(item);setReason(reasons[0]);setNotes("")}}>Revisar</button>
-          </div>
-        </div>)}
-      </div>)}
-      {!pending.length && <p className="mini">No hay tareas pendientes con esos filtros.</p>}
+      <div className="approvals-row header">
+        <button type="button" onClick={()=>toggleSort("client")}>Cliente{sortLabel("client")}</button>
+        <button type="button" onClick={()=>toggleSort("task")}>Tarea{sortLabel("task")}</button>
+        <button type="button" onClick={()=>toggleSort("type")}>Tipo{sortLabel("type")}</button>
+        <button type="button" onClick={()=>toggleSort("platforms")}>Plataformas{sortLabel("platforms")}</button>
+        <button type="button" onClick={()=>toggleSort("responsible")}>Responsable{sortLabel("responsible")}</button>
+        <button type="button" onClick={()=>toggleSort("publishDate")}>Fecha{sortLabel("publishDate")}</button>
+        <button type="button" onClick={()=>toggleSort("link")}>Link{sortLabel("link")}</button>
+        <button type="button" onClick={()=>toggleSort("status")}>Estado{sortLabel("status")}</button>
+        <span>Acciones</span>
+      </div>
+      {filtered.map(item=>{
+        const stage:ReviewStage = isKamPending(item) ? "kam" : "content";
+        return <div className="approvals-row" key={item.id}>
+          <span className="list-truncate-cell"><strong>{item.clientName||"Sin cliente"}</strong><br/><small>{item.batchName||"Sin lote"}</small></span>
+          <span className="list-truncate-cell">{taskTitle(item)}</span>
+          <span className="list-truncate-cell">{typeLabel(item)}</span>
+          <span className="list-truncate-cell">{platformsLabel(item)}</span>
+          <span className="list-truncate-cell">{item.assignedTo||"Sin responsable"}</span>
+          <span className="list-truncate-cell">{item.publishDate||"Sin fecha"}</span>
+          <span className="list-truncate-cell">{item.finalPostLink ? <a href={normalizeExternalUrl(item.finalPostLink)} target="_blank">Abrir link</a> : <span className="pill amber">Sin link</span>}</span>
+          <span><span className={isApprovedForContents(item)||item.status==="finalizada"?"pill green":item.status==="rebotada"?"pill red":"pill"}>{statusLabel(item)}</span></span>
+          <span>{(isContentPending(item)||isKamPending(item)) ? <button className="btn blue" onClick={()=>startReview(item,stage)}>Revisar</button> : <button className="btn" onClick={()=>startReview(item,stage)}>Ver</button>}</span>
+        </div>;
+      })}
+      {!filtered.length && <p className="mini">No hay piezas con esos filtros.</p>}
     </section>
 
     {selected && <section className="card" style={{marginTop:20}}>
-      <h3>Revisión seleccionada</h3>
-      <p><strong>{selected.clientName} · {selected.contentType}</strong></p>
-      <p className="mini">{selected.creativeIdea}</p>
-      <p><strong>Link final:</strong></p>
-      {selected.finalPostLink ? <a className="link-card" href={selected.finalPostLink} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a> : <p className="mini">Sin link final.</p>}
+      <h3>{selectedStage==="kam"?"Revisión KAM":"Revisión Content"}</h3>
+      <p><strong>{selected.clientName} · {typeLabel(selected)}</strong></p>
+      <p className="mini"><strong>Tarea:</strong> {taskTitle(selected)}</p>
+      <p className="mini"><strong>Responsable:</strong> {selected.assignedTo||"Sin responsable"} · <strong>Publica:</strong> {selected.publishDate||"Sin fecha"}</p>
+      {selected.finalPostLink ? <a className="link-card" href={normalizeExternalUrl(selected.finalPostLink)} target="_blank"><span>{selected.finalPostLink}</span><small>Abrir →</small></a> : <p className="mini">Sin link final.</p>}
 
-      <div className="field">
-        <label>Motivo de no aprobación</label>
-        <select value={reason} onChange={e=>setReason(e.target.value)}>{reasons.map(x=><option key={x}>{x}</option>)}</select>
-      </div>
-      <div className="field">
-        <label>Notas</label>
-        <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Explica qué debe corregirse."/>
-      </div>
+      <div className="field"><label>Motivo de devolución</label><select value={reason} onChange={e=>setReason(e.target.value)}>{reasons.map(x=><option key={x}>{x}</option>)}</select></div>
+      <div className="field"><label>Notas</label><textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Explica qué debe corregirse si se devuelve." /></div>
 
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        <button className="btn blue" onClick={()=>approve(selected)}>Aprobar / pasar a Copy Out</button>
-        <button className="btn red" onClick={()=>reject(selected)}>No aprobar / rebotar</button>
+        {selectedStage==="content" && isContentPending(selected) && <button className="btn blue" onClick={()=>approveContent(selected)}>Aprobar para KAM</button>}
+        {selectedStage==="kam" && isKamPending(selected) && <button className="btn blue" onClick={()=>approveKam(selected)}>Aprobar para Contenidos</button>}
+        {(isContentPending(selected)||isKamPending(selected)) && <button className="btn red" onClick={()=>reject(selected)}>Devolver</button>}
         <button className="btn" onClick={()=>setSelected(null)}>Cerrar</button>
       </div>
 
@@ -282,101 +232,5 @@ export default function ApprovalsPage(){
         {!(selected.comments||[]).length && <p className="mini">Sin movimientos todavía.</p>}
       </div>
     </section>}
-
-    <section className="card" style={{marginTop:20}}>
-      <h3>Aprobadas para Copy Out</h3>
-      <p className="mini">Una vez aprobada la pieza, captura el copy final que se usará para publicación. Al guardar Copy Out, la tarea queda finalizada.</p>
-
-      {groupedCopyOut.map(group=><div className="finalized-group" key={`${group.clientName}-${group.batchName}`}>
-        <div className="finalized-group-title">
-          <div>
-            <h3>{group.clientName}</h3>
-            <p className="mini">{group.batchName} · {group.items.length} aprobada(s)</p>
-          </div>
-        </div>
-        {group.items.map(item=><div className="copyout-card" key={item.id}>
-          <strong>{item.contentType} · {item.objective}</strong>
-          <p className="mini">Responsable: {item.assignedTo||"Sin responsable"} · Publica: {item.publishDate||"Sin fecha"}</p>
-          <p className="mini">{item.creativeIdea}</p>
-          {item.finalPostLink && <a className="link-card" href={item.finalPostLink} target="_blank"><span>{item.finalPostLink}</span><small>Abrir →</small></a>}
-          <div className="field">
-            <label>Copy Out final</label>
-            <textarea value={copyOutDrafts[item.id||""] ?? item.copyOut ?? ""} onChange={e=>setCopyOutDrafts({...copyOutDrafts,[item.id||""]:e.target.value})} placeholder="Escribe el copy final que se publicará."/>
-          </div>
-          <button className="btn blue" onClick={()=>saveCopyOut(item)}>Guardar Copy Out y finalizar</button>
-        </div>)}
-      </div>)}
-
-      {!approvedForCopyOut.length && <p className="mini">No hay piezas aprobadas pendientes de Copy Out.</p>}
-    </section>
-
-    {requests.filter(x=>x.status==="finalizada").length>0 && <section className="card" style={{marginTop:20}}>
-      <h3>Historial de finalizadas</h3>
-
-      <div className="finalized-toolbar">
-        <select value={finalClientFilter} onChange={e=>{setFinalClientFilter(e.target.value);setFinalBatchFilter("all");}}>
-          <option value="all">Todos los clientes</option>
-          {clientsWithFinalized.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
-        </select>
-        <select value={finalBatchFilter} onChange={e=>setFinalBatchFilter(e.target.value)}>
-          <option value="all">Todos los lotes</option>
-          {batchesWithFinalized.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
-        </select>
-        <select value={finalSort} onChange={e=>setFinalSort(e.target.value as "asc"|"desc")}>
-          <option value="asc">Publicación ascendente</option>
-          <option value="desc">Publicación descendente</option>
-        </select>
-        <button className="btn" onClick={()=>setFinalSelected(finalized.map(x=>x.id!).filter(Boolean))}>Seleccionar todo filtrado</button>
-        <button className="btn" onClick={()=>setFinalSelected([])}>Limpiar selección</button>
-        <button className="btn blue" onClick={exportFinalized}>Exportar Excel/CSV</button>
-        <span className="pill">{finalSelected.length} seleccionada(s)</span>
-      </div>
-
-      {groupedFinalized.map(group=><div className="finalized-group" key={`${group.clientName}-${group.batchName}`}>
-        <div className="finalized-group-title">
-          <div>
-            <h3>{group.clientName}</h3>
-            <p className="mini">{group.batchName} · {group.items.length} finalizada(s)</p>
-          </div>
-          <button className="btn" onClick={()=>toggleGroup(group.items)}>Seleccionar grupo</button>
-        </div>
-        <div className="finalized-row header">
-          <span></span><span>Tarea</span><span>Responsable</span><span>Publicación</span><span>Link final</span><span>Estado</span>
-        </div>
-        {group.items.map(item=><div className="finalized-row" key={item.id}>
-          <input type="checkbox" checked={finalSelected.includes(item.id||"")} onChange={()=>toggleFinalized(item.id||"")}/>
-          <div><strong>{item.contentType} · {item.objective}</strong><br/><span className="mini">{item.copyOut || item.creativeIdea}</span></div>
-          <span>{item.assignedTo||"Sin responsable"}</span>
-          <span>{item.publishDate||"Sin fecha"}</span>
-          <span>{item.finalPostLink ? <a href={item.finalPostLink} target="_blank">Abrir link</a> : "Sin link"}</span>
-          <span><span className="pill green">{item.status}</span></span>
-        </div>)}
-      </div>)}
-
-      {!finalized.length && <p className="mini">No hay finalizadas con estos filtros.</p>}
-    </section>}
-
-    {rejected.length>0 && <section className="card" style={{marginTop:20}}>
-      <h3>Últimas no aprobadas</h3>
-      <div className="table-wrap"><table className="table">
-        <thead><tr><th>Tarea</th><th>Motivo</th><th>Notas</th><th>Estado</th></tr></thead>
-        <tbody>{rejected.slice(0,20).map(item=><tr key={item.id}>
-          <td><strong>{item.clientName} · {item.contentType}</strong></td>
-          <td><span className="pill red">{item.approvalRejectionReason}</span></td>
-          <td>{item.approvalNotes}</td>
-          <td>{item.status}</td>
-        </tr>)}</tbody>
-      </table></div>
-    </section>}
-  </AppShell>
-}
-
-function groupByClientBatch(items:ContentRequest[]){
-  const groups:Record<string,{clientName:string;batchName:string;items:ContentRequest[]}> = {};
-  items.forEach(item=>{
-    const key = `${item.clientName||"Sin cliente"}__${item.batchName||"Sin lote"}`;
-    groups[key] = groups[key] || {clientName:item.clientName||"Sin cliente",batchName:item.batchName||"Sin lote",items:[]};
-    groups[key].items.push(item);
-  });
-  return Object.values(groups);
+  </AppShell>;
 }

@@ -3,7 +3,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "BUST Content OS",
-  description: "Sistema operativo de content para BUST."
+  description: "Sistema operativo de content para BUST.",
+  icons: {
+    icon: "/favicon.svg"
+  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
