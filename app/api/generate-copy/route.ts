@@ -13,31 +13,68 @@ function asText(value: unknown) {
 }
 
 function listText(value: unknown) {
-  return Array.isArray(value) ? value.map((x) => String(x).trim()).filter(Boolean).join(", ") : "";
+  return Array.isArray(value)
+    ? value
+        .map((x) => String(x).trim())
+        .filter(Boolean)
+        .join(", ")
+    : "";
 }
 
 function fallbackCopy(payload: CopyRequestPayload) {
   const item = payload.item || {};
   const client = payload.client || {};
   const copyRules = (client.copyRules || {}) as Record<string, unknown>;
-  const brandName = asText(client.name) || asText(item.clientName) || "la marca";
-  const objective = asText(item.objective) || "comunicar valor";
-  const contentType = asText(item.contentType) || "post";
-  const idea = asText(item.creativeIdea) || asText(item.topic) || "una propuesta relevante para la audiencia";
-  const ctas = listText(copyRules.preferredCtas) || asText(item.cta) || "Escríbenos para más información";
+  const brandName =
+    asText(client.name) || asText(item.clientName) || "la marca";
+  const objective =
+    asText(item.objective) || asText(item.goal) || "comunicar valor";
+  const contentType = asText(item.contentType) || asText(item.format) || "post";
+  const idea =
+    asText(item.creativeIdea) ||
+    asText(item.topic) ||
+    asText(item.keyMessage) ||
+    "una propuesta relevante para la audiencia";
+  const keyMessage = asText(item.keyMessage) || idea;
+  const ctas =
+    listText(copyRules.preferredCtas) ||
+    asText(item.cta) ||
+    "Escríbenos para más información";
   const hashtags = listText(copyRules.baseHashtags);
+  const tone =
+    asText(copyRules.tone) || asText(client.tone) || "claro y profesional";
 
-  return `${brandName} presenta ${idea}.\n\nUna pieza pensada para ${objective.toLowerCase()} en formato ${contentType.toLowerCase()}, con un mensaje claro, directo y alineado a la marca.\n\n${ctas}.${hashtags ? `\n\n${hashtags}` : ""}`;
+  return `${brandName} tiene algo preparado para ti.
+
+${keyMessage}
+
+Esta pieza está pensada para ${objective.toLowerCase()} con un mensaje ${tone.toLowerCase()}, directo y fácil de entender. ${idea}
+
+${ctas}.${hashtags ? `\n\n${hashtags}` : ""}`;
+}
+
+function looksIncomplete(copy: string) {
+  const clean = copy.trim();
+  if (clean.length < 220) return true;
+  if (!/[.!?…)]$/.test(clean)) return true;
+  const lastWords = clean.split(/\s+/).slice(-3).join(" ").toLowerCase();
+  return /\b(al|de|para|con|por|que|en|y|o|tu|su|la|el|los|las)$/i.test(
+    lastWords,
+  );
 }
 
 function buildPrompt(payload: CopyRequestPayload) {
   const item = payload.item || {};
   const client = payload.client || {};
   const copyRules = (client.copyRules || {}) as Record<string, unknown>;
-  const approvedCopies = (payload.approvedCopies || []).slice(0, 8).join("\n---\n");
+  const approvedCopies = (payload.approvedCopies || [])
+    .slice(0, 8)
+    .join("\n---\n");
 
   return `Eres copywriter senior de una agencia de marketing.
-Genera UN copy listo para redes sociales en español mexicano.
+Genera UN copy completo, cerrado y listo para publicar en redes sociales en español mexicano.
+Extensión objetivo: 90 a 150 palabras, salvo que las reglas del cliente indiquen algo diferente.
+No lo cortes a media frase. Termina siempre con una idea completa y un CTA claro.
 No inventes datos duros, precios, promociones ni promesas no incluidas.
 No copies literalmente ejemplos anteriores; solo aprende estilo.
 
@@ -71,7 +108,7 @@ Referencias: ${asText(item.referenceLinks)}
 COPYS APROBADOS ANTERIORES DEL MISMO CLIENTE:
 ${approvedCopies || "Sin ejemplos previos."}
 
-Entrega solo el copy final, sin explicación.`;
+Entrega solo el copy final, sin explicación, sin encabezados y sin dejar frases incompletas.`;
 }
 
 export async function POST(request: Request) {
@@ -83,21 +120,31 @@ export async function POST(request: Request) {
   }
 
   try {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: buildPrompt(payload) }] }],
+          generationConfig: { temperature: 0.72, maxOutputTokens: 1600 },
+        }),
       },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: buildPrompt(payload) }] }],
-        generationConfig: { temperature: 0.75, maxOutputTokens: 900 },
-      }),
-    });
+    );
 
     const data = await response.json();
-    const copy = data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("\n").trim();
-    if (!response.ok || !copy) return NextResponse.json({ copy: fallbackCopy(payload), mode: "fallback" });
+    const copy = data?.candidates?.[0]?.content?.parts
+      ?.map((part: { text?: string }) => part.text || "")
+      .join("\n")
+      .trim();
+    if (!response.ok || !copy || looksIncomplete(copy))
+      return NextResponse.json({
+        copy: fallbackCopy(payload),
+        mode: "fallback",
+      });
     return NextResponse.json({ copy, mode: "gemini" });
   } catch {
     return NextResponse.json({ copy: fallbackCopy(payload), mode: "fallback" });
