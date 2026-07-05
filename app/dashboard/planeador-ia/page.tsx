@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { Brand, ContentRequest, Production, listBrands, listProductions, listRequests, organizationTeam } from "@/lib/data";
+import { Brand, ContentRequest, Production, TeamDailyCapacity, getCapacityForPerson, getCapacityTone, getEffectiveWorkDate, listBrands, listProductions, listRequests, listTeamDailyCapacities, organizationTeam, todayDateKey } from "@/lib/data";
 
 type ClientLearning = {
   clientName: string;
@@ -28,16 +28,18 @@ export default function OperationalAIPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [productions,setProductions]=useState<Production[]>([]);
   const [brands,setBrands]=useState<Brand[]>([]);
+  const [capacities,setCapacities]=useState<TeamDailyCapacity[]>([]);
   const [loading,setLoading]=useState(true);
   const [clientFilter,setClientFilter]=useState("Todos");
   const [areaFilter,setAreaFilter]=useState("Todas");
 
   async function load(){
     setLoading(true);
-    const [reqs, prods, cls] = await Promise.all([listRequests(), listProductions(), listBrands().catch(()=>[])]);
+    const [reqs, prods, cls, caps] = await Promise.all([listRequests(), listProductions(), listBrands().catch(()=>[]), listTeamDailyCapacities().catch(()=>[])]);
     setRequests(reqs);
     setProductions(prods);
     setBrands(cls);
+    setCapacities(caps);
     setLoading(false);
   }
 
@@ -54,6 +56,7 @@ export default function OperationalAIPage(){
   const learning = useMemo(()=>buildClientLearnings(filteredRequests),[filteredRequests]);
   const suggestions = useMemo(()=>suggestResponsibles(filteredRequests).slice(0,8),[filteredRequests]);
   const dailyPlan = useMemo(()=>buildDailyPlan(activeTasks),[activeTasks]);
+  const bottlenecks = useMemo(()=>buildBottleneckRows(activeTasks, capacities),[activeTasks, capacities]);
   const briefScores = useMemo(()=>filteredRequests.filter(item=>["lista_asignacion","pendiente_produccion","bloqueada"].includes(item.status || "")).map(item=>({item, score:briefScore(item), missing:briefMissing(item)})).sort((a,b)=>a.score-b.score).slice(0,8),[filteredRequests]);
   const rejectionReasons = useMemo(()=>classifyRejections(rejections),[rejections]);
   const smartSummary = useMemo(()=>buildSmartSummary(filteredRequests, productions),[filteredRequests, productions]);
@@ -87,7 +90,7 @@ export default function OperationalAIPage(){
       <div className="kpi"><span>Tareas activas</span><strong>{activeTasks.length}</strong><small>{risks.length} con riesgo</small></div>
       <div className="kpi"><span>Rebotes detectados</span><strong>{rejections.length}</strong><small>La IA clasifica motivos</small></div>
       <div className="kpi"><span>Briefs débiles</span><strong>{briefScores.filter(x=>x.score<75).length}</strong><small>Menos de 75/100</small></div>
-      <div className="kpi"><span>Clientes con aprendizaje</span><strong>{learning.length}</strong><small>Basado en historial real</small></div>
+      <div className="kpi"><span>Cuellos de botella</span><strong>{bottlenecks.filter(row=>row.tone.tone==="orange" || row.tone.tone==="red").length}</strong><small>Por persona/día</small></div>
     </section>
 
     <section className="card ai-insight-card">
@@ -95,6 +98,19 @@ export default function OperationalAIPage(){
       <h3>Qué está pasando en la operación</h3>
       <div className="ai-summary-grid">
         {smartSummary.map((line,index)=><div className="ai-summary-item" key={index}><span>{index+1}</span><p>{line}</p></div>)}
+      </div>
+    </section>
+
+    <section className="card bottleneck-ai-card">
+      <div className="section-heading-inline"><div><p className="eyebrow">Capacidad diaria</p><h3>Cuellos de botella</h3></div><span className="badge">Piezas por día</span></div>
+      <p className="mini">Aquí se concentra la lectura de saturación para no estorbar el módulo de Tareas. Las tareas arrastradas cuentan como carga del día actual.</p>
+      <div className="capacity-load-grid">
+        {bottlenecks.slice(0,12).map(row=><div className={`capacity-load-card ${row.tone.tone}`} key={`${row.person}-${row.date}`}>
+          <div><strong>{row.person}</strong><span>{row.date}</span></div>
+          <b>{row.load} / {row.capacity} piezas</b>
+          <small>{row.tone.label} · {Math.round(row.tone.ratio*100)}% {row.carried ? `· ${row.carried} arrastrada(s)` : ""}</small>
+        </div>)}
+        {!bottlenecks.length && <p className="mini">No hay carga activa para calcular cuellos.</p>}
       </div>
     </section>
 
@@ -177,8 +193,25 @@ export default function OperationalAIPage(){
   </AppShell>;
 }
 
+function buildBottleneckRows(tasks:ContentRequest[], capacities:TeamDailyCapacity[]){
+  const today = todayDateKey();
+  const closed = ["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","aprobada","finalizada","programada","publicada","cancelada","eliminada"];
+  const grouped:Record<string,{person:string;date:string;load:number;capacity:number;carried:number}> = {};
+  tasks.filter(task=>!closed.includes(task.status||"")).forEach(task=>{
+    const person = task.assignedTo || "Sin asignar";
+    const area = task.assignedArea || task.suggestedArea || "";
+    const date = getEffectiveWorkDate(task, today) || today;
+    const key = `${person}__${date}`;
+    grouped[key] = grouped[key] || {person,date,load:0,capacity:getCapacityForPerson(person,area,capacities),carried:0};
+    grouped[key].load += 1;
+    if((task.carriedOver || (task.plannedWorkDate && task.plannedWorkDate < today))) grouped[key].carried += 1;
+  });
+  return Object.values(grouped).map(row=>({...row,tone:getCapacityTone(row.load,row.capacity)}))
+    .sort((a,b)=>b.tone.ratio-a.tone.ratio || a.date.localeCompare(b.date) || a.person.localeCompare(b.person,"es"));
+}
+
 function getTaskDate(item:ContentRequest){
-  return item.dueDate || item.batchDueDate || item.publishDate || "";
+  return getEffectiveWorkDate(item);
 }
 
 function isOverdue(item:ContentRequest){

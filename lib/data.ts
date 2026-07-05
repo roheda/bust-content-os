@@ -628,7 +628,7 @@ export type TeamDailyCapacity = {
   id?: string;
   personName: string;
   area: string;
-  dailyCapacityUnits: number;
+  dailyCapacityUnits: number; // piezas máximas por día (nombre legacy para no romper datos existentes)
   active: boolean;
   notes?: string;
 };
@@ -641,13 +641,13 @@ export type OperationalPlan = {
   editingHours: number;
   deliveryDays: number;
   bufferHours: number;
-  operationalWeight: number;
+  operationalWeight: number; // peso legacy; ahora se mantiene en 1 pieza
   clientDueDate: string;
   internalDueDate: string;
   productionDueDate: string;
 };
 
-export const defaultDailyCapacityUnits = 5;
+export const defaultDailyCapacityUnits = 5; // piezas por día
 
 export const defaultTeamDailyCapacities: TeamDailyCapacity[] = organizationTeam
   .filter((member) => ["Diseño", "Audiovisual"].includes(member.area))
@@ -656,7 +656,7 @@ export const defaultTeamDailyCapacities: TeamDailyCapacity[] = organizationTeam
     area: member.area,
     dailyCapacityUnits: defaultDailyCapacityUnits,
     active: true,
-    notes: "Capacidad default. Ajustar en Configuración según rol/persona."
+    notes: "Capacidad default en piezas por día. Ajustar en Configuración según rol/persona."
   }));
 
 export const defaultOperationalRules: OperationalContentRule[] = [
@@ -773,8 +773,9 @@ export function suggestProductionDueDate(publishDate: string, deliveryDays: numb
 }
 
 export function operationalWeightFromHours(hours: number) {
-  if (!Number.isFinite(Number(hours))) return 1;
-  return Math.max(0.5, Math.round((Number(hours || 0) / 2) * 2) / 2 || 1);
+  // Legacy: antes convertía horas a peso por horas.
+  // Ahora la capacidad se mide por pieza; las horas siguen siendo esfuerzo estimado.
+  return 1;
 }
 
 export function getOperationalPlan(
@@ -788,7 +789,7 @@ export function getOperationalPlan(
   const productionDueDate = item.requiresProduction ? (item.productionDueDate || suggestProductionDueDate(clientDueDate, estimate.deliveryDays, estimate.bufferHours)) : "";
   return {
     ...estimate,
-    operationalWeight: operationalWeightFromHours(estimate.editingHours),
+    operationalWeight: 1,
     clientDueDate,
     internalDueDate,
     productionDueDate
@@ -832,7 +833,7 @@ export function planWorkDateForAssignment(
   const todayKey = todayDateKey();
   const plan = getOperationalPlan({ ...item, assignedTo, assignedArea }, rules, overrides);
   const deadline = plan.internalDueDate || item.dueDate || item.batchDueDate || item.publishDate || todayKey;
-  const weight = item.operationalWeight || plan.operationalWeight;
+  const weight = 1;
   const capacity = getCapacityForPerson(assignedTo, assignedArea, capacities);
   const loadByDate: Record<string, number> = {};
 
@@ -844,7 +845,7 @@ export function planWorkDateForAssignment(
       const date = getEffectiveWorkDate(task, todayKey);
       if (!date) return;
       const taskPlan = getOperationalPlan(task, rules, overrides);
-      loadByDate[date] = (loadByDate[date] || 0) + Number(task.operationalWeight || taskPlan.operationalWeight || 1);
+      loadByDate[date] = (loadByDate[date] || 0) + 1;
     });
 
   let cursor = todayKey;
@@ -1137,7 +1138,7 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
       dueDate: item.dueDate || plan.internalDueDate || batch.batchDueDate,
       operationalCost: item.operationalCost ?? plan.totalCost,
       operationalHours: item.operationalHours ?? plan.editingHours,
-      operationalWeight: item.operationalWeight ?? plan.operationalWeight,
+      operationalWeight: 1,
       operationalRisk: item.operationalRisk || "green",
       status
     });

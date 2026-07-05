@@ -181,7 +181,7 @@ export default function CreatorPage(){
       dueDate: req.dueDate || plan.internalDueDate || batchDueDate,
       operationalCost: plan.totalCost,
       operationalHours: plan.editingHours,
-      operationalWeight: plan.operationalWeight,
+      operationalWeight: 1,
       operationalRisk: risk.tone === "bad" ? "red" : risk.tone === "mid" ? "yellow" : "green",
       source
     };
@@ -506,7 +506,7 @@ export default function CreatorPage(){
       updated.dueDate = plan.internalDueDate || updated.dueDate;
       updated.operationalCost = plan.totalCost;
       updated.operationalHours = plan.editingHours;
-      updated.operationalWeight = plan.operationalWeight;
+      updated.operationalWeight = 1;
       updated.operationalRisk = risk.tone === "bad" ? "red" : risk.tone === "mid" ? "yellow" : "green";
     }
     next[index]=updated;
@@ -624,7 +624,7 @@ export default function CreatorPage(){
           dueDate: x.dueDate || plan.internalDueDate || batchDueDate,
           operationalCost: plan.totalCost,
           operationalHours: plan.editingHours,
-          operationalWeight: plan.operationalWeight,
+          operationalWeight: 1,
           operationalRisk: risk.tone === "bad" || planningSummary.riskTone === "red" ? "red" : risk.tone === "mid" ? "yellow" : "green",
           forcedDate: planningSummary.riskTone === "red",
           forcedDateReason: planningSummary.riskTone === "red" ? forceReason : "",
@@ -669,7 +669,7 @@ export default function CreatorPage(){
     </div>
 
     <section className="grid kpis">
-      {[["Cliente",client?.name||"Sin cliente"],["En lote",String(items.length)],["Costo solicitud",money(operationalSummary.totalCost)],["Unidades",`${operationalSummary.totalWeight} u`],["Fecha viable",operationalSummary.viableDate||"Sin fecha"],["Semáforo",operationalSummary.riskLabel]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Cliente",client?.name||"Sin cliente"],["En lote",String(items.length)],["Costo solicitud",money(operationalSummary.totalCost)],["Piezas",`${operationalSummary.totalPieces} contenidos`],["Fecha viable",operationalSummary.viableDate||"Sin fecha"],["Semáforo",operationalSummary.riskLabel]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
     <div className="batch-bar">
@@ -844,13 +844,13 @@ function buildPlanningSummary(items:ContentRequest[], existing:ContentRequest[],
   const planned = items.map((item)=>({item, plan:getOperationalPlan(item,rules,overrides), risk:getDeliveryRisk((item.publishDate||item.batchDueDate||item.clientDueDate||""), getOperationalPlan(item,rules,overrides).deliveryDays)}));
   const totalCost = planned.reduce((sum,row)=>sum+row.plan.totalCost,0);
   const totalHours = planned.reduce((sum,row)=>sum+row.plan.editingHours,0);
-  const totalWeight = planned.reduce((sum,row)=>sum+row.plan.operationalWeight,0);
-  const byArea:Record<string,{count:number;weight:number;cost:number}> = {};
+  const totalPieces = planned.length;
+  const byArea:Record<string,{count:number;hours:number;cost:number}> = {};
   planned.forEach(({item,plan})=>{
     const area = item.suggestedArea || plan.rule.area || "Sin área";
-    byArea[area] = byArea[area] || {count:0,weight:0,cost:0};
+    byArea[area] = byArea[area] || {count:0,hours:0,cost:0};
     byArea[area].count += 1;
-    byArea[area].weight += plan.operationalWeight;
+    byArea[area].hours += plan.editingHours;
     byArea[area].cost += plan.totalCost;
   });
   const today = todayDateKey();
@@ -874,13 +874,13 @@ function buildPlanningSummary(items:ContentRequest[], existing:ContentRequest[],
     const plan = getOperationalPlan(task,rules,overrides);
     const area = task.assignedArea || task.suggestedArea || plan.rule.area || "Sin área";
     const date = task.plannedWorkDate || task.dueDate || task.internalDueDate || "";
-    if(date && date <= earliestInternalDue){
-      areaLoadToday[area] = (areaLoadToday[area]||0) + Number(task.operationalWeight || plan.operationalWeight || 1);
+    if(date && (!earliestInternalDue || date <= earliestInternalDue)){
+      areaLoadToday[area] = (areaLoadToday[area]||0) + 1;
     }
   });
   const areaWarnings = Object.entries(byArea).map(([area,row])=>{
     const cap = areaCapacity[area] || 5;
-    const projected = row.weight + (areaLoadToday[area] || 0);
+    const projected = row.count + (areaLoadToday[area] || 0);
     const tone = getCapacityTone(projected, Math.max(cap,1));
     return {area,...row,capacity:cap,projected,tone:tone.tone,label:tone.label};
   });
@@ -893,10 +893,10 @@ function buildPlanningSummary(items:ContentRequest[], existing:ContentRequest[],
     : requestedTooSoon
       ? `la primera fecha viable por tiempos configurados es ${minimumViableDate}`
       : overload
-        ? "la carga por área supera la capacidad disponible"
+        ? "la carga por área supera las piezas disponibles por día"
         : "sin riesgo crítico";
   return {
-    totalCost,totalHours,totalWeight:Number(totalWeight.toFixed(1)),byArea,productionCount:productionItems.length,
+    totalCost,totalHours,totalPieces,byArea,productionCount:productionItems.length,
     productionDueDate:productionDueDates[0] || "",productionDueLabel,hasExpiredProduction,expiredProductionCount:expiredProductionDates.length,
     earliestInternalDue,latestClientDue,viableDate,
     riskTone,riskLabel:riskTone==="red"?"Rojo":riskTone==="yellow"?"Amarillo":"Verde",riskReason,areaWarnings,riskCount: planned.filter(row=>row.risk.tone==="bad").length
@@ -912,7 +912,7 @@ function PlanningSummaryCard({summary,forceReason,forceNotes,setForceReason,setF
     <div className="planning-metrics-grid">
       <div><span>Costo solicitud</span><strong>{money(summary.totalCost)}</strong></div>
       <div><span>Horas estimadas</span><strong>{summary.totalHours} h</strong></div>
-      <div><span>Unidades</span><strong>{summary.totalWeight}</strong></div>
+      <div><span>Piezas</span><strong>{summary.totalPieces}</strong></div>
       <div><span>Fecha viable</span><strong>{summary.viableDate || "Sin fecha"}</strong></div>
       <div><span>Entrega interna</span><strong>{summary.earliestInternalDue || "Sin fecha"}</strong></div>
       <div className={summary.hasExpiredProduction ? "metric-danger" : ""}><span>Máx. producción</span><strong>{summary.productionDueLabel || "No aplica"}</strong></div>
@@ -920,7 +920,7 @@ function PlanningSummaryCard({summary,forceReason,forceNotes,setForceReason,setF
     <div className="planning-area-list">
       <strong>Carga por área</strong>
       {summary.areaWarnings.map(row=><div className="planning-area-row" key={row.area}>
-        <span>{row.area}</span><small>{row.count} pieza(s) · {row.weight.toFixed(1)} u</small><b className={`capacity-dot ${row.tone}`}>{row.projected.toFixed(1)} / {row.capacity}</b>
+        <span>{row.area}</span><small>{row.count} pieza(s) · {row.hours} h</small><b className={`capacity-dot ${row.tone}`}>{row.projected} / {row.capacity} piezas</b>
       </div>)}
       {!summary.areaWarnings.length && <p className="mini">Agrega contenidos para calcular carga.</p>}
     </div>
@@ -928,7 +928,7 @@ function PlanningSummaryCard({summary,forceReason,forceNotes,setForceReason,setF
       <strong>Producción ya no viable</strong>
       <span>Hay {summary.expiredProductionCount} pieza(s) cuya fecha máxima de producción ya pasó. Para avanzar, mueve la fecha de publicación o desactiva producción y trabaja con material disponible.</span>
     </div>}
-    <p className="mini">{summary.riskTone === "red" ? `Riesgo: ${summary.riskReason}.` : "La fecha se calcula con tiempos por contenido, producción requerida y capacidad diaria configurada."}</p>
+    <p className="mini">{summary.riskTone === "red" ? `Riesgo: ${summary.riskReason}.` : "La fecha se calcula con horas por pieza, producción requerida y capacidad diaria en piezas."}</p>
     {summary.riskTone === "red" && <div className="force-date-box">
       <h4>Forzar fecha con justificación</h4>
       <div className="field"><label>Motivo</label><select value={forceReason} onChange={e=>setForceReason(e.target.value)}><option value="">Selecciona motivo...</option><option>Cliente urgente</option><option>Campaña pagada activa</option><option>Solicitud de dirección</option><option>Contenido prioritario</option><option>Otro</option></select></div>

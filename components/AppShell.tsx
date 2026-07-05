@@ -160,7 +160,7 @@ export default function AppShell({
       <span></span><span></span><span></span>
     </button>
     {mobileMenuOpen ? <button className="mobile-sidebar-scrim" type="button" aria-label="Cerrar menú" onClick={()=>setMobileMenuOpen(false)} /> : null}
-    <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`} aria-label="Navegación principal">
+    <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`} aria-label="Navegación principal" onDoubleClick={()=>sidebarCollapsed && setSidebarCollapsed(false)}>
       <div className="sidebar-main-scroll">
         <div className="sidebar-head-row">
         <Link href="/dashboard" className="brand-mark brand-mark-logo" aria-label="Ir al dashboard">
@@ -183,7 +183,9 @@ export default function AppShell({
                 className={isActive ? "active" : ""}
                 href={href}
                 key={href}
-                title={description}
+                title={sidebarCollapsed ? label : description}
+                data-tooltip={label}
+                aria-label={label}
                 aria-current={isActive ? "page" : undefined}
               >
                 <span className="nav-icon" aria-hidden="true">{moduleIcons[key] || "•"}</span>
@@ -209,6 +211,9 @@ export default function AppShell({
         {canUser(activeUser,"usuarios","configure") && <Link className="mini user-config-link" href="/dashboard/usuarios">Configurar usuarios →</Link>}
       </div>
     </aside>
+    <button className="sidebar-expand-rail" type="button" onClick={()=>setSidebarCollapsed(false)} aria-label="Abrir menú lateral" title="Abrir menú">
+      <span>→</span>
+    </button>
     <main className="main">{children}</main>
     <PendingMentionsWidget activeUser={activeUser}/>
     <FeedbackWidget/>

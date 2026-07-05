@@ -45,7 +45,7 @@ export default function TasksPage(){
   const [clientOverrides,setClientOverrides]=useState<ClientOperationalOverride[]>([]);
   const [teamCapacities,setTeamCapacities]=useState<TeamDailyCapacity[]>([]);
   const [carryOverCount,setCarryOverCount]=useState(0);
-  const [view,setView]=useState<"calendario"|"lista"|"persona"|"eficiencia">("calendario");
+  const [view,setView]=useState<"hoy"|"calendario"|"lista"|"persona">("hoy");
   const [calendarMode,setCalendarMode]=useState<"semana"|"mes">("semana");
   const [cursor,setCursor]=useState(new Date());
   const [person,setPerson]=useState("Todos");
@@ -157,7 +157,9 @@ export default function TasksPage(){
 
   const overdueCount = filtered.filter(isOverdue).length;
 
-  const capacitySummary = useMemo(()=>buildCapacitySummary(filtered, teamCapacities, costRules, clientOverrides),[filtered,teamCapacities,costRules,clientOverrides]);
+  const todayKeyValue = todayDateKey();
+  const todayTasks = filtered.filter(task=>getTaskDate(task) === todayKeyValue);
+  const finishedCount = filtered.filter(task=>task.status === "finalizada").length;
 
   async function openTask(task:ContentRequest){
     const shouldStart = task.status === "asignada";
@@ -323,10 +325,10 @@ export default function TasksPage(){
 
     <div className="tasks-toolbar" aria-label="Controles compactos de tareas">
       <div className="view-switch task-view-switch">
+        <button className={view==="hoy"?"active":""} onClick={()=>setView("hoy")}>Hoy</button>
         <button className={view==="calendario"?"active":""} onClick={()=>setView("calendario")}>Calendario</button>
         <button className={view==="lista"?"active":""} onClick={()=>setView("lista")}>Lista</button>
         <button className={view==="persona"?"active":""} onClick={()=>setView("persona")}>Por persona</button>
-        <button className={view==="eficiencia"?"active":""} onClick={()=>setView("eficiencia")}>Eficiencia IA</button>
       </div>
 
       <div className="calendar-controls task-calendar-controls">
@@ -363,20 +365,20 @@ export default function TasksPage(){
     </div>
 
     <section className="grid kpis tasks-kpis">
-      {[["Tareas",String(filtered.length)],["Vencidas",String(overdueCount)],["Arrastradas hoy",String(carryOverCount || filtered.filter(x=>isCarriedTask(x)).length)],["Cuellos",String(capacitySummary.overloadedCount)],["Persona",person],["Área",area]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
+      {[["Hoy",String(todayTasks.length)],["Pendientes",String(filtered.filter(x=>!["finalizada","pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout"].includes(x.status||"")).length)],["Vencidas",String(overdueCount)],["Arrastradas",String(carryOverCount || filtered.filter(x=>isCarriedTask(x)).length)],["Finalizadas",String(finishedCount)],["Filtro",person==="Todos"?area:person]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
     </section>
 
-    <CapacityLoadPanel rows={capacitySummary.rows}/>
 
     <section className="calendar-workspace no-doubts-panel">
       <div>
+        {view==="hoy" && <TodayView tasks={filtered} onOpen={openTask}/>}
+
         {view==="calendario" && (calendarMode==="semana"
           ? <WeekView days={weekDays} tasksByDate={tasksByDate} onOpen={openTask}/>
           : <MonthView days={monthDays} cursor={cursor} tasksByDate={tasksByDate} onOpen={openTask}/>)}
 
         {view==="lista" && <ListView tasks={filtered} onOpen={openTask}/>}
         {view==="persona" && <PersonView tasks={filtered} onOpen={openTask}/>}
-        {view==="eficiencia" && <EfficiencyView tasks={filtered} onOpen={openTask}/>}
       </div>
 
     </section>
@@ -555,7 +557,7 @@ async function autoCarryOverTasks(items:ContentRequest[], rules:OperationalConte
       carriedOver: true,
       carriedOverFromDate: original,
       carriedOverDays: days,
-      operationalWeight: item.operationalWeight || plan.operationalWeight,
+      operationalWeight: 1,
       operationalRisk: "orange"
     });
   }));
@@ -583,7 +585,7 @@ function buildCapacitySummary(tasks:ContentRequest[], capacities:TeamDailyCapaci
     const key = `${person}__${date}`;
     const plan = getOperationalPlan(task,rules,overrides);
     grouped[key] = grouped[key] || {person,date,load:0,capacity:getCapacityForPerson(person,area,capacities),carried:0,tasks:[]};
-    grouped[key].load += Number(task.operationalWeight || plan.operationalWeight || 1);
+    grouped[key].load += 1;
     grouped[key].carried += isCarriedTask(task) ? 1 : 0;
     grouped[key].tasks.push(task);
   });
@@ -668,6 +670,55 @@ function formatCalendarLabel(date: Date, mode: "semana" | "mes") {
   const start = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short" }).format(days[0]);
   const end = new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(days[days.length-1]);
   return `Semana ${start} – ${end}`;
+}
+
+function TodayView({tasks,onOpen}:{tasks:ContentRequest[];onOpen:(item:ContentRequest)=>void}){
+  const today = todayDateKey();
+  const active = tasks.filter(task=>!isClosedTask(task));
+  const carried = active.filter(task=>isCarriedTask(task) || isOverdue(task)).sort(sortDailyTasks);
+  const todayList = active.filter(task=>getTaskDate(task) === today && !carried.some(item=>item.id===task.id)).sort(sortDailyTasks);
+  const nextList = active.filter(task=>getTaskDate(task) > today).sort(sortDailyTasks).slice(0,10);
+  return <div className="daily-workspace">
+    <section className="daily-focus-card today-main-card">
+      <div className="daily-card-head"><div><p className="eyebrow">Trabajo diario</p><h3>Para trabajar hoy</h3></div><span className="pill green">{todayList.length} tarea(s)</span></div>
+      {todayList.map(task=><DailyTaskCard key={task.id} task={task} onOpen={onOpen}/>) }
+      {!todayList.length && <p className="mini">No hay tareas programadas para hoy con estos filtros.</p>}
+    </section>
+    <section className="daily-focus-card urgent-card">
+      <div className="daily-card-head"><div><p className="eyebrow">Prioridad</p><h3>Arrastradas o vencidas</h3></div><span className={carried.length ? "pill orange" : "pill green"}>{carried.length}</span></div>
+      {carried.map(task=><DailyTaskCard key={task.id} task={task} onOpen={onOpen} compact/>) }
+      {!carried.length && <p className="mini">Sin arrastres ni vencidas. Buen ritmo.</p>}
+    </section>
+    <section className="daily-focus-card next-card">
+      <div className="daily-card-head"><div><p className="eyebrow">Próximo</p><h3>Siguientes tareas</h3></div><span className="pill">{nextList.length}</span></div>
+      {nextList.map(task=><DailyTaskCard key={task.id} task={task} onOpen={onOpen} compact/>) }
+      {!nextList.length && <p className="mini">No hay próximas tareas con estos filtros.</p>}
+    </section>
+  </div>;
+}
+
+function DailyTaskCard({task,onOpen,compact=false}:{task:ContentRequest;onOpen:(item:ContentRequest)=>void;compact?:boolean}){
+  const carried = isCarriedTask(task);
+  const overdue = isOverdue(task);
+  return <button className={`daily-task-card ${compact ? "compact" : ""} ${carried ? "carried" : ""} ${overdue ? "overdue" : ""}`} onClick={()=>onOpen(task)}>
+    <div>
+      <strong>{task.clientName} · {task.contentType}</strong>
+      <span>{task.assignedTo || "Sin responsable"} · {task.assignedArea || task.suggestedArea || "Sin área"}</span>
+    </div>
+    <div className="daily-task-dates">
+      <b>{carried ? "Arrastrada" : overdue ? "Vencida" : "Trabajar"}</b>
+      <span>{getTaskDate(task)||"Sin fecha"}</span>
+    </div>
+    {!compact && <p>{task.creativeIdea || task.topic || "Sin detalle creativo"}</p>}
+  </button>;
+}
+
+function sortDailyTasks(a:ContentRequest,b:ContentRequest){
+  const carriedScore = Number(isCarriedTask(b) || isOverdue(b)) - Number(isCarriedTask(a) || isOverdue(a));
+  if(carriedScore) return carriedScore;
+  const dateCompare = (getTaskDate(a)||"").localeCompare(getTaskDate(b)||"");
+  if(dateCompare) return dateCompare;
+  return (a.clientName||"").localeCompare(b.clientName||"","es");
 }
 
 function WeekView({days,tasksByDate,onOpen}:{days:Date[];tasksByDate:Record<string,ContentRequest[]>;onOpen:(item:ContentRequest)=>void}){

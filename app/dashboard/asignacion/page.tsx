@@ -254,7 +254,7 @@ export default function AssignmentPage(){
       plannedWorkDate: schedule.plannedWorkDate,
       operationalCost: plan.totalCost,
       operationalHours: plan.editingHours,
-      operationalWeight: plan.operationalWeight,
+      operationalWeight: 1,
       operationalRisk: schedule.overflow || capacityTone.tone === "red" ? "red" : capacityTone.tone === "orange" ? "orange" : capacityTone.tone === "yellow" ? "yellow" : "green",
       carriedOver: false,
       carriedOverDays: 0,

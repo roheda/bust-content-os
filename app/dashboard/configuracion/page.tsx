@@ -325,11 +325,11 @@ export default function ConfiguracionPage(){
 
         <div className="card">
           <h3>{editingCapacityId?"Editar capacidad diaria":"Capacidad diaria por persona"}</h3>
-          <p className="mini">Define cuántas unidades operativas puede cerrar cada persona por día. El sistema usa esto para programar tareas, detectar arrastres y prender semáforos.</p>
+          <p className="mini">Define cuántas piezas puede cerrar cada persona por día. Las horas por tipo de contenido siguen midiendo esfuerzo; la capacidad diaria se mide por piezas.</p>
           <div className="form-grid" style={{marginTop:14}}>
             <div className="field full"><label>Persona</label><input value={capacityForm.personName} onChange={e=>setCapacity("personName",e.target.value)} placeholder="Nombre del diseñador/editor"/></div>
             <div className="field"><label>Área</label><select value={capacityForm.area} onChange={e=>setCapacity("area",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
-            <div className="field"><label>Unidades máximas por día</label><input type="number" value={capacityForm.dailyCapacityUnits} onChange={e=>setCapacity("dailyCapacityUnits",Number(e.target.value))}/></div>
+            <div className="field"><label>Piezas máximas por día</label><input type="number" value={capacityForm.dailyCapacityUnits} onChange={e=>setCapacity("dailyCapacityUnits",Number(e.target.value))}/></div>
             <label className="check-row"><input type="checkbox" checked={capacityForm.active!==false} onChange={e=>setCapacity("active",e.target.checked)}/> Activa</label>
             <div className="field full"><label>Notas</label><textarea value={capacityForm.notes||""} onChange={e=>setCapacity("notes",e.target.value)} placeholder="Ej. edita reels complejos / apoyo a diseño..."/></div>
           </div>
@@ -340,7 +340,7 @@ export default function ConfiguracionPage(){
           <div className="draft-list" style={{marginTop:14}}>
             {capacities.map(item=><div className="draft-item" key={`${item.id||"default"}-${item.personName}`}>
               <strong>{item.personName}</strong>
-              <span className="mini">{item.area} · {item.dailyCapacityUnits} unidades/día · {item.active===false?"Inactiva":"Activa"}</span>
+              <span className="mini">{item.area} · {item.dailyCapacityUnits} piezas/día · {item.active===false?"Inactiva":"Activa"}</span>
               <div className="config-actions"><button className="btn" onClick={()=>startCapacityEdit(item)}>Editar</button><button className="btn red" onClick={()=>removeCapacity(item)}>Eliminar</button></div>
             </div>)}
           </div>
@@ -349,9 +349,9 @@ export default function ConfiguracionPage(){
         <div className="card">
           <h3>Configuraciones recomendadas</h3>
           <ul className="config-list">
-            <li>Usa las mismas unidades para todo el equipo: 1 post simple puede pesar 1, un reel más complejo puede pesar más por sus horas configuradas.</li>
+            <li>La capacidad diaria se mide por piezas. Las horas configuradas por tipo de contenido explican el esfuerzo estimado de cada pieza.</li>
             <li>La fecha al cliente no es la fecha de tarea; Tareas usa fecha programada e interna.</li>
-            <li>Si una tarea no se cierra, se arrastra al siguiente día y consume capacidad.</li>
+            <li>Si una tarea no se cierra, se arrastra al siguiente día y consume una pieza de capacidad del siguiente día.</li>
             <li>Los semáforos aparecen cuando una persona supera su capacidad diaria.</li>
           </ul>
         </div>
