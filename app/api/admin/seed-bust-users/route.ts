@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb, firebaseAdminReady } from "@/lib/firebase-admin";
+import { isSetupTokenValid } from "@/lib/setup-token";
 
 export const runtime = "nodejs";
 
@@ -114,23 +115,31 @@ function buildUserAccess(uid: string, platformUserId: string, payload: any) {
   };
 }
 
-const seedUsers: SeedUser[] = [
-  { name:"Fernanda Gutierrez", email:"marifer@bust.mx", department:"Key Accounts", jobTitle:"Jefa de Key Accounts", roleKey:"admin", roleLabel:"Jefa de Key Accounts", notes:"KAM líder. Puede configurar operación, asignación y seguimiento general.", scope:"all_clients", canManageBilling:true },
-  { name:"Gabriela Tapia", email:"gabs.bustmx@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
-  { name:"Mauricio Manzanilla", email:"mau_photo@hotmail.com", department:"Audiovisual", jobTitle:"Fotógrafo y editor de foto", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Fotógrafo y editor de foto." },
-  { name:"Pablo Soberanis", email:"juansoberanisvazquez@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
-  { name:"Paolette Pavon", email:"paolette.bust@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
-  { name:"Rodrigo Hernandez", email:"copywriterbust2@gmail.com", department:"Copy", jobTitle:"Copywriter", roleKey:"creativo", roleLabel:"Copy / Creativo", notes:"Crea solicitudes y copy." },
-  { name:"Carlos Juarez", email:"designbustmkt@gmail.com", department:"Diseño", jobTitle:"Jefe de Diseño", roleKey:"diseno_lead", roleLabel:"Jefe de Diseño", notes:"Jefe de diseño. Puede asignar y revisar carga de diseño." },
-  { name:"Monica Lopez", email:"moniibust@gmail.com", department:"Content", jobTitle:"Content Manager", roleKey:"content", roleLabel:"Content", notes:"Programa posts y crea solicitudes." },
-  { name:"Roberto Pech", email:"cafeinivoro@gmail.com", department:"Content", jobTitle:"Jefe de Content", roleKey:"content_lead", roleLabel:"Jefe de Content", notes:"Jefe de content y departamentos creativos." },
-  { name:"Antonio Pool", email:"filmstlacuache7@gmail.com", department:"Audiovisual", jobTitle:"Productor audiovisual y editor", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Productor audiovisual y editor." },
-  { name:"Icela Zapata", email:"icelagreene19@gmail.com", department:"Diseño", jobTitle:"Diseñadora", roleKey:"diseno", roleLabel:"Diseño", notes:"Diseñadora." },
-  { name:"Rodrigo Maldonado", email:"rodri.maldonado98@hotmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
-  { name:"Abril Ordoñez", email:"abril.registros@gmail.com", department:"Audiovisual", jobTitle:"Editora audiovisual", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Editora audiovisual." },
-  { name:"Jorge David", email:"jorgedavid311003@gmail.com", department:"Diseño", jobTitle:"Diseñador", roleKey:"diseno", roleLabel:"Diseño", notes:"Diseñador." },
-  { name:"Belinda Irene Lopez Benavides", email:"belizepol28@gmail.com", department:"Audiovisual", jobTitle:"Editora audiovisual", roleKey:"audiovisual", roleLabel:"Audiovisual", notes:"Editora audiovisual." }
-];
+function seedUsersFromEnv(): SeedUser[] {
+  const raw = process.env.BUST_SEED_USERS_JSON;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => ({
+        name: String(item?.name || "").trim(),
+        email: String(item?.email || "").trim().toLowerCase(),
+        department: String(item?.department || ""),
+        jobTitle: String(item?.jobTitle || ""),
+        roleKey: String(item?.roleKey || "kam"),
+        roleLabel: String(item?.roleLabel || item?.roleKey || "Usuario"),
+        notes: String(item?.notes || ""),
+        scope: (item?.scope === "all_clients" ? "all_clients" : "assigned_clients") as SeedUser["scope"],
+        canManageBilling: Boolean(item?.canManageBilling),
+        canBypassClientLimits: Boolean(item?.canBypassClientLimits),
+      }))
+      .filter((item) => item.name && item.email);
+  } catch {
+    return [];
+  }
+}
+
 
 async function canConfigureFromToken(token: string) {
   if (!adminAuth || !adminDb) return false;
@@ -143,11 +152,10 @@ async function canConfigureFromToken(token: string) {
 }
 
 async function assertAllowed(req: NextRequest) {
-  const setupToken = process.env.AUTH_SETUP_TOKEN;
   const providedSetupToken = req.headers.get("x-setup-token") || "";
   const authorization = req.headers.get("authorization") || "";
   const bearerToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-  if (setupToken && providedSetupToken && providedSetupToken === setupToken) return true;
+  if (isSetupTokenValid(providedSetupToken)) return true;
   if (bearerToken) return canConfigureFromToken(bearerToken);
   return false;
 }
@@ -161,6 +169,10 @@ export async function POST(req: NextRequest) {
     if (!allowed) return NextResponse.json({ ok:false, error:"No tienes permiso para cargar usuarios." }, { status:403 });
 
     const body = await req.json().catch(()=>({}));
+    const seedUsers = seedUsersFromEnv();
+    if (!seedUsers.length) {
+      return NextResponse.json({ ok:false, error:"La carga masiva está desactivada o falta BUST_SEED_USERS_JSON en Vercel. Crea usuarios individualmente desde Usuarios o configura esa variable temporalmente." }, { status:400 });
+    }
     const tempPassword = String(body.tempPassword || "");
     const resetExistingPasswords = Boolean(body.resetExistingPasswords);
     if (tempPassword.length < 8) {
@@ -210,7 +222,7 @@ export async function POST(req: NextRequest) {
         inviteStatus:"auth_created",
         mustChangePassword:true,
         notes:item.notes,
-        seededFrom:"LISTA USUARIOS Y PUESTOS.xlsx",
+        seededFrom:"BUST_SEED_USERS_JSON",
         updatedAt:new Date().toISOString()
       };
 

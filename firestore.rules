@@ -37,17 +37,6 @@ service cloud.firestore {
       );
     }
 
-    function anyPerm(moduleKey, actions) {
-      return activeUser() && (
-        isMaster() ||
-        (
-          "permissions" in access() &&
-          moduleKey in access().permissions &&
-          access().permissions[moduleKey].keys().hasAny(actions)
-        )
-      );
-    }
-
     function canOperateRequests() {
       return activeUser() && (
         isMaster() ||

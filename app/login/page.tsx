@@ -6,7 +6,8 @@ import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword,
 import { auth } from "@/lib/firebase";
 import { PlatformUser, findUserByAuth, listUsers, markUserLogin, updateUser } from "@/lib/data";
 
-const authEnforced = process.env.NEXT_PUBLIC_AUTH_ENFORCED === "true";
+const authEnforced = process.env.NEXT_PUBLIC_AUTH_ENFORCED !== "false";
+const demoLoginAllowed = !authEnforced && process.env.NODE_ENV !== "production";
 
 export default function LoginPage(){
   const router = useRouter();
@@ -137,7 +138,7 @@ export default function LoginPage(){
 
         {mustChangeProfile ? <div className="alert green">Contraseña temporal detectada. Crea tu contraseña personal para continuar.</div> : null}
 
-        {!mustChangeProfile && !authEnforced && <div className="auth-mode-tabs">
+        {!mustChangeProfile && demoLoginAllowed && <div className="auth-mode-tabs">
           <button type="button" className={!secureMode?"active":""} onClick={()=>setSecureMode(false)}>Modo prueba</button>
           <button type="button" className={secureMode?"active":""} onClick={()=>setSecureMode(true)}>Acceso con contraseña</button>
         </div>}
@@ -149,7 +150,7 @@ export default function LoginPage(){
           {message && <div className="alert green">{message}</div>}
           <button className="btn blue" type="button" disabled={loading} onClick={completePasswordChange}>{loading?"Guardando...":"Cambiar contraseña y entrar →"}</button>
           <button className="btn" type="button" disabled={loading} onClick={async()=>{await signOut(auth); setMustChangeProfile(null); setNewPassword(""); setConfirmPassword("");}}>Cancelar</button>
-        </> : !secureMode && !authEnforced ? <>
+        </> : !secureMode && demoLoginAllowed ? <>
           {users.length>0 && <div className="field"><label>Usuario</label><select value={selected} onChange={e=>{setSelected(e.target.value); const found=users.find(u=>u.id===e.target.value); if(found?.email) setEmail(found.email);}}>{users.map(user=><option key={user.id || user.email} value={user.id}>{user.name} · {user.roleLabel || user.roleKey}</option>)}</select></div>}
           <Link className="btn blue" href="/dashboard" onClick={enterDemo}>Entrar al dashboard →</Link>
           {users.length===0 && <p className="mini" style={{marginTop:14}}>Aún no hay usuarios guardados. Entra y crea el usuario master desde Usuarios.</p>}
@@ -160,7 +161,7 @@ export default function LoginPage(){
           {message && <div className="alert green">{message}</div>}
           <button className="btn blue" type="button" disabled={loading} onClick={loginSecure}>{loading?"Entrando...":"Entrar con contraseña →"}</button>
           <button className="btn" type="button" disabled={loading} onClick={resetPassword}>Definir o recuperar contraseña</button>
-          {!authEnforced && <p className="mini" style={{marginTop:12}}>Cuando ya tengas todos los usuarios con acceso, activa NEXT_PUBLIC_AUTH_ENFORCED=true en Vercel.</p>}
+          {demoLoginAllowed && <p className="mini" style={{marginTop:12}}>Modo prueba solo disponible en desarrollo local. Para producción usa NEXT_PUBLIC_AUTH_ENFORCED=true o deja la variable sin definir.</p>}
         </>}
       </div>
     </section>

@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "2.3.1-cleanup-copy-modes-buildfix",
+  "version": "2.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

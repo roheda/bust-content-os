@@ -17,6 +17,7 @@ import {
   canAssignRequest,
   isImageFile,
   isVideoFile,
+  isBrandActive,
   listUniqueBrands,
   listRequests,
   listUsers,
@@ -206,12 +207,7 @@ export default function AssignmentPage() {
     () =>
       new Set(
         brands
-          .filter(
-            (brand) =>
-              !["eliminada", "eliminado", "inactive", "inactivo"].includes(
-                (brand.status || "").toLowerCase(),
-              ),
-          )
+          .filter(isBrandActive)
           .map((brand) => brand.id)
           .filter(Boolean),
       ),

@@ -36,6 +36,7 @@ export const requestStates = [
   "aprobada_pendiente_copyout",
   "finalizada",
   "cancelada",
+  "eliminada",
   "pendiente_copy"
 ];
 
@@ -458,7 +459,7 @@ export type Brand = {
   brandNotes?: string;
   brandBrain?: BrandBrain;
   copyRules?: CopyRules;
-  status?: string;
+  status?: "active" | "inactive" | "deleted" | "archived" | string;
   accountOwner?: string;
   contactName?: string;
   contactRole?: string;
@@ -1730,11 +1731,18 @@ function clientCompletenessScore(client: Brand) {
   return score;
 }
 
+export function isBrandActive(brand: Partial<Brand> | null | undefined) {
+  if (!brand) return false;
+  return !["deleted", "archived", "inactive", "inactivo", "eliminada", "eliminado"].includes(
+    String(brand.status || "active").toLowerCase(),
+  );
+}
+
 export function dedupeBrandsByName(brands: Brand[]) {
   const map = new Map<string, Brand>();
 
   for (const brand of brands) {
-    if ((brand.status || "active") === "deleted") continue;
+    if (!isBrandActive(brand)) continue;
 
     const key = normalizeClientNameForDedupe(brand.name || "");
     if (!key) continue;

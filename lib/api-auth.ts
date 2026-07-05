@@ -10,11 +10,12 @@ type AccessDoc = {
   permissions?: Record<string, Partial<Record<PermissionAction, boolean>>>;
 };
 
-const authEnforced = process.env.NEXT_PUBLIC_AUTH_ENFORCED === "true";
+const authEnforced = process.env.NEXT_PUBLIC_AUTH_ENFORCED !== "false";
+const demoApiAllowed = !authEnforced && process.env.NODE_ENV !== "production";
 
 export async function requireApiPermission(req: Request, moduleKey: string, action: PermissionAction = "view") {
-  // En desarrollo o prueba puede operar sin sesión forzada. En Vercel producción debe estar en true.
-  if (!authEnforced) return { ok: true as const, uid: "dev" };
+  // En desarrollo local se puede probar sin sesión. En producción nunca se omite la validación.
+  if (demoApiAllowed) return { ok: true as const, uid: "dev" };
 
   if (!firebaseAdminReady || !adminAuth || !adminDb) {
     return {

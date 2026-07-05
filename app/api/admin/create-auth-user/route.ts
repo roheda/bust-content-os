@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb, firebaseAdminReady } from "@/lib/firebase-admin";
+import { isSetupTokenValid } from "@/lib/setup-token";
 
 export const runtime = "nodejs";
 
@@ -73,12 +74,11 @@ export async function POST(req: NextRequest) {
       }, { status: 503 });
     }
 
-    const setupToken = process.env.AUTH_SETUP_TOKEN;
     const providedSetupToken = req.headers.get("x-setup-token") || "";
     const authorization = req.headers.get("authorization") || "";
     const bearerToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
 
-    let allowed = Boolean(setupToken && providedSetupToken && providedSetupToken === setupToken);
+    let allowed = isSetupTokenValid(providedSetupToken);
 
     if (!allowed && bearerToken) {
       const actor = await getActorFromToken(bearerToken);

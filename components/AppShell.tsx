@@ -31,7 +31,8 @@ const moduleGroups = [
 ];
 
 const items = platformModules.map((module) => [module.label, module.route, module.key, module.description] as const);
-const authEnforced = process.env.NEXT_PUBLIC_AUTH_ENFORCED === "true";
+const authEnforced = process.env.NEXT_PUBLIC_AUTH_ENFORCED !== "false";
+const demoLoginAllowed = !authEnforced && process.env.NODE_ENV !== "production";
 
 export default function AppShell({
   children,
@@ -67,7 +68,7 @@ export default function AppShell({
       }
     }
 
-    if(!authEnforced) {
+    if(demoLoginAllowed) {
       loadDemoMode();
       const unsub = onAuthStateChanged(auth,(user)=>setFirebaseUser(user));
       return ()=>{mounted=false; unsub();};
@@ -203,7 +204,7 @@ export default function AppShell({
             <span>{activeUser?.roleLabel || "Sistema oficial"}</span>
           </div>
         </div>
-        {!authEnforced && users.length>0 && <select className="sidebar-user-select" value={activeUser?.id||""} onChange={e=>chooseUser(e.target.value)} aria-label="Cambiar usuario activo">
+        {demoLoginAllowed && users.length>0 && <select className="sidebar-user-select" value={activeUser?.id||""} onChange={e=>chooseUser(e.target.value)} aria-label="Cambiar usuario activo">
           {users.map(user=><option key={user.id || user.email} value={user.id}>{user.name} · {user.roleLabel || user.roleKey}</option>)}
         </select>}
         {(authEnforced || firebaseUser) && <button className="sidebar-logout" type="button" onClick={logout}>Cerrar sesión</button>}

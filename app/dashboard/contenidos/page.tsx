@@ -38,6 +38,8 @@ export default function ContenidosPage() {
   );
   const [improvingCopyId, setImprovingCopyId] = useState<string | null>(null);
   const [bulkImproving, setBulkImproving] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState("");
+  const [copyGenerationModes, setCopyGenerationModes] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<string[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -139,6 +141,13 @@ export default function ContenidosPage() {
         publishDate: x.publishDate || "",
       }));
   }
+  function generationModeLabel(mode?: string) {
+    if (mode === "openai") return "IA OpenAI";
+    if (mode === "gemini") return "IA Gemini";
+    if (mode === "fallback") return "Plantilla de respaldo";
+    return "";
+  }
+
   function normalizeExternalUrl(value?: string) {
     const url = (value || "").trim();
     if (!url) return "#";
@@ -331,16 +340,18 @@ export default function ContenidosPage() {
     const payload = await response.json();
     if (!response.ok)
       throw new Error(payload.error || "No se pudo generar copy con IA.");
-    return (
-      payload.copy || currentCopy || item.copyIn || item.creativeIdea || ""
-    );
+    return {
+      copy: payload.copy || currentCopy || item.copyIn || item.creativeIdea || "",
+      mode: String(payload.mode || "unknown"),
+    };
   }
   async function improveOne(item: ContentRequest) {
     if (!item.id) return;
     setImprovingCopyId(item.id);
     try {
-      const improved = await requestImprovedCopyOut(item);
-      setCopyOutDrafts((prev) => ({ ...prev, [item.id || ""]: improved }));
+      const result = await requestImprovedCopyOut(item);
+      setCopyOutDrafts((prev) => ({ ...prev, [item.id || ""]: result.copy }));
+      setCopyGenerationModes((prev) => ({ ...prev, [item.id || ""]: result.mode }));
     } catch (error) {
       alert(
         error instanceof Error
@@ -359,13 +370,30 @@ export default function ContenidosPage() {
       return alert(
         "Selecciona al menos una pieza no finalizada para generar copy con IA.",
       );
+    const unsavedDrafts = rows.filter((item) => {
+      const id = item.id || "";
+      const draft = (copyOutDrafts[id] || "").trim();
+      const saved = (item.copyOut || "").trim();
+      return draft && draft !== saved;
+    });
+    if (unsavedDrafts.length && !confirm(`Hay ${unsavedDrafts.length} borrador(es) no guardado(s) en la selección. La IA los reemplazará en pantalla. ¿Continuar?`)) return;
+
     setBulkImproving(true);
+    setBulkProgress(`Generando 0/${rows.length}...`);
     try {
       const updates: Record<string, string> = {};
-      for (const item of rows) {
-        if (item.id) updates[item.id] = await requestImprovedCopyOut(item);
+      const modes: Record<string, string> = {};
+      for (let index = 0; index < rows.length; index += 1) {
+        const item = rows[index];
+        setBulkProgress(`Generando ${index + 1}/${rows.length} · ${item.clientName || "Sin cliente"}`);
+        if (item.id) {
+          const result = await requestImprovedCopyOut(item);
+          updates[item.id] = result.copy;
+          modes[item.id] = result.mode;
+        }
       }
       setCopyOutDrafts((prev) => ({ ...prev, ...updates }));
+      setCopyGenerationModes((prev) => ({ ...prev, ...modes }));
       alert(
         `Copy generado para ${Object.keys(updates).length} pieza(s). Revisa antes de finalizar.`,
       );
@@ -377,6 +405,7 @@ export default function ContenidosPage() {
       );
     } finally {
       setBulkImproving(false);
+      setBulkProgress("");
     }
   }
 
@@ -640,7 +669,7 @@ export default function ContenidosPage() {
               disabled={bulkImproving}
             >
               {bulkImproving
-                ? "Generando..."
+                ? bulkProgress || "Generando..."
                 : `Generar copy IA seleccionados (${selected.length})`}
             </button>
           )}
@@ -727,6 +756,11 @@ export default function ContenidosPage() {
                 placeholder="Copy final"
                 disabled={item.status === "finalizada"}
               />
+              {copyGenerationModes[item.id || ""] && (
+                <small className={copyGenerationModes[item.id || ""] === "fallback" ? "copy-source-note warning" : "copy-source-note"}>
+                  {generationModeLabel(copyGenerationModes[item.id || ""])}
+                </small>
+              )}
               {item.status !== "finalizada" && (
                 <button
                   className="btn ai-only-button"

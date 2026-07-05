@@ -2547,3 +2547,22 @@ a[class*="bg-black"],
 .assignment-table .text-clamp-2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .approval-initial-request{background:#f8fbff!important;border:1px solid #bfdbfe!important;border-radius:18px!important;padding:14px!important}
 .approval-initial-request .detail-copy{max-height:260px;overflow:auto}
+
+.copy-source-note {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(22, 163, 74, 0.24);
+  background: rgba(22, 163, 74, 0.08);
+  color: #166534;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.copy-source-note.warning {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+  color: #92400e;
+}

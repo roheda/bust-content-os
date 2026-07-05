@@ -22,6 +22,14 @@ function listText(value: unknown) {
     : "";
 }
 
+function cleanModelText(value: string) {
+  return value
+    .replace(/^```[a-z]*\s*/i, "")
+    .replace(/```$/i, "")
+    .replace(/^copy\s*(out|final)?\s*:?/i, "")
+    .trim();
+}
+
 function fallbackCopy(payload: CopyRequestPayload) {
   const item = payload.item || {};
   const client = payload.client || {};
@@ -45,11 +53,11 @@ function fallbackCopy(payload: CopyRequestPayload) {
   const tone =
     asText(copyRules.tone) || asText(client.tone) || "claro y profesional";
 
-  return `${brandName} tiene algo preparado para ti.
+  return `${brandName} tiene una propuesta pensada para conectar con su audiencia.
 
 ${keyMessage}
 
-Esta pieza está pensada para ${objective.toLowerCase()} con un mensaje ${tone.toLowerCase()}, directo y fácil de entender. ${idea}
+Este ${contentType.toLowerCase()} busca ${objective.toLowerCase()} con un mensaje ${tone.toLowerCase()}, directo y fácil de entender. ${idea}
 
 ${ctas}.${hashtags ? `\n\n${hashtags}` : ""}`;
 }
@@ -105,6 +113,8 @@ Mensaje clave: ${asText(item.keyMessage)}
 CTA sugerido: ${asText(item.cta)}
 Fecha publicación: ${asText(item.publishDate)}
 Referencias: ${asText(item.referenceLinks)}
+Copy actual / borrador si existe: ${asText(item.currentCopy)}
+Contexto buyer persona: ${asText(item.buyerPersonaContext)}
 
 COPYS APROBADOS ANTERIORES DEL MISMO CLIENTE:
 ${approvedCopies || "Sin ejemplos previos."}
@@ -112,45 +122,100 @@ ${approvedCopies || "Sin ejemplos previos."}
 Entrega solo el copy final, sin explicación, sin encabezados y sin dejar frases incompletas.`;
 }
 
+async function callOpenAI(prompt: string) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY no configurada.");
+  const model = process.env.OPENAI_TEXT_MODEL || "gpt-4.1-mini";
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      input: prompt,
+      max_output_tokens: 1200,
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.message || "OpenAI no pudo generar el copy.");
+  }
+
+  const text =
+    typeof data?.output_text === "string"
+      ? data.output_text
+      : Array.isArray(data?.output)
+        ? data.output
+            .flatMap((item: any) => (Array.isArray(item?.content) ? item.content : []))
+            .map((part: any) => part?.text || part?.value || "")
+            .join("\n")
+        : "";
+
+  return cleanModelText(text);
+}
+
+async function callGemini(prompt: string) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY no configurada.");
+
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.72, maxOutputTokens: 1600 },
+      }),
+    },
+  );
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.message || "Gemini no pudo generar el copy.");
+  }
+  const copy = data?.candidates?.[0]?.content?.parts
+    ?.map((part: { text?: string }) => part.text || "")
+    .join("\n")
+    .trim();
+
+  return cleanModelText(copy || "");
+}
+
 export async function POST(request: Request) {
   const authCheck = await requireApiPermission(request, "contenidos", "generate");
   if (!authCheck.ok) return authCheck.response;
 
   const payload = (await request.json()) as CopyRequestPayload;
-  const apiKey = process.env.GEMINI_API_KEY;
+  const prompt = buildPrompt(payload);
+  const errors: string[] = [];
 
-  if (!apiKey) {
-    return NextResponse.json({ copy: fallbackCopy(payload), mode: "fallback" });
+  try {
+    const copy = await callOpenAI(prompt);
+    if (!looksIncomplete(copy)) return NextResponse.json({ copy, mode: "openai" });
+    errors.push("OpenAI generó un texto incompleto.");
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "OpenAI falló.");
   }
 
   try {
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: buildPrompt(payload) }] }],
-          generationConfig: { temperature: 0.72, maxOutputTokens: 1600 },
-        }),
-      },
-    );
-
-    const data = await response.json();
-    const copy = data?.candidates?.[0]?.content?.parts
-      ?.map((part: { text?: string }) => part.text || "")
-      .join("\n")
-      .trim();
-    if (!response.ok || !copy || looksIncomplete(copy))
-      return NextResponse.json({
-        copy: fallbackCopy(payload),
-        mode: "fallback",
-      });
-    return NextResponse.json({ copy, mode: "gemini" });
-  } catch {
-    return NextResponse.json({ copy: fallbackCopy(payload), mode: "fallback" });
+    const copy = await callGemini(prompt);
+    if (!looksIncomplete(copy)) return NextResponse.json({ copy, mode: "gemini" });
+    errors.push("Gemini generó un texto incompleto.");
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "Gemini falló.");
   }
+
+  return NextResponse.json({
+    copy: fallbackCopy(payload),
+    mode: "fallback",
+    providerErrors: errors.slice(0, 3),
+  });
 }
