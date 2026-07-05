@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiPermission } from "@/lib/api-auth";
 
 export const maxDuration = 90;
 
@@ -192,6 +193,8 @@ function normalizeProposal(raw: any, fallback: Proposal): Proposal {
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await requireApiPermission(req, "creador", "generate");
+    if (!authCheck.ok) return authCheck.response;
     const body = await req.json();
     const count = Math.max(1, Math.min(30, Number(body.count || 5)));
     const startDate = asText(body.startDate);

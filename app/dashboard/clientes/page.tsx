@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import { authJsonHeaders } from "@/lib/client-auth";
 import { Brand, listUniqueBrands, saveBrand, updateBrand } from "@/lib/data";
 
 function splitComma(value:string){return value.split(",").map(x=>x.trim()).filter(Boolean)}
@@ -74,7 +75,7 @@ export default function ClientsPage(){
   async function analyzeWebsite(currentClient: Partial<Brand>) {
     const response = await fetch("/api/analyze-client-website",{
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      headers: await authJsonHeaders(),
       body:JSON.stringify({website: currentClient.website, instagram: (currentClient as any).instagram, currentClient})
     });
     const payload = await response.json();

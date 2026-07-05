@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { ChangeEvent, memo, useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { authJsonHeaders } from "@/lib/client-auth";
 import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
 import {
   Brand,
@@ -543,7 +544,7 @@ export default function BustItNowPage() {
         const built = mode === "editable-layers" ? buildPromptForMode("editable-layers") : buildPromptForMode("ai-text");
         const response = await fetch("/api/generate-image", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await authJsonHeaders(),
           body: JSON.stringify({
             prompt: built,
             format,

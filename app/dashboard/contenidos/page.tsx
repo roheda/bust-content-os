@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { authJsonHeaders } from "@/lib/client-auth";
 import { auth } from "@/lib/firebase";
 import TextTooltip from "@/components/TextTooltip";
 import {
@@ -316,7 +317,7 @@ export default function ContenidosPage() {
       .filter(Boolean);
     const response = await fetch("/api/generate-copy", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await authJsonHeaders(),
       body: JSON.stringify({
         item: {
           ...item,

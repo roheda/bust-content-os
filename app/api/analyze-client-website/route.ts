@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiPermission } from "@/lib/api-auth";
 
 export const maxDuration = 60;
 
@@ -152,6 +153,8 @@ async function callOpenAI(prompt: string) {
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await requireApiPermission(req, "clientes", "edit");
+    if (!authCheck.ok) return authCheck.response;
     const body = await req.json();
     const rawWebsite = String(body.website || "").trim();
     const rawInstagram = String(body.instagram || body.currentClient?.instagram || "").trim();

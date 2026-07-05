@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import { authJsonHeaders } from "@/lib/client-auth";
 import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
 import {
   Brand,
@@ -594,7 +595,7 @@ export default function GenerationRequestPage() {
       async function requestImages(mode: "ai-text" | "editable-layers") {
         const response = await fetch("/api/generate-image", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await authJsonHeaders(),
           body: JSON.stringify({
             prompt: generationPrompt,
             format: currentRequest.format,
@@ -687,7 +688,7 @@ export default function GenerationRequestPage() {
       const originalSource = image.originalBase64 || image.base64;
       const response = await fetch("/api/apply-logo-overlay", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authJsonHeaders(),
         body: JSON.stringify({
           imageBase64: isRemoteImageSource(originalSource) ? "" : originalSource,
           imageUrl: isRemoteImageSource(originalSource) ? originalSource : "",

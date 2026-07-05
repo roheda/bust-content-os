@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import { authJsonHeaders } from "@/lib/client-auth";
 import { Brand, ClientBillingConfig, ClientBuyerPersona, getClientBillingConfig, updateBrand, listBrands, deleteClientOperationalData } from "@/lib/data";
 
 function joinItems(items?:string[]){return Array.isArray(items)?items.join(", "):""}
@@ -135,7 +136,7 @@ export default function ClientBrandBrainPage(){
     try{
       const response = await fetch("/api/analyze-client-website",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers: await authJsonHeaders(),
         body:JSON.stringify({website:form.website, instagram:form.instagram, currentClient:{...client,...form,buyerPersonas}})
       });
       const payload = await response.json();

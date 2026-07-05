@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { authJsonHeaders } from "@/lib/client-auth";
 import {
   Brand,
   ClientOperationalOverride,
@@ -269,7 +270,7 @@ export default function CreatorPage(){
     try{
       const response = await fetch("/api/improve-creative-idea",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers: await authJsonHeaders(),
         body:JSON.stringify({
           clientName: client?.name || item.clientName,
           clientContext: clientContext(),
@@ -405,7 +406,7 @@ export default function CreatorPage(){
     try{
       const response = await fetch("/api/generate-content-proposals",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers: await authJsonHeaders(),
         body:JSON.stringify({
           count: Math.max(1, aiCount),
           startDate,

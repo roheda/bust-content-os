@@ -92,6 +92,28 @@ function permissionsFor(roleKey: string): PermissionMatrix {
   return matrixFor(["dashboard"], ["view"]);
 }
 
+
+function buildUserAccess(uid: string, platformUserId: string, payload: any) {
+  return {
+    platformUserId,
+    authUid: uid,
+    email: (payload.email || "").trim().toLowerCase(),
+    name: payload.name || "",
+    roleKey: payload.roleKey || "kam",
+    roleLabel: payload.roleLabel || payload.roleKey || "Usuario",
+    status: payload.status || "active",
+    isMaster: Boolean(payload.isMaster || payload.roleKey === "master"),
+    department: payload.department || "",
+    jobTitle: payload.jobTitle || "",
+    scope: payload.scope || "assigned_clients",
+    clientIds: payload.scope === "all_clients" ? [] : (payload.clientIds || []),
+    permissions: payload.permissions || {},
+    canBypassClientLimits: Boolean(payload.canBypassClientLimits),
+    canManageBilling: Boolean(payload.canManageBilling),
+    updatedAt: new Date().toISOString()
+  };
+}
+
 const seedUsers: SeedUser[] = [
   { name:"Fernanda Gutierrez", email:"marifer@bust.mx", department:"Key Accounts", jobTitle:"Jefa de Key Accounts", roleKey:"admin", roleLabel:"Jefa de Key Accounts", notes:"KAM líder. Puede configurar operación, asignación y seguimiento general.", scope:"all_clients", canManageBilling:true },
   { name:"Gabriela Tapia", email:"gabs.bustmx@gmail.com", department:"Key Accounts", jobTitle:"KAM", roleKey:"kam", roleLabel:"KAM", notes:"KAM con cuentas asignadas." },
@@ -194,10 +216,12 @@ export async function POST(req: NextRequest) {
 
       if (existing.empty) {
         const ref = await adminDb.collection("platformUsers").add({ ...payload, createdAt:new Date().toISOString() });
-        results.push({ email, id:ref.id, authCreated, platformUser:"created" });
+        await adminDb.collection("userAccess").doc(authUser.uid).set(buildUserAccess(authUser.uid, ref.id, payload), { merge:true });
+        results.push({ email, id:ref.id, authCreated, platformUser:"created", userAccess:"synced" });
       } else {
         await existing.docs[0].ref.set(payload, { merge:true });
-        results.push({ email, id:existing.docs[0].id, authCreated, platformUser:"updated" });
+        await adminDb.collection("userAccess").doc(authUser.uid).set(buildUserAccess(authUser.uid, existing.docs[0].id, payload), { merge:true });
+        results.push({ email, id:existing.docs[0].id, authCreated, platformUser:"updated", userAccess:"synced" });
       }
     }
 

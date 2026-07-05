@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function accessPath() {
+      return /databases/$(database)/documents/userAccess/$(request.auth.uid);
+    }
+
+    function hasAccessDoc() {
+      return signedIn() && exists(accessPath());
+    }
+
+    function access() {
+      return get(accessPath()).data;
+    }
+
+    function activeUser() {
+      return hasAccessDoc() && access().status != "inactive";
+    }
+
+    function isMaster() {
+      return activeUser() && (access().isMaster == true || access().roleKey == "master");
+    }
+
+    function hasPerm(moduleKey, actionKey) {
+      return activeUser() && (
+        isMaster() ||
+        (
+          "permissions" in access() &&
+          moduleKey in access().permissions &&
+          actionKey in access().permissions[moduleKey] &&
+          access().permissions[moduleKey][actionKey] == true
+        )
+      );
+    }
+
+    function anyPerm(moduleKey, actions) {
+      return activeUser() && (
+        isMaster() ||
+        (
+          "permissions" in access() &&
+          moduleKey in access().permissions &&
+          access().permissions[moduleKey].keys().hasAny(actions)
+        )
+      );
+    }
+
+    function canOperateRequests() {
+      return activeUser() && (
+        isMaster() ||
+        hasPerm("creador", "create") || hasPerm("creador", "edit") ||
+        hasPerm("asignacion", "assign") || hasPerm("asignacion", "edit") ||
+        hasPerm("tareas", "edit") ||
+        hasPerm("aprobaciones", "approve") ||
+        hasPerm("contenidos", "edit")
+      );
+    }
+
+    function canDeleteOperational() {
+      return isMaster() || hasPerm("clientes", "delete") || hasPerm("configuracion", "configure");
+    }
+
+    match /userAccess/{uid} {
+      allow read: if activeUser() && (uid == request.auth.uid || hasPerm("usuarios", "configure"));
+      allow create, update, delete: if hasPerm("usuarios", "configure");
+    }
+
+    function isSelfPlatformUser(userId) {
+      return activeUser() && "platformUserId" in access() && access().platformUserId == userId;
+    }
+
+    function selfSessionUpdateOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        "mustChangePassword",
+        "inviteStatus",
+        "lastLoginAt",
+        "passwordResetSentAt",
+        "updatedAt"
+      ]);
+    }
+
+    match /platformUsers/{userId} {
+      // El equipo necesita leer directorio/roles para asignación, tareas y permisos.
+      allow read: if activeUser();
+      allow create: if hasPerm("usuarios", "configure");
+      allow update: if hasPerm("usuarios", "configure") || (isSelfPlatformUser(userId) && selfSessionUpdateOnly());
+      allow delete: if hasPerm("usuarios", "configure");
+    }
+
+    match /clients/{clientId} {
+      allow read: if activeUser();
+      allow create: if hasPerm("clientes", "create") || hasPerm("clientes", "edit");
+      allow update: if hasPerm("clientes", "edit") || hasPerm("clientes", "create");
+      allow delete: if hasPerm("clientes", "delete") || isMaster();
+    }
+
+    match /clientAssets/{assetId} {
+      allow read: if activeUser();
+      allow create, update: if hasPerm("clientes", "edit") || hasPerm("generador", "generate");
+      allow delete: if hasPerm("clientes", "delete") || isMaster();
+    }
+
+    match /plannerDrafts/{draftId} {
+      allow read: if activeUser();
+      allow create, update: if hasPerm("creador", "create") || hasPerm("creador", "edit");
+      allow delete: if hasPerm("creador", "delete") || isMaster();
+    }
+
+    match /requestBatches/{batchId} {
+      allow read: if activeUser();
+      allow create, update: if canOperateRequests();
+      allow delete: if canDeleteOperational();
+    }
+
+    match /contentRequests/{requestId} {
+      allow read: if activeUser();
+      allow create, update: if canOperateRequests();
+      allow delete: if canDeleteOperational();
+    }
+
+    match /productions/{productionId} {
+      allow read: if activeUser();
+      allow create: if hasPerm("producciones", "create") || hasPerm("producciones", "edit");
+      allow update: if hasPerm("producciones", "edit") || hasPerm("tareas", "edit") || hasPerm("asignacion", "assign");
+      allow delete: if hasPerm("producciones", "delete") || isMaster();
+    }
+
+    match /operationalContentRules/{ruleId} {
+      allow read: if activeUser();
+      allow create, update, delete: if hasPerm("configuracion", "configure");
+    }
+
+    match /clientOperationalOverrides/{overrideId} {
+      allow read: if activeUser();
+      allow create, update, delete: if hasPerm("configuracion", "configure");
+    }
+
+    match /teamDailyCapacities/{capacityId} {
+      allow read: if activeUser();
+      allow create, update, delete: if hasPerm("configuracion", "configure");
+    }
+
+    match /generationRequests/{generationRequestId} {
+      allow read: if activeUser();
+      allow create, update: if hasPerm("generador", "generate") || hasPerm("generador", "edit");
+      allow delete: if hasPerm("generador", "delete") || isMaster();
+    }
+
+    match /generatedImages/{imageId} {
+      allow read: if activeUser();
+      allow create, update: if hasPerm("generador", "generate") || hasPerm("generador", "edit");
+      allow delete: if hasPerm("generador", "delete") || isMaster();
+    }
+
+    match /bustItNowJobs/{jobId} {
+      allow read: if activeUser();
+      allow create, update: if hasPerm("generador", "generate") || hasPerm("generador", "edit");
+      allow delete: if hasPerm("generador", "delete") || isMaster();
+    }
+
+    match /systemFeedback/{feedbackId} {
+      allow read: if activeUser();
+      allow create: if activeUser();
+      allow update, delete: if hasPerm("configuracion", "configure") || isMaster();
+    }
+
+    // Cualquier colección nueva queda cerrada por default hasta definir regla explícita.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

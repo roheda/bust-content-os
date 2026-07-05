@@ -10,6 +10,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where
 } from "firebase/firestore";
@@ -1363,7 +1364,34 @@ export async function listUsers() {
 export async function findUserByAuth(authUid?: string, email?: string) {
   const cleanEmail = (email || "").trim().toLowerCase();
 
+  // Producción: las reglas de Firebase pueden autorizar de forma segura con userAccess/{uid}.
+  // Este documento espejo evita depender de queries abiertas a platformUsers para iniciar sesión.
   if (authUid) {
+    try {
+      const accessSnap = await getDoc(doc(db, "userAccess", authUid));
+      if (accessSnap.exists()) {
+        const access = accessSnap.data() as any;
+        const platformUserId = access.platformUserId || authUid;
+        const profileSnap = await getDoc(doc(db, "platformUsers", platformUserId));
+        if (profileSnap.exists()) return { id: profileSnap.id, ...profileSnap.data() } as PlatformUser;
+        return {
+          id: platformUserId,
+          name: access.name || cleanEmail || "Usuario",
+          email: access.email || cleanEmail,
+          roleKey: access.roleKey || "kam",
+          roleLabel: access.roleLabel || access.roleKey || "Usuario",
+          status: access.status || "active",
+          isMaster: Boolean(access.isMaster),
+          scope: access.scope || "assigned_clients",
+          clientIds: access.clientIds || [],
+          permissions: access.permissions || getRoleTemplatePermissions(access.roleKey || "kam"),
+          authUid
+        } as PlatformUser;
+      }
+    } catch (error) {
+      console.warn("No se pudo leer userAccess; intentando fallback legacy", error);
+    }
+
     const byUid = await getDocs(query(collection(db, "platformUsers"), where("authUid", "==", authUid), limit(1)));
     if (!byUid.empty) return { id: byUid.docs[0].id, ...byUid.docs[0].data() } as PlatformUser;
   }
@@ -1376,6 +1404,33 @@ export async function findUserByAuth(authUid?: string, email?: string) {
   return null;
 }
 
+function userAccessPayload(item: Partial<PlatformUser>, platformUserId?: string) {
+  const roleKey = item.roleKey || "kam";
+  const permissions = item.isMaster ? getRoleTemplatePermissions("master") : (item.permissions || getRoleTemplatePermissions(roleKey));
+  return omitUndefined({
+    platformUserId,
+    name: item.name || "",
+    email: (item.email || "").trim().toLowerCase(),
+    roleKey,
+    roleLabel: item.roleLabel || roleKey,
+    status: item.status || "active",
+    isMaster: Boolean(item.isMaster || roleKey === "master"),
+    department: item.department || "",
+    jobTitle: item.jobTitle || "",
+    scope: item.scope || "assigned_clients",
+    clientIds: item.scope === "all_clients" ? [] : (item.clientIds || []),
+    permissions,
+    canBypassClientLimits: Boolean(item.canBypassClientLimits),
+    canManageBilling: Boolean(item.canManageBilling),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function syncUserAccessMirror(platformUserId: string, data: Partial<PlatformUser>) {
+  if (!data.authUid) return null;
+  return setDoc(doc(db, "userAccess", data.authUid), userAccessPayload(data, platformUserId), { merge: true });
+}
+
 export async function markUserLogin(id: string) {
   return updateDoc(doc(db, "platformUsers", id), {
     inviteStatus: "active",
@@ -1385,7 +1440,7 @@ export async function markUserLogin(id: string) {
 }
 
 export async function saveUser(item: PlatformUser) {
-  return addDoc(collection(db, "platformUsers"), {
+  const ref = await addDoc(collection(db, "platformUsers"), {
     ...omitUndefined(item),
     email: (item.email || "").trim().toLowerCase(),
     inviteStatus: item.inviteStatus || "pending_auth",
@@ -1395,9 +1450,14 @@ export async function saveUser(item: PlatformUser) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
+  if (item.authUid) await syncUserAccessMirror(ref.id, item).catch((error)=>console.warn("No se pudo sincronizar userAccess", error));
+  return ref;
 }
 
 export async function updateUser(id: string, data: Partial<PlatformUser>) {
+  const currentSnap = await getDoc(doc(db, "platformUsers", id)).catch(()=>null);
+  const current = currentSnap?.exists() ? ({ id, ...currentSnap.data() } as PlatformUser) : ({} as PlatformUser);
+  const merged: Partial<PlatformUser> = { ...current, ...data };
   const payload: Partial<PlatformUser> = {
     ...data,
     email: data.email ? data.email.trim().toLowerCase() : data.email,
@@ -1409,14 +1469,19 @@ export async function updateUser(id: string, data: Partial<PlatformUser>) {
     clientIds: data.scope === "all_clients" ? [] : data.clientIds,
     permissions: data.isMaster ? getRoleTemplatePermissions("master") : data.permissions
   };
-  return updateDoc(doc(db, "platformUsers", id), {
+  await updateDoc(doc(db, "platformUsers", id), {
     ...omitUndefined(payload),
     updatedAt: serverTimestamp()
   });
+  const authUid = data.authUid || current.authUid;
+  if (authUid) await syncUserAccessMirror(id, { ...merged, authUid }).catch((error)=>console.warn("No se pudo sincronizar userAccess", error));
 }
 
 export async function deleteUser(id: string) {
-  return deleteDoc(doc(db, "platformUsers", id));
+  const currentSnap = await getDoc(doc(db, "platformUsers", id)).catch(()=>null);
+  const authUid = currentSnap?.exists() ? (currentSnap.data() as PlatformUser).authUid : "";
+  await deleteDoc(doc(db, "platformUsers", id));
+  if (authUid) await deleteDoc(doc(db, "userAccess", authUid)).catch(()=>{});
 }
 
 export async function saveFeedback(item: FeedbackItem) {

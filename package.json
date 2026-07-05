@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "firebase:deploy:rules": "npx firebase-tools deploy --only firestore:rules,storage"
   },
   "dependencies": {
     "firebase": "^12.13.0",

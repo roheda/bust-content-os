@@ -155,6 +155,29 @@ export default function UsuariosPage(){
     }finally{setBusy(false)}
   }
 
+
+  async function syncFirebaseAccess(){
+    setBusy(true);
+    setMessage("");
+    try{
+      const headers: Record<string,string> = {"Content-Type":"application/json"};
+      if(authUser){
+        headers.Authorization = `Bearer ${await authUser.getIdToken()}`;
+      }else{
+        const setupToken = prompt("Pega el AUTH_SETUP_TOKEN de Vercel para sincronizar userAccess.");
+        if(!setupToken) return;
+        headers["x-setup-token"] = setupToken;
+      }
+      const res = await fetch("/api/admin/sync-firebase-access",{ method:"POST", headers, body:JSON.stringify({}) });
+      const json = await res.json();
+      if(!res.ok || !json.ok) throw new Error(json.error || "No se pudo sincronizar Firebase.");
+      setMessage(`Firebase userAccess sincronizado: ${json.synced || 0}/${json.count || 0}.`);
+      await load();
+    }catch(error:any){
+      alert(error?.message || "No se pudo sincronizar Firebase.");
+    }finally{setBusy(false)}
+  }
+
   async function save(){
     if(!form.name.trim()) return alert("Escribe el nombre del usuario.");
     if(!form.email.trim()) return alert("Escribe el correo del usuario.");
@@ -247,6 +270,7 @@ export default function UsuariosPage(){
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         <button className="btn" onClick={load}>Actualizar</button>
         <button className="btn" onClick={seedBustTeam} disabled={busy}>Cargar equipo BUST</button>
+        <button className="btn" onClick={syncFirebaseAccess} disabled={busy}>Sincronizar Firebase</button>
         <button className="btn blue" onClick={createMaster}>Crear master</button>
       </div>
     </section>

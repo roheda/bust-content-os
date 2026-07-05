@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiPermission } from "@/lib/api-auth";
 
 export const maxDuration = 60;
 
@@ -112,6 +113,9 @@ Entrega solo el copy final, sin explicación, sin encabezados y sin dejar frases
 }
 
 export async function POST(request: Request) {
+  const authCheck = await requireApiPermission(request, "contenidos", "generate");
+  if (!authCheck.ok) return authCheck.response;
+
   const payload = (await request.json()) as CopyRequestPayload;
   const apiKey = process.env.GEMINI_API_KEY;
 
