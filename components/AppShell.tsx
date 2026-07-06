@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth
 import { auth } from "@/lib/firebase";
 import FeedbackWidget from "./FeedbackWidget";
 import PendingMentionsWidget from "./PendingMentionsWidget";
-import { PlatformUser, canUser, findUserByAuth, listUsers, markUserLogin, platformModules } from "@/lib/data";
+import { PlatformUser, canUser, findUserByAuth, listUsers, markUserLogin, moduleKeyForPath, platformModules } from "@/lib/data";
 
 const moduleIcons: Record<string, string> = {
   dashboard: "⌘",
@@ -142,6 +142,9 @@ export default function AppShell({
     setSidebarCollapsed((current)=>!current);
   }
 
+  const currentModuleKey = useMemo(()=>moduleKeyForPath(pathname),[pathname]);
+  const currentModule = useMemo(()=>platformModules.find((module)=>module.key===currentModuleKey),[currentModuleKey]);
+  const canViewCurrentModule = useMemo(()=>canUser(activeUser,currentModuleKey,"view"),[activeUser,currentModuleKey]);
   const visibleItems = useMemo(()=>items.filter(([, , key])=>canUser(activeUser,key,"view")),[activeUser]);
   const groupedItems = useMemo(()=>moduleGroups.map(group=>({
     ...group,
@@ -215,7 +218,20 @@ export default function AppShell({
     <button className="sidebar-expand-rail" type="button" onClick={()=>setSidebarCollapsed(false)} aria-label="Abrir menú lateral" title="Abrir menú">
       <span>→</span>
     </button>
+<<<<<<< HEAD
     <main className="main">{children}</main>
+=======
+    <main className="main">
+      {canViewCurrentModule ? children : <section className="hero access-denied-panel">
+        <div>
+          <p className="eyebrow">Acceso restringido</p>
+          <h1>No tienes permiso para este módulo</h1>
+          <p>Tu rol actual no tiene acceso a {currentModule?.label || "esta sección"}. Si necesitas entrar, solicita el permiso a Dirección o Administración.</p>
+        </div>
+        <Link className="btn" href="/dashboard">Volver al dashboard</Link>
+      </section>}
+    </main>
+>>>>>>> f21ea7d (v76 route permission guard dashboard access)
     <PendingMentionsWidget activeUser={activeUser}/>
     <FeedbackWidget/>
   </div>;

@@ -230,13 +230,35 @@ export function getRoleTemplatePermissions(roleKey: string): PermissionMatrix {
 }
 
 export function canUser(user: Partial<PlatformUser> | null | undefined, moduleKey: string, action: PermissionAction = "view") {
-  if (!user) return true;
+  if (!user) return false;
+  if (user.status === "inactive") return false;
   if (user.isMaster || user.roleKey === "master") return true;
   const explicitModule = user.permissions?.[moduleKey];
   if (explicitModule && typeof explicitModule[action] !== "undefined") return Boolean(explicitModule[action]);
   // Fallback para módulos nuevos agregados después de crear usuarios existentes.
   // Respeta permisos personalizados existentes; solo completa módulos faltantes con el alcance base del rol.
   return Boolean(getRoleTemplatePermissions(user.roleKey || "kam")?.[moduleKey]?.[action]);
+}
+
+export function moduleKeyForPath(pathname?: string | null) {
+  const cleanPath = (pathname || "/dashboard").split("?")[0].replace(/\/$/, "") || "/dashboard";
+  if (cleanPath === "/dashboard") return "dashboard";
+  if (cleanPath.startsWith("/dashboard/clientes")) return "clientes";
+  if (cleanPath.startsWith("/dashboard/creador-solicitudes")) return "creador";
+  if (cleanPath.startsWith("/dashboard/asignacion") || cleanPath.startsWith("/dashboard/solicitudes")) return "asignacion";
+  if (cleanPath.startsWith("/dashboard/producciones")) return "producciones";
+  if (cleanPath.startsWith("/dashboard/tareas") || cleanPath.startsWith("/dashboard/calendario")) return "tareas";
+  if (cleanPath.startsWith("/dashboard/planeador-ia")) return "ia_operativa";
+  if (cleanPath.startsWith("/dashboard/generador")) return "generador";
+  if (cleanPath.startsWith("/dashboard/aprobaciones")) return "aprobaciones";
+  if (cleanPath.startsWith("/dashboard/contenidos")) return "contenidos";
+  if (cleanPath.startsWith("/dashboard/reportes") || cleanPath.startsWith("/dashboard/eliminadas")) return "reportes";
+  if (cleanPath.startsWith("/dashboard/configuracion")) return "configuracion";
+  if (cleanPath.startsWith("/dashboard/usuarios")) return "usuarios";
+  const routeMatch = [...platformModules]
+    .sort((a,b)=>b.route.length-a.route.length)
+    .find((module)=>cleanPath === module.route || cleanPath.startsWith(`${module.route}/`));
+  return routeMatch?.key || "dashboard";
 }
 
 export function canAccessClient(user: Partial<PlatformUser> | null | undefined, clientId?: string) {
