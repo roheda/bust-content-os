@@ -2566,8 +2566,6 @@ a[class*="bg-black"],
   background: rgba(245, 158, 11, 0.12);
   color: #92400e;
 }
-<<<<<<< HEAD
-=======
 
 .dashboard-primary-action {
   display: flex;
@@ -2579,4 +2577,3 @@ a[class*="bg-black"],
   border: 1px solid rgba(220, 38, 38, 0.18);
   background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(254,242,242,0.92));
 }
->>>>>>> f21ea7d (v76 route permission guard dashboard access)

@@ -218,9 +218,6 @@ export default function AppShell({
     <button className="sidebar-expand-rail" type="button" onClick={()=>setSidebarCollapsed(false)} aria-label="Abrir menú lateral" title="Abrir menú">
       <span>→</span>
     </button>
-<<<<<<< HEAD
-    <main className="main">{children}</main>
-=======
     <main className="main">
       {canViewCurrentModule ? children : <section className="hero access-denied-panel">
         <div>
@@ -231,7 +228,6 @@ export default function AppShell({
         <Link className="btn" href="/dashboard">Volver al dashboard</Link>
       </section>}
     </main>
->>>>>>> f21ea7d (v76 route permission guard dashboard access)
     <PendingMentionsWidget activeUser={activeUser}/>
     <FeedbackWidget/>
   </div>;
