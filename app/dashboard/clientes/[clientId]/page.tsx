@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { authJsonHeaders } from "@/lib/client-auth";
 import { Brand, ClientBillingConfig, ClientBuyerPersona, getClientBillingConfig, updateBrand, listBrands, deleteClientOperationalData } from "@/lib/data";
 
@@ -44,6 +45,10 @@ export default function ClientBrandBrainPage(){
   const [cleanConfirmation,setCleanConfirmation]=useState("");
   const [success,setSuccess]=useState("");
   const [deleteConfirmation,setDeleteConfirmation]=useState("");
+  const permissions = useModulePermissions("clientes");
+  const canEditClient = permissions.canEdit || permissions.canCreate;
+  const canDeleteClient = permissions.canDelete || permissions.canConfigure;
+  const canAnalyzeClient = permissions.canGenerate || permissions.canEdit || permissions.canCreate;
 
   async function load(){
     const row = (await listBrands()).find(x=>x.id===clientId);
@@ -87,15 +92,16 @@ export default function ClientBrandBrainPage(){
     });
   }
   useEffect(()=>{load()},[clientId]);
-  function set(k:keyof typeof form,v:string){setForm({...form,[k]:v})}
-  function setBilling(k:keyof typeof billingForm,v:any){setBillingForm({...billingForm,[k]:v})}
+  function set(k:keyof typeof form,v:string){if(!canEditClient)return; setForm({...form,[k]:v})}
+  function setBilling(k:keyof typeof billingForm,v:any){if(!canEditClient)return; setBillingForm({...billingForm,[k]:v})}
   function updatePersona(index:number,key:keyof ClientBuyerPersona,value:string){
+    if(!canEditClient)return;
     const next=[...buyerPersonas];
     next[index]={...next[index],id:next[index].id || personaId(index),[key]:value};
     setBuyerPersonas(next);
   }
-  function addPersona(){setBuyerPersonas([...buyerPersonas,emptyPersona(buyerPersonas.length)])}
-  function removePersona(index:number){setBuyerPersonas(buyerPersonas.filter((_,i)=>i!==index))}
+  function addPersona(){if(!canEditClient)return permissionAlert("editar buyer personas"); setBuyerPersonas([...buyerPersonas,emptyPersona(buyerPersonas.length)])}
+  function removePersona(index:number){if(!canEditClient)return permissionAlert("editar buyer personas"); setBuyerPersonas(buyerPersonas.filter((_,i)=>i!==index))}
 
   function normalizedPersonas(){
     return buyerPersonas
@@ -104,6 +110,7 @@ export default function ClientBrandBrainPage(){
   }
 
   async function save(){
+    if(!canEditClient)return permissionAlert("guardar Brand Brain");
     setSaving(true);
     await updateBrand(clientId,{
       name:form.name.trim(), industry:form.industry.trim(), website:form.website.trim(), instagram:form.instagram.trim(), tone:form.tone.trim(), brandNotes:form.brandDescription.trim(),
@@ -131,6 +138,7 @@ export default function ClientBrandBrainPage(){
   }
 
   async function analyzeWebsite(){
+    if(!canAnalyzeClient)return permissionAlert("analizar cliente con IA");
     if(!form.website.trim() && !form.instagram.trim())return alert("Agrega el sitio web o Instagram del cliente.");
     setAnalyzing(true);
     try{
@@ -181,6 +189,7 @@ export default function ClientBrandBrainPage(){
   }
 
   async function saveBilling(){
+    if(!canEditClient)return permissionAlert("guardar configuración comercial del cliente");
     setSavingBilling(true);
     const billingConfig: ClientBillingConfig = {
       monthlyRetainer:num(billingForm.monthlyRetainer),
@@ -201,6 +210,7 @@ export default function ClientBrandBrainPage(){
   }
 
   async function cleanClientData(){
+    if(!canDeleteClient)return permissionAlert("limpiar datos de prueba de clientes");
     if(!client)return;
     const confirmation = cleanConfirmation.trim();
     if(confirmation !== "ELIMINAR" && confirmation !== client.name.trim()){
@@ -221,6 +231,7 @@ export default function ClientBrandBrainPage(){
   }
 
   async function archive(){
+    if(!canDeleteClient)return permissionAlert("eliminar clientes");
     if(!client)return;
     if(deleteConfirmation.trim()!==client.name.trim())return alert(`Para eliminar escribe exactamente: ${client.name}`);
     await updateBrand(clientId,{status:"deleted"});
@@ -245,6 +256,8 @@ export default function ClientBrandBrainPage(){
     </section>
     {success && <section className="feedback-item done"><p>{success}</p></section>}
 
+    {!canEditClient && <section className="card readonly-note">Modo solo lectura: puedes consultar el Brand Brain, pero tu rol no puede guardar cambios, limpiar pruebas ni eliminar clientes.</section>}
+
     <section className="brandbrain-layout">
       <div className="brandbrain-card">
         <h2>Brand Brain y contexto IA</h2>
@@ -254,7 +267,7 @@ export default function ClientBrandBrainPage(){
           <div className="brief-box">
             <h4>Autollenado con IA desde sitio web</h4>
             <p className="mini">Lee el sitio, identifica oferta, región, tono, pilares, ángulos y buyer personas. Revisa el resultado antes de guardar.</p>
-            <button type="button" className="btn dark" onClick={analyzeWebsite} disabled={analyzing}>{analyzing?"Analizando fuente...":"Analizar web/Instagram con IA"}</button>
+            <button type="button" className="btn dark" onClick={analyzeWebsite} disabled={analyzing || !canAnalyzeClient}>{analyzing?"Analizando fuente...":"Analizar web/Instagram con IA"}</button>
           </div>
           <div className="field"><label>Descripción de marca</label><textarea value={form.brandDescription} onChange={e=>set("brandDescription",e.target.value)}/></div>
           <div className="client-profile-grid"><div className="field"><label>Tono</label><input value={form.tone} onChange={e=>set("tone",e.target.value)}/></div><div className="field"><label>Personalidad de marca</label><input value={form.brandPersonality} onChange={e=>set("brandPersonality",e.target.value)}/></div></div>
@@ -297,7 +310,7 @@ export default function ClientBrandBrainPage(){
             <div className="field"><label>Cosas que nunca debe hacer la IA</label><textarea value={form.copyNeverDo} onChange={e=>set("copyNeverDo",e.target.value)} placeholder="No prometer resultados, no mencionar precios, no usar emojis, etc."/></div>
           </div>
 
-          <button className="btn blue" onClick={save} disabled={saving}>{saving?"Guardando...":"Guardar Brand Brain"}</button>
+          <button className="btn blue" onClick={save} disabled={saving || !canEditClient}>{saving?"Guardando...":"Guardar Brand Brain"}</button>
         </div>
       </div>
 
@@ -306,7 +319,7 @@ export default function ClientBrandBrainPage(){
         <p className="mini">Estos perfiles aparecerán en cada solicitud. El creador puede elegir uno o dejar “Sin enfoque particular”.</p>
         <div className="persona-editor-list">
           {buyerPersonas.map((persona,index)=><div className="persona-editor-card" key={persona.id || index}>
-            <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center"}}><strong>Buyer persona {index+1}</strong><button type="button" className="btn red small" onClick={()=>removePersona(index)}>Quitar</button></div>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center"}}><strong>Buyer persona {index+1}</strong><button type="button" className="btn red small" onClick={()=>removePersona(index)} disabled={!canEditClient}>Quitar</button></div>
             <div className="field"><label>Nombre</label><input value={persona.name || ""} onChange={e=>updatePersona(index,"name",e.target.value)} placeholder="Ej. Familia que busca casa lista"/></div>
             <div className="field"><label>Descripción</label><textarea value={persona.description || ""} onChange={e=>updatePersona(index,"description",e.target.value)} /></div>
             <div className="field"><label>Dolores</label><textarea value={persona.pains || ""} onChange={e=>updatePersona(index,"pains",e.target.value)} /></div>
@@ -314,7 +327,7 @@ export default function ClientBrandBrainPage(){
             <div className="field"><label>Ángulos de contenido</label><textarea value={persona.contentAngles || ""} onChange={e=>updatePersona(index,"contentAngles",e.target.value)} /></div>
           </div>)}
         </div>
-        <button type="button" className="btn" onClick={addPersona}>Agregar buyer persona</button>
+        <button type="button" className="btn" onClick={addPersona} disabled={!canEditClient}>Agregar buyer persona</button>
 
         <h2 style={{marginTop:24}}>Resumen para generación</h2>
         <div className="detail-copy"><strong>Marca:</strong> {form.name}{"\n"}<strong>Giro:</strong> {form.industry}{"\n"}<strong>Sitio:</strong> {form.website||"Pendiente"}{"\n"}<strong>Tono:</strong> {form.tone||"Pendiente"}{"\n"}<strong>Alcance:</strong> {form.marketScope||"Pendiente"}{"\n"}<strong>Región:</strong> {form.marketRegion||"Pendiente"}{"\n"}<strong>Ciudad:</strong> {form.primaryCity||"Pendiente"}{"\n"}<strong>Oferta:</strong> {form.offerSummary||"Pendiente"}{"\n"}<strong>Buyer personas:</strong> {normalizedPersonas().map(p=>p.name).join(", ") || "Pendiente"}{"\n"}<strong>Fechas importantes:</strong> {form.importantDates || "Pendiente"}</div>
@@ -323,12 +336,12 @@ export default function ClientBrandBrainPage(){
           <h2>Limpiador de pruebas</h2>
           <p className="mini">Elimina solicitudes, lotes, tareas, asignaciones, imágenes y borradores de este cliente sin borrar el cliente ni su configuración.</p>
           <input value={cleanConfirmation} onChange={e=>setCleanConfirmation(e.target.value)} placeholder={`Escribe ELIMINAR o ${client.name}`}/>
-          <button className="btn red" onClick={cleanClientData} disabled={cleaning}>{cleaning?"Limpiando...":"Limpiar solicitudes de prueba"}</button>
+          <button className="btn red" onClick={cleanClientData} disabled={cleaning || !canDeleteClient}>{cleaning?"Limpiando...":"Limpiar solicitudes de prueba"}</button>
         </div>
 
         <div className="soft-delete-note">Para eliminar escribe exactamente su nombre. Se marca como deleted para conservar trazabilidad.</div>
         <input value={deleteConfirmation} onChange={e=>setDeleteConfirmation(e.target.value)} placeholder={client.name}/>
-        <button className="btn red" onClick={archive}>Eliminar cliente</button>
+        <button className="btn red" onClick={archive} disabled={!canDeleteClient}>Eliminar cliente</button>
       </aside>
     </section>
 
@@ -344,7 +357,7 @@ export default function ClientBrandBrainPage(){
           <div className="client-profile-grid"><MoneyInput label="Extra por contenido finalizado" value={billingForm.extraContentRate} onChange={v=>setBilling("extraContentRate",v)}/><MoneyInput label="Extra por producción" value={billingForm.extraProductionRate} onChange={v=>setBilling("extraProductionRate",v)}/></div>
           <MoneyInput label="Extra por generación IA" value={billingForm.extraAiGenerationRate} onChange={v=>setBilling("extraAiGenerationRate",v)}/>
           <div className="field"><label>Notas de facturación</label><textarea value={billingForm.billingNotes} onChange={e=>setBilling("billingNotes",e.target.value)} placeholder="Ej. Incluye 20 contenidos finalizados, 1 producción y 100 generaciones de IA. Excedentes se cobran bajo demanda."/></div>
-          <button className="btn blue" onClick={saveBilling} disabled={savingBilling}>{savingBilling?"Guardando...":"Guardar configuración comercial"}</button>
+          <button className="btn blue" onClick={saveBilling} disabled={savingBilling || !canEditClient}>{savingBilling?"Guardando...":"Guardar configuración comercial"}</button>
         </div>
       </article>
 

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { authJsonHeaders } from "@/lib/client-auth";
 import {
   Brand,
@@ -73,6 +74,10 @@ export default function CreatorPage(){
   const [themes,setThemes]=useState("Experiencia,Producto estrella,Testimonios");
   const [must,setMust]=useState("CTA claro, alineado al tono de marca y sin contenido de relleno.");
   const [manualCount,setManualCount]=useState(5);
+  const permissions = useModulePermissions("creador");
+  const canCreateRequests = permissions.canCreate || permissions.canEdit;
+  const canGenerateRequests = permissions.canGenerate || permissions.canCreate || permissions.canEdit;
+  const canDeleteDrafts = permissions.canDelete || permissions.canEdit;
 
   async function load(){
     const [loadedBrands, loadedRequests, loadedDrafts, loadedBatches, loadedRules, loadedOverrides, loadedCapacities] = await Promise.all([
@@ -263,6 +268,7 @@ export default function CreatorPage(){
   }
 
   async function improveCreativeIdea(target:"manual"|number){
+    if(!canGenerateRequests)return permissionAlert("mejorar ideas con IA");
     const item = target === "manual" ? manual : items[target];
     if(!item?.creativeIdea?.trim())return alert("Primero escribe una idea creativa base.");
     const key = target === "manual" ? "manual" : String(target);
@@ -299,6 +305,7 @@ export default function CreatorPage(){
   }
 
   async function saveDraft(){
+    if(!canCreateRequests)return permissionAlert("guardar borradores de solicitudes");
     if(!client?.id)return alert("Selecciona cliente");
     const name = draftName || defaultBatchName(client.name);
     setBusy(true);
@@ -398,6 +405,7 @@ export default function CreatorPage(){
   }
 
   async function generateAI(){
+    if(!canGenerateRequests)return permissionAlert("generar publicaciones con IA");
     if(!client?.id)return alert("Selecciona cliente");
     if(!startDate)return alert("Define la primera fecha para que la IA pueda generar publicaciones completas con fecha.");
     if(!draftName)setDraftName(defaultBatchName(client.name));
@@ -587,6 +595,7 @@ export default function CreatorPage(){
   }
 
   async function uploadToManual(kind:"reference",files:FileList|null){
+    if(!canCreateRequests)return permissionAlert("subir referencias al lote");
     if(!files)return;
     setBusy(true);
     try{
@@ -602,6 +611,7 @@ export default function CreatorPage(){
   }
 
   async function uploadToItem(index:number,kind:"reference",files:FileList|null){
+    if(!canCreateRequests)return permissionAlert("subir referencias a solicitudes");
     if(!files)return;
     setBusy(true);
     try{
@@ -644,6 +654,7 @@ export default function CreatorPage(){
   }
 
   async function publishBatch(){
+    if(!canCreateRequests)return permissionAlert("aprobar lotes y enviarlos a asignación");
     if(busy)return alert("Espera a que termine la carga de referencias.");
     if(!client?.id)return alert("Selecciona cliente");
     const name = draftName || defaultBatchName(client.name);
@@ -688,6 +699,7 @@ export default function CreatorPage(){
   }
 
   async function removeDraft(id?: string) {
+    if(!canDeleteDrafts)return permissionAlert("eliminar borradores");
     if (!id) return;
     const ok = window.confirm("¿Seguro que quieres eliminar este borrador? Esta acción no afecta solicitudes ya enviadas.");
     if (!ok) return;
@@ -725,9 +737,9 @@ export default function CreatorPage(){
         <label>Fecha límite del lote</label>
         <input type="date" value={batchDueDate} onChange={e=>setBusinessDate(setBatchDueDate,e.target.value,"fecha límite del lote")}/>
       </div>
-      <button className="btn blue" onClick={saveDraft}>Guardar borrador</button>
-      <button className="btn dark" onClick={publishBatch} disabled={busy}>{busy?"Cargando referencias...":"Aprobar lote y enviar a Asignación"}</button>
-      <button className="btn red" onClick={newDraft}>Nuevo</button>
+      <button className="btn blue" onClick={saveDraft} disabled={!canCreateRequests}>Guardar borrador</button>
+      <button className="btn dark" onClick={publishBatch} disabled={busy || !canCreateRequests}>{busy?"Cargando referencias...":"Aprobar lote y enviar a Asignación"}</button>
+      <button className="btn red" onClick={newDraft} disabled={!canCreateRequests}>Nuevo</button>
     </div>
 
     <div className={`operational-alert ${operationalSummary.riskTone==="red"?"risk":"ok"}`}>
@@ -759,7 +771,7 @@ export default function CreatorPage(){
               <div className="field"><label>Temas</label><input value={themes} onChange={e=>setThemes(e.target.value)}/></div>
               <div className="field full"><label>Factores obligatorios</label><textarea value={must} onChange={e=>setMust(e.target.value)}/></div>
             </div>
-            <button className="btn blue" onClick={generateAI} disabled={busy}>{busy?"Generando publicaciones...":"Generar publicaciones completas con IA"}</button>
+            <button className="btn blue" onClick={generateAI} disabled={busy || !canGenerateRequests}>{busy?"Generando publicaciones...":"Generar publicaciones completas con IA"}</button>
           </div> : <div className="creator-mode-panel">
             <div className="mode-intro"><strong>Modo Manual</strong><span>Crea espacios en blanco por cantidad, fecha e intervalo. No usa IA ni prellena copy o idea.</span></div>
             <div className="form-grid">
@@ -770,10 +782,10 @@ export default function CreatorPage(){
               <div className="field"><label>Objetivo base</label><select value={manual.objective} onChange={e=>setManualField("objective",e.target.value)}>{objectives.map(x=><option key={x}>{x}</option>)}</select></div>
               <div className="field"><label>Área base</label><select value={manual.suggestedArea} onChange={e=>setManualField("suggestedArea",e.target.value)}>{areas.map(x=><option key={x}>{x}</option>)}</select></div>
             </div>
-            <button className="btn blue" onClick={addManualBlankBatch}>Crear solicitudes en blanco</button>
+            <button className="btn blue" onClick={addManualBlankBatch} disabled={!canCreateRequests}>Crear solicitudes en blanco</button>
             <h3 style={{marginTop:28}}>Agregar una solicitud manual completa</h3>
             <RequestForm request={manual} buyerPersonas={client?.buyerPersonas || []} onPersonaChange={(persona)=>setManual({...manual,buyerPersonaId:persona?.id || "",buyerPersonaName:persona?.name || "Sin enfoque particular",buyerPersonaSnapshot:persona || null})} onChange={setManualField} onUpload={uploadToManual} onPreview={setPreview} onImprove={()=>improveCreativeIdea("manual")} improving={improvingKey==="manual"} onRemove={(_,index)=>setManual({...manual,referenceFiles:manual.referenceFiles.filter((_,i)=>i!==index)})}/>
-            <button className="btn" onClick={addManual}>Agregar manual completa al lote</button>
+            <button className="btn" onClick={addManual} disabled={!canCreateRequests}>Agregar manual completa al lote</button>
           </div>}
         </div>
 
@@ -848,8 +860,8 @@ export default function CreatorPage(){
                   <div className="creator-accordion-actions">
                     {error?<span className="pill red">{error}</span>:<span className="pill green">Lista para enviar</span>}
                     <div>
-                      <button className="btn" onClick={()=>duplicateItem(index)}>Duplicar</button>
-                      <button className="btn red" onClick={()=>removeItem(index)}>Quitar</button>
+                      <button className="btn" onClick={()=>duplicateItem(index)} disabled={!canCreateRequests}>Duplicar</button>
+                      <button className="btn red" onClick={()=>removeItem(index)} disabled={!canCreateRequests}>Quitar</button>
                     </div>
                   </div>
                 </div>}
@@ -873,7 +885,7 @@ export default function CreatorPage(){
               <span className="mini">{draft.clientName} · {draft.items?.length||0} solicitudes · Límite: {draft.batchDueDate||"Sin fecha"} · {draft.status}</span>
               <div className="draft-actions">
                 <button className="btn" onClick={()=>openDraft(draft)}>Abrir</button>
-                <button className="btn red" onClick={()=>removeDraft(draft.id)}>Eliminar</button>
+                <button className="btn red" onClick={()=>removeDraft(draft.id)} disabled={!canDeleteDrafts}>Eliminar</button>
               </div>
             </div>)}
             {!drafts.length && <p className="mini">Aún no hay borradores.</p>}

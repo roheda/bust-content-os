@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { Brand, ContentRequest, PlatformUser, Production, ReferenceFile, isImageFile, isVideoFile, listUniqueBrands, listProductions, listRequests, listUsers, organizationTeam, saveProduction, updateProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
 
 const empty: Production = {
@@ -56,6 +57,9 @@ export default function ProductionsPage(){
   const [prodStartDate,setProdStartDate]=useState("");
   const [prodEndDate,setProdEndDate]=useState("");
   const [prodSearch,setProdSearch]=useState("");
+  const permissions = useModulePermissions("producciones");
+  const canCreateProduction = permissions.canCreate || permissions.canEdit;
+  const canEditProduction = permissions.canEdit;
 
   async function load(){
     const [loadedBrands, loadedRequests, loadedProductions, loadedUsers] = await Promise.all([listUniqueBrands(), listRequests(), listProductions(), listUsers()]);
@@ -197,9 +201,10 @@ export default function ProductionsPage(){
 
   const selectedRequests = productionRequests.filter(x=>selected.includes(x.id!)).sort((a,b)=>Number(!isVideoRequest(a))-Number(!isVideoRequest(b)));
 
-  function toggle(id:string){setSelected(selected.includes(id)?selected.filter(x=>x!==id):[...selected,id])}
+  function toggle(id:string){if(!canCreateProduction)return permissionAlert("seleccionar solicitudes para producción"); setSelected(selected.includes(id)?selected.filter(x=>x!==id):[...selected,id])}
 
   function openModal(){
+    if(!canCreateProduction)return permissionAlert("crear producciones");
     if(!selected.length)return alert("Selecciona solicitudes para producción");
     const first = selectedRequests[0];
     setForm({...empty,clientId:first.clientId,clientName:first.clientName,title:`Producción ${first.clientName} · ${new Date().toLocaleDateString("es-MX")}`,requestIds:selected,objective:"",shotList:"",requirements:"",locations:""});
@@ -207,6 +212,7 @@ export default function ProductionsPage(){
   }
 
   function set(k:keyof Production,v:any){
+    if(!canCreateProduction)return;
     const next:any = {...form,[k]:v};
     if(k==="startTime" || k==="durationMinutes"){
       next.endTime = addMinutesToTime(k==="startTime" ? v : form.startTime, Number(k==="durationMinutes" ? v : form.durationMinutes || 120));
@@ -215,12 +221,14 @@ export default function ProductionsPage(){
   }
 
   function toggleTeamMember(name:string){
+    if(!canCreateProduction)return permissionAlert("editar equipo de producción");
     const current = form.teamMembers || [];
     const next = current.includes(name) ? current.filter(item=>item!==name) : [...current,name];
     setForm({...form,teamMembers:next,team:next.join(", ")});
   }
 
   async function submit(){
+    if(!canCreateProduction)return permissionAlert("crear producciones");
     if(!form.title||!form.scheduledDate||!form.materialDueDate||!form.startTime||!form.endTime||!(form.locations||form.location)||!form.producer||!(form.teamMembers||[]).length||!form.objective||!form.requirements||!form.shotList)return alert("Todos los campos de la producción son obligatorios, incluida la fecha límite para completar materiales.");
     if(isWeekendDate(form.scheduledDate) || isWeekendDate(form.materialDueDate))return alert("La producción y la entrega de materiales deben programarse en días hábiles, no sábado ni domingo.");
     const ref = await saveProduction(form);
@@ -233,10 +241,12 @@ export default function ProductionsPage(){
   }
 
   function setEditingField(k:keyof Production,v:any){
+    if(!canEditProduction)return;
     if(editing)setEditing({...editing,[k]:v});
   }
 
   function setPostMaterialLink(requestId:string, value:string){
+    if(!canEditProduction)return;
     if(!editing)return;
     setEditing({
       ...editing,
@@ -248,6 +258,7 @@ export default function ProductionsPage(){
   }
 
   async function uploadProductionMaterial(files:FileList|null){
+    if(!canEditProduction)return permissionAlert("subir material de producción");
     if(!editing||!files)return;
     setUploading(true);
     try{
@@ -259,16 +270,19 @@ export default function ProductionsPage(){
   }
 
   function removeProductionFile(index:number){
+    if(!canEditProduction)return permissionAlert("eliminar material de producción");
     if(!editing)return;
     setEditing({...editing,materialFiles:(editing.materialFiles||[]).filter((_,i)=>i!==index)});
   }
 
   async function persistEditingMaterial(){
+    if(!canEditProduction)return permissionAlert("guardar material de producción");
     if(!editing?.id)return;
     await updateProduction(editing.id,{...editing});
   }
 
   async function saveProductionMaterial(markDelivered=false){
+    if(!canEditProduction)return permissionAlert("marcar material de producción");
     if(!editing?.id)return;
     if(!markDelivered){
       await persistEditingMaterial();
@@ -309,7 +323,9 @@ export default function ProductionsPage(){
   }
 
   return <AppShell active="Producciones">
-    <section className="hero"><div><p className="eyebrow">Producciones</p><h1>Producciones</h1><p>Selecciona solicitudes pendientes y crea una producción con esas fichas.</p></div><button className="btn" onClick={openModal}>Producción nueva</button></section>
+    <section className="hero"><div><p className="eyebrow">Producciones</p><h1>Producciones</h1><p>Selecciona solicitudes pendientes y crea una producción con esas fichas.</p></div><button className="btn" onClick={openModal} disabled={!canCreateProduction}>Producción nueva</button></section>
+
+    {!canCreateProduction && <section className="card readonly-note">Modo solo lectura: puedes consultar producciones, pero tu rol no puede crear ni modificar material.</section>}
 
     <section className="grid kpis">
       {[["Pendientes",String(productionRequests.length)],["Seleccionadas",String(selected.length)],["Producciones",String(filteredProductions.length)],["Programadas",String(filteredProductions.filter(x=>x.status==="programada").length)],["Material",String(filteredProductions.filter(x=>x.status==="material_entregado").length)],["Clientes",String(brands.length)]].map(([a,b])=><div className="kpi" key={a}><span>{a}</span><strong>{b}</strong></div>)}
@@ -414,7 +430,7 @@ export default function ProductionsPage(){
       </tbody></table></div>
 
       <div style={{display:"flex",gap:12,marginTop:16,flexWrap:"wrap"}}>
-        <button className="btn blue" onClick={()=>saveProductionMaterial(true)}>Marcar como material entregado</button>
+        <button className="btn blue" onClick={()=>saveProductionMaterial(true)} disabled={!canEditProduction}>Marcar como material entregado</button>
         <button className="btn red" onClick={()=>setEditing(null)}>Cerrar</button>
       </div>
     </section>}
@@ -448,7 +464,7 @@ export default function ProductionsPage(){
       </div>
       <h3>Solicitudes incluidas</h3>
       {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{x.contentType} · {x.objective}</strong><span className="mini">{x.creativeIdea}</span><span className="mini">{x.productionNotes}</span></div>)}
-      <div style={{display:"flex",gap:12,marginTop:16}}><button className="btn blue" onClick={submit}>Crear producción</button><button className="btn red" onClick={()=>setShowModal(false)}>Cerrar</button></div>
+      <div style={{display:"flex",gap:12,marginTop:16}}><button className="btn blue" onClick={submit} disabled={!canCreateProduction}>Crear producción</button><button className="btn red" onClick={()=>setShowModal(false)}>Cerrar</button></div>
     </div></div>}
   </AppShell>
 }

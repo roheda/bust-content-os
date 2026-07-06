@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, sendPasswordResetEmail, User as FirebaseUser } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import {
   Brand,
   PermissionAction,
@@ -33,6 +34,8 @@ export default function UsuariosPage(){
   const [busy,setBusy]=useState(false);
   const [authUser,setAuthUser]=useState<FirebaseUser | null>(null);
   const [authBusyId,setAuthBusyId]=useState("");
+  const permissions = useModulePermissions("usuarios");
+  const canConfigureUsers = permissions.canConfigure;
 
   async function load(){
     const [loadedUsers,loadedClients] = await Promise.all([listUsers(),listUniqueBrands()]);
@@ -102,6 +105,7 @@ export default function UsuariosPage(){
   }
 
   async function createMaster(){
+    if(!canConfigureUsers)return permissionAlert("crear usuario master");
     const already = users.some(u=>u.isMaster || u.roleKey==="master");
     if(already && !confirm("Ya existe un usuario master. ¿Crear otro de todos modos?")) return;
     setForm({
@@ -126,6 +130,7 @@ export default function UsuariosPage(){
 
 
   async function seedBustTeam(){
+    if(!canConfigureUsers)return permissionAlert("cargar equipo BUST");
     const tempPassword = prompt("Contraseña temporal para todo el equipo. Mínimo 8 caracteres. Ejemplo: BUST2026.Temp!");
     if(!tempPassword) return;
     if(tempPassword.length < 8) return alert("La contraseña temporal debe tener al menos 8 caracteres.");
@@ -157,6 +162,7 @@ export default function UsuariosPage(){
 
 
   async function syncFirebaseAccess(){
+    if(!canConfigureUsers)return permissionAlert("sincronizar permisos Firebase");
     setBusy(true);
     setMessage("");
     try{
@@ -179,6 +185,7 @@ export default function UsuariosPage(){
   }
 
   async function save(){
+    if(!canConfigureUsers)return permissionAlert("crear o editar usuarios");
     if(!form.name.trim()) return alert("Escribe el nombre del usuario.");
     if(!form.email.trim()) return alert("Escribe el correo del usuario.");
     setBusy(true);
@@ -208,6 +215,7 @@ export default function UsuariosPage(){
 
 
   async function createAccessAndSendReset(user: PlatformUser){
+    if(!canConfigureUsers)return permissionAlert("crear accesos de Firebase");
     if(!user.id) return;
     if(!user.email) return alert("Este usuario no tiene correo.");
     setAuthBusyId(user.id);
@@ -240,6 +248,7 @@ export default function UsuariosPage(){
   }
 
   async function sendResetOnly(user: PlatformUser){
+    if(!canConfigureUsers)return permissionAlert("enviar reset de contraseña");
     if(!user.email) return alert("Este usuario no tiene correo.");
     setAuthBusyId(user.id || user.email);
     try{
@@ -253,6 +262,7 @@ export default function UsuariosPage(){
   }
 
   async function remove(user:PlatformUser){
+    if(!canConfigureUsers)return permissionAlert("eliminar usuarios");
     if(!user.id) return;
     if(user.isMaster || user.roleKey==="master") return alert("No se elimina un usuario master desde esta pantalla. Primero quítale el rol master o desactívalo.");
     if(!confirm(`¿Eliminar usuario ${user.name}?`)) return;
@@ -269,9 +279,9 @@ export default function UsuariosPage(){
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         <button className="btn" onClick={load}>Actualizar</button>
-        <button className="btn" onClick={seedBustTeam} disabled={busy}>Cargar equipo BUST</button>
-        <button className="btn" onClick={syncFirebaseAccess} disabled={busy}>Sincronizar Firebase</button>
-        <button className="btn blue" onClick={createMaster}>Crear master</button>
+        {canConfigureUsers && <button className="btn" onClick={seedBustTeam} disabled={busy}>Cargar equipo BUST</button>}
+        {canConfigureUsers && <button className="btn" onClick={syncFirebaseAccess} disabled={busy}>Sincronizar Firebase</button>}
+        {canConfigureUsers && <button className="btn blue" onClick={createMaster}>Crear master</button>}
       </div>
     </section>
 
@@ -295,7 +305,7 @@ export default function UsuariosPage(){
         </div>
 
         <div className="form-grid" style={{marginTop:14}}>
-          <div className="field"><label>Nombre</label><input value={form.name} onChange={e=>setField("name",e.target.value)} placeholder="Ej. Mafer Gutiérrez"/></div>
+          <div className="field"><label>Nombre</label><input value={form.name} disabled={!canConfigureUsers} onChange={e=>setField("name",e.target.value)} placeholder="Ej. Mafer Gutiérrez"/></div>
           <div className="field"><label>Correo</label><input value={form.email} onChange={e=>setField("email",e.target.value)} placeholder="correo@empresa.com"/></div>
           <div className="field"><label>Estado de contraseña</label><select value={form.inviteStatus||"pending_auth"} onChange={e=>setField("inviteStatus",e.target.value as PlatformUser["inviteStatus"])}><option value="pending_auth">Pendiente crear acceso</option><option value="auth_created">Acceso creado</option><option value="reset_sent">Correo enviado</option><option value="active">Activo</option><option value="disabled">Deshabilitado</option></select></div>
           <div className="field"><label>Rol base</label><select value={form.roleKey} onChange={e=>applyRole(e.target.value)}>{roleTemplates.map(role=><option key={role.key} value={role.key}>{role.label}</option>)}</select></div>
@@ -333,9 +343,9 @@ export default function UsuariosPage(){
         </div>
 
         <div className="config-actions">
-          <button className="btn blue" onClick={save} disabled={busy}>{busy?"Guardando...":editingId?"Guardar cambios":"Crear usuario"}</button>
-          {editingId && <button className="btn" onClick={()=>createAccessAndSendReset({...form,id:editingId})} disabled={authBusyId===editingId}>{authBusyId===editingId?"Enviando...":"Crear acceso y enviar contraseña"}</button>}
-          <button className="btn" onClick={resetForm}>Limpiar</button>
+          <button className="btn blue" onClick={save} disabled={busy || !canConfigureUsers}>{busy?"Guardando...":editingId?"Guardar cambios":"Crear usuario"}</button>
+          {editingId && canConfigureUsers && <button className="btn" onClick={()=>createAccessAndSendReset({...form,id:editingId})} disabled={authBusyId===editingId}>{authBusyId===editingId?"Enviando...":"Crear acceso y enviar contraseña"}</button>}
+          <button className="btn" onClick={resetForm} disabled={!canConfigureUsers}>Limpiar</button>
         </div>
       </article>
 
@@ -353,10 +363,10 @@ export default function UsuariosPage(){
               <div className="mini">Módulos visibles: {platformModules.filter(m=>canUser(user,m.key,"view")).length} · Genera IA: {platformModules.filter(m=>canUser(user,m.key,"generate")).length ? "Sí" : "No"}</div>
               <div className="mini">Auth: {user.authUid ? "Conectado" : "Sin acceso"} · {user.mustChangePassword ? "Debe cambiar contraseña" : (user.inviteStatus === "reset_sent" ? "Correo enviado" : user.inviteStatus || "pendiente")}</div>
               <div className="config-actions">
-                <button className="btn" onClick={()=>editUser(user)}>Editar</button>
-                <button className="btn" onClick={()=>createAccessAndSendReset(user)} disabled={authBusyId===(user.id||user.email)}>{authBusyId===(user.id||user.email)?"Enviando...":user.authUid?"Reenviar link":"Crear acceso"}</button>
-                {user.authUid && <button className="btn" onClick={()=>sendResetOnly(user)} disabled={authBusyId===(user.id||user.email)}>Reset contraseña</button>}
-                <button className="btn red" onClick={()=>remove(user)}>Eliminar</button>
+                {canConfigureUsers && <button className="btn" onClick={()=>editUser(user)}>Editar</button>}
+                {canConfigureUsers && <button className="btn" onClick={()=>createAccessAndSendReset(user)} disabled={authBusyId===(user.id||user.email)}>{authBusyId===(user.id||user.email)?"Enviando...":user.authUid?"Reenviar link":"Crear acceso"}</button>}
+                {canConfigureUsers && user.authUid && <button className="btn" onClick={()=>sendResetOnly(user)} disabled={authBusyId===(user.id||user.email)}>Reset contraseña</button>}
+                {canConfigureUsers && <button className="btn red" onClick={()=>remove(user)}>Eliminar</button>}
               </div>
             </div>)}
           </div>

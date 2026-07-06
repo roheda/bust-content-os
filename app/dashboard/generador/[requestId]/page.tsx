@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { authJsonHeaders } from "@/lib/client-auth";
 import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
 import {
@@ -314,6 +315,10 @@ export default function GenerationRequestPage() {
   const [textLayers, setTextLayers] = useState<EditableTextLayer[]>([]);
   const [downloadTextLoading, setDownloadTextLoading] = useState(false);
   const [fontLoadStatus, setFontLoadStatus] = useState<Record<string, "loading" | "ready" | "error">>({});
+  const permissions = useModulePermissions("generador");
+  const canGenerateNow = permissions.canGenerate || permissions.canEdit;
+  const canEditGeneration = permissions.canEdit || permissions.canGenerate;
+
 
   const [logoOverlay, setLogoOverlay] = useState<LogoOverlayXY>({
     enabled: false,
@@ -519,6 +524,7 @@ export default function GenerationRequestPage() {
   }
 
   function updateLogoOverlay(patch: Partial<LogoOverlayXY>) {
+    if (!canEditGeneration) return;
     setLogoOverlay((current) => ({ ...current, ...patch }));
   }
 
@@ -543,11 +549,13 @@ export default function GenerationRequestPage() {
   }
 
   const toggleAsset = useCallback((id: string) => {
+    if (!canEditGeneration) return;
     if (!id) return;
     setSelectedAssetIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  }, []);
+  }, [canEditGeneration]);
 
   async function generateImages() {
+    if (!canGenerateNow) return permissionAlert("generar imágenes con IA");
     if (!request) return;
     const currentRequest = request;
     const outputMode: "ai-text" | "editable-layers" = (currentRequest as any).textRenderMode === "editable-layers" ? "editable-layers" : "ai-text";
@@ -675,6 +683,7 @@ export default function GenerationRequestPage() {
   }
 
   async function applyLogoToSelectedImage(imageIndex = selectedImageIndex) {
+    if (!canEditGeneration) return permissionAlert("insertar logo");
     const image = generatedImages[imageIndex];
     if (!image) return alert("Primero genera una imagen.");
     if (!logoOverlay.fileUrl) return alert("Selecciona un logotipo / imagotipo / isotipo.");
@@ -743,6 +752,7 @@ export default function GenerationRequestPage() {
   }
 
   async function removeLogoFromSelectedImage(imageIndex = selectedImageIndex) {
+    if (!canEditGeneration) return permissionAlert("quitar logo");
     const image = generatedImages[imageIndex];
     if (!image) return;
     const originalBase64 = image.originalBase64 || image.base64;
@@ -777,10 +787,12 @@ export default function GenerationRequestPage() {
 
 
   function updateTextLayer(id: string, patch: Partial<EditableTextLayer>) {
+    if (!canEditGeneration) return;
     setTextLayers((current) => current.map((layer) => layer.id === id ? { ...layer, ...patch } : layer));
   }
 
   async function saveEditableTextLayers() {
+    if (!canEditGeneration) return permissionAlert("guardar edición de texto");
     await updateGenerationRequest(requestId, { editableTextLayers: textLayers } as any);
     setSuccess("Capas de texto guardadas en el brief.");
     await load();
@@ -977,7 +989,7 @@ export default function GenerationRequestPage() {
                   </div>
                 ) : null}
 
-                <button type="button" onClick={generateImages} disabled={isGenerating} className="mt-5 h-14 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{isGenerating ? "Generando..." : "Generar imagen"}</button>
+                <button type="button" onClick={generateImages} disabled={isGenerating || !canGenerateNow} className="mt-5 h-14 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-400">{isGenerating ? "Generando..." : "Generar imagen"}</button>
 
                 {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
                 {success ? <div className="mt-5 rounded-3xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-medium text-green-700">{success}</div> : null}
@@ -990,7 +1002,7 @@ export default function GenerationRequestPage() {
                 <button
                   type="button"
                   onClick={() => { updateLogoOverlay({ enabled: true }); setIsLogoModalOpen(true); }}
-                  disabled={!generatedImages.length}
+                  disabled={!generatedImages.length || !canEditGeneration}
                   className="mt-5 h-12 w-full rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-300"
                 >
                   Insertar logo
@@ -1174,7 +1186,7 @@ export default function GenerationRequestPage() {
               </div>
 
               <div className="grid gap-3 rounded-[1.7rem] border border-zinc-200 bg-white p-5">
-                <button type="button" onClick={saveEditableTextLayers} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950">Guardar edición</button>
+                <button type="button" onClick={saveEditableTextLayers} disabled={!canEditGeneration} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950">Guardar edición</button>
                 <button type="button" onClick={() => downloadEditedTextImage(selectedImageIndex)} disabled={downloadTextLoading || !selectedVisibleImage} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:bg-zinc-300">{downloadTextLoading ? "Exportando..." : "Descargar imagen final"}</button>
               </div>
             </aside>

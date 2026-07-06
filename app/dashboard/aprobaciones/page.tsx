@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { auth } from "@/lib/firebase";
 import {
   ContentRequest,
@@ -66,6 +67,8 @@ export default function ApprovalsPage() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("publishDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const permissions = useModulePermissions("aprobaciones");
+  const canApproveAction = permissions.canApprove;
 
   async function load() {
     setRequests((await listRequests()).filter((x) => x.status !== "eliminada"));
@@ -226,6 +229,7 @@ export default function ApprovalsPage() {
   }
 
   async function approveContent(item: ContentRequest) {
+    if (!canApproveAction) return permissionAlert("aprobar piezas");
     if (!item.id) return;
     const log: TaskComment = {
       id: `${Date.now()}`,
@@ -249,6 +253,7 @@ export default function ApprovalsPage() {
   }
 
   async function approveKam(item: ContentRequest) {
+    if (!canApproveAction) return permissionAlert("aprobar piezas como KAM");
     if (!item.id) return;
     const log: TaskComment = {
       id: `${Date.now()}`,
@@ -272,6 +277,7 @@ export default function ApprovalsPage() {
   }
 
   async function reject(item: ContentRequest) {
+    if (!canApproveAction) return permissionAlert("devolver piezas desde Aprobaciones");
     if (!item.id) return;
     if (!reason) return alert("Selecciona motivo.");
     const target =
@@ -319,6 +325,12 @@ export default function ApprovalsPage() {
           </p>
         </div>
       </section>
+
+      {!canApproveAction && (
+        <section className="card readonly-note">
+          Modo solo lectura: puedes revisar aprobaciones, pero tu rol no puede aprobar ni devolver piezas.
+        </section>
+      )}
 
       <section className="grid kpis">
         {[
@@ -531,7 +543,7 @@ export default function ApprovalsPage() {
 
           <div className="field">
             <label>Motivo de devolución</label>
-            <select value={reason} onChange={(e) => setReason(e.target.value)}>
+            <select value={reason} onChange={(e) => setReason(e.target.value)} disabled={!canApproveAction}>
               {reasons.map((x) => (
                 <option key={x}>{x}</option>
               ))}
@@ -543,11 +555,12 @@ export default function ApprovalsPage() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Explica qué debe corregirse si se devuelve."
+              disabled={!canApproveAction}
             />
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {selectedStage === "content" && isContentPending(selected) && (
+            {canApproveAction && selectedStage === "content" && isContentPending(selected) && (
               <button
                 className="btn blue"
                 onClick={() => approveContent(selected)}
@@ -555,12 +568,12 @@ export default function ApprovalsPage() {
                 Aprobar para KAM
               </button>
             )}
-            {selectedStage === "kam" && isKamPending(selected) && (
+            {canApproveAction && selectedStage === "kam" && isKamPending(selected) && (
               <button className="btn blue" onClick={() => approveKam(selected)}>
                 Aprobar para Contenidos
               </button>
             )}
-            {(isContentPending(selected) || isKamPending(selected)) && (
+            {canApproveAction && (isContentPending(selected) || isKamPending(selected)) && (
               <button className="btn red" onClick={() => reject(selected)}>
                 Devolver
               </button>

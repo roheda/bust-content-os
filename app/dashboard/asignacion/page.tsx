@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { auth } from "@/lib/firebase";
 import {
   Brand,
@@ -202,6 +203,11 @@ export default function AssignmentPage() {
     key: "batch",
     direction: "asc",
   });
+  const permissions = useModulePermissions("asignacion");
+  const canAssignAction = permissions.canAssign;
+  const canEditAssignment = permissions.canEdit || permissions.canAssign;
+  const canDeleteAssignment = permissions.canDelete || permissions.canConfigure;
+  const canUseBulkActions = canAssignAction || canEditAssignment || canDeleteAssignment;
 
   const activeClientIds = useMemo(
     () =>
@@ -390,6 +396,10 @@ export default function AssignmentPage() {
   const bulkTeamOptions = bulkArea ? getTeamOptionsForArea(bulkArea) : [];
 
   function toggle(id: string) {
+    if (!canUseBulkActions) {
+      permissionAlert("seleccionar y modificar solicitudes desde Asignación");
+      return;
+    }
     setSelected(
       selected.includes(id)
         ? selected.filter((x) => x !== id)
@@ -398,11 +408,19 @@ export default function AssignmentPage() {
   }
 
   async function update(id: string, data: Partial<ContentRequest>) {
-    const current = visibleBaseItems.find((item) => item.id === id);
     const assignmentFields = ["assignedArea", "assignedTo", "priority"];
     const touchesAssignment = assignmentFields.some((key) =>
       Object.prototype.hasOwnProperty.call(data, key),
     );
+    if (touchesAssignment && !canAssignAction) {
+      permissionAlert("mover asignaciones o responsables");
+      return;
+    }
+    if (!touchesAssignment && !canEditAssignment) {
+      permissionAlert("editar solicitudes desde Asignación");
+      return;
+    }
+    const current = visibleBaseItems.find((item) => item.id === id);
     const payload: Partial<ContentRequest> = { ...data };
     if (current && touchesAssignment && !(data as any).comments) {
       payload.comments = [
@@ -472,6 +490,7 @@ export default function AssignmentPage() {
   }
 
   async function assign(item: ContentRequest) {
+    if (!canAssignAction) return permissionAlert("asignar solicitudes");
     if (!item.id) return;
     if (!canAssignRequest(item)) {
       alert(getAssignBlockReason(item));
@@ -498,6 +517,7 @@ export default function AssignmentPage() {
   }
 
   async function assignFromDetail(item: ContentRequest) {
+    if (!canAssignAction) return permissionAlert("asignar solicitudes desde detalle");
     if (!item.id) return;
     if (!canAssignRequest(item)) {
       alert(getAssignBlockReason(item));
@@ -533,6 +553,7 @@ export default function AssignmentPage() {
   }
 
   async function assignSelected() {
+    if (!canAssignAction) return permissionAlert("asignar solicitudes en bloque");
     if (!selected.length) return alert("Selecciona al menos una solicitud.");
     if (!bulkAssignee) return alert("Selecciona una persona para asignar.");
     const selectedItems = visibleBaseItems.filter((item) =>
@@ -592,6 +613,7 @@ export default function AssignmentPage() {
   }
 
   async function rejectRequests(ids: string[], note: string) {
+    if (!canEditAssignment) return permissionAlert("devolver solicitudes desde Asignación");
     if (!ids.length) return alert("Selecciona al menos una solicitud.");
     if (!note.trim())
       return alert("Escribe una nota para rebotar la solicitud.");
@@ -630,6 +652,7 @@ export default function AssignmentPage() {
   }
 
   async function deleteSelectedRequests() {
+    if (!canDeleteAssignment) return permissionAlert("eliminar solicitudes desde Asignación");
     if (!selected.length) return alert("Selecciona al menos una solicitud.");
     if (deleteConfirm !== "ELIMINAR")
       return alert("Debes escribir ELIMINAR para confirmar.");
@@ -642,6 +665,7 @@ export default function AssignmentPage() {
   }
 
   async function cleanupOrphanRequests() {
+    if (!canDeleteAssignment) return permissionAlert("limpiar solicitudes huérfanas");
     if (!orphanRequests.length)
       return alert("No hay solicitudes huérfanas para limpiar.");
     if (
@@ -679,6 +703,12 @@ export default function AssignmentPage() {
           </p>
         </div>
       </section>
+
+      {!canUseBulkActions && (
+        <section className="card readonly-note">
+          Modo solo lectura: puedes consultar Asignación, pero tu rol no puede mover responsables, rebotar ni eliminar solicitudes.
+        </section>
+      )}
 
       <section className="grid kpis">
         {[
@@ -758,14 +788,14 @@ export default function AssignmentPage() {
         <button className="btn" onClick={load}>
           Actualizar
         </button>
-        {orphanRequests.length > 0 && (
+        {orphanRequests.length > 0 && canDeleteAssignment && (
           <button className="btn red" onClick={cleanupOrphanRequests}>
             Limpiar huérfanas ({orphanRequests.length})
           </button>
         )}
       </div>
 
-      {selected.length > 0 && (
+      {selected.length > 0 && canUseBulkActions && (
         <div className="bulk-actions">
           <span className="pill">{selected.length} seleccionada(s)</span>
           {selectedBlockedCount > 0 && (
@@ -782,7 +812,7 @@ export default function AssignmentPage() {
             className="assignment-person-select assignment-bulk-select"
             value={bulkAssignee}
             onChange={(e) => setBulkAssignee(e.target.value)}
-            disabled={!bulkArea}
+            disabled={!bulkArea || !canAssignAction}
             title={
               bulkArea
                 ? `Solo aparecen personas de ${bulkArea}`
@@ -801,16 +831,20 @@ export default function AssignmentPage() {
           <button
             className="btn blue"
             onClick={assignSelected}
-            disabled={!bulkArea}
+            disabled={!bulkArea || !canAssignAction}
           >
             Asignar seleccionadas
           </button>
-          <button className="btn" onClick={() => setRejectModal(true)}>
-            Rebotar seleccionadas
-          </button>
-          <button className="btn red" onClick={() => setDeleteModal(true)}>
-            Eliminar seleccionadas
-          </button>
+          {canEditAssignment && (
+            <button className="btn" onClick={() => setRejectModal(true)}>
+              Rebotar seleccionadas
+            </button>
+          )}
+          {canDeleteAssignment && (
+            <button className="btn red" onClick={() => setDeleteModal(true)}>
+              Eliminar seleccionadas
+            </button>
+          )}
         </div>
       )}
 
@@ -824,7 +858,8 @@ export default function AssignmentPage() {
                   <th>
                     <input
                       type="checkbox"
-                      title="Seleccionar solo solicitudes listas para asignar"
+                      title={canUseBulkActions ? "Seleccionar solo solicitudes listas para asignar" : "Solo lectura"}
+                      disabled={!canUseBulkActions}
                       checked={
                         assignableFiltered.length > 0 &&
                         assignableFiltered.every((item) =>
@@ -908,7 +943,7 @@ export default function AssignmentPage() {
                         <input
                           type="checkbox"
                           checked={selected.includes(item.id!)}
-                          disabled={!assignable}
+                          disabled={!assignable || !canUseBulkActions}
                           title={
                             assignable
                               ? "Lista para asignar"
@@ -982,6 +1017,7 @@ export default function AssignmentPage() {
                           value={
                             item.assignedArea || item.suggestedArea || "Diseño"
                           }
+                          disabled={!canAssignAction}
                           onChange={(e) =>
                             item.id &&
                             update(item.id, {
@@ -1007,6 +1043,7 @@ export default function AssignmentPage() {
                             item.id &&
                             update(item.id, { assignedTo: e.target.value })
                           }
+                          disabled={!canAssignAction}
                           title={`Solo aparecen personas de ${rowArea}`}
                         >
                           <option value="">Sin asignar</option>
@@ -1019,6 +1056,7 @@ export default function AssignmentPage() {
                         <select
                           className="assignment-priority-select"
                           value={item.priority || "Media"}
+                          disabled={!canAssignAction}
                           onChange={(e) =>
                             item.id &&
                             update(item.id, { priority: e.target.value })
@@ -1032,7 +1070,7 @@ export default function AssignmentPage() {
                       <td>
                         <button
                           className="btn blue"
-                          disabled={!assignable}
+                          disabled={!assignable || !canUseBulkActions}
                           title={
                             assignable ? "Asignar" : getAssignBlockReason(item)
                           }
@@ -1078,6 +1116,8 @@ export default function AssignmentPage() {
               onReject={rejectFromDetail}
               onClose={() => setEditing(null)}
               onPreview={setPreview}
+              canAssignAction={canAssignAction}
+              canRejectAction={canEditAssignment}
             />
           </div>
         )}
@@ -1103,6 +1143,7 @@ export default function AssignmentPage() {
               <button
                 className="btn blue"
                 onClick={() => rejectRequests(selected, rejectNote)}
+                disabled={!canEditAssignment}
               >
                 Devolver a Content
               </button>
@@ -1131,7 +1172,7 @@ export default function AssignmentPage() {
               />
             </div>
             <div style={{ display: "flex", gap: 12 }}>
-              <button className="btn red" onClick={deleteSelectedRequests}>
+              <button className="btn red" onClick={deleteSelectedRequests} disabled={!canDeleteAssignment}>
                 Eliminar definitivamente
               </button>
               <button className="btn" onClick={() => setDeleteModal(false)}>
@@ -1187,6 +1228,8 @@ function RequestDetail({
   onReject,
   onClose,
   onPreview,
+  canAssignAction,
+  canRejectAction,
 }: {
   item: ContentRequest;
   draft: Partial<ContentRequest>;
@@ -1196,6 +1239,8 @@ function RequestDetail({
   onReject: (item: ContentRequest, note: string) => void;
   onClose: () => void;
   onPreview: (file: ReferenceFile) => void;
+  canAssignAction: boolean;
+  canRejectAction: boolean;
 }) {
   const referenceLinks = splitLinks(item.referenceLinks);
   const materialLinks = splitLinks(item.materialLinks);
@@ -1348,6 +1393,7 @@ function RequestDetail({
             <select
               className="assignment-area-select"
               value={detailArea}
+              disabled={!canAssignAction}
               onChange={(e) =>
                 setDraft({
                   ...draft,
@@ -1370,6 +1416,7 @@ function RequestDetail({
                   ? draft.assignedTo || item.assignedTo || ""
                   : ""
               }
+              disabled={!canAssignAction}
               onChange={(e) =>
                 setDraft({ ...draft, assignedTo: e.target.value })
               }
@@ -1385,6 +1432,7 @@ function RequestDetail({
             <select
               className="assignment-priority-select"
               value={draft.priority || item.priority || "Media"}
+              disabled={!canAssignAction}
               onChange={(e) => setDraft({ ...draft, priority: e.target.value })}
             >
               {priorities.map((x) => (
@@ -1396,6 +1444,7 @@ function RequestDetail({
             <label>Notas internas</label>
             <textarea
               value={draft.internalNotes || item.internalNotes || ""}
+              disabled={!canAssignAction}
               onChange={(e) =>
                 setDraft({ ...draft, internalNotes: e.target.value })
               }
@@ -1403,7 +1452,7 @@ function RequestDetail({
           </div>
         </div>
         <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
-          <button className="btn blue" onClick={() => onAssign(item)}>
+          <button className="btn blue" onClick={() => onAssign(item)} disabled={!canAssignAction}>
             Asignar solicitud
           </button>
           <button className="btn" onClick={onClose}>
@@ -1422,11 +1471,13 @@ function RequestDetail({
             value={localRejectNote}
             onChange={(e) => setLocalRejectNote(e.target.value)}
             placeholder="Motivo del rebote"
+            disabled={!canRejectAction}
           />
           <button
             className="btn red"
             style={{ marginTop: 10 }}
             onClick={() => onReject(item, localRejectNote)}
+            disabled={!canRejectAction}
           >
             Devolver solicitud
           </button>

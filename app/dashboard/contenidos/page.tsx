@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { authJsonHeaders } from "@/lib/client-auth";
 import { auth } from "@/lib/firebase";
 import TextTooltip from "@/components/TextTooltip";
@@ -49,6 +50,9 @@ export default function ContenidosPage() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("publishDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const permissions = useModulePermissions("contenidos");
+  const canEditContent = permissions.canEdit;
+  const canGenerateCopy = permissions.canGenerate || permissions.canEdit;
 
   async function load() {
     const [loadedRequests, loadedClients] = await Promise.all([
@@ -307,6 +311,10 @@ export default function ContenidosPage() {
   }
 
   async function requestImprovedCopyOut(item: ContentRequest) {
+    if (!canGenerateCopy) {
+      permissionAlert("generar copy con IA");
+      throw new Error("Sin permiso para generar copy con IA.");
+    }
     const currentCopy = (
       copyOutDrafts[item.id || ""] ??
       item.copyOut ??
@@ -363,6 +371,7 @@ export default function ContenidosPage() {
     }
   }
   async function improveSelected() {
+    if (!canGenerateCopy) return permissionAlert("generar copy con IA en bloque");
     const rows = tableItems.filter(
       (x) => selected.includes(x.id || "") && x.status !== "finalizada",
     );
@@ -414,6 +423,7 @@ export default function ContenidosPage() {
     finish = false,
     markReady = false,
   ) {
+    if (!canEditContent) return permissionAlert("editar o finalizar copy");
     if (!item.id) return;
     const copyOut = (copyOutDrafts[item.id] ?? item.copyOut ?? "").trim();
     if (!copyOut) return alert("Escribe o genera el copy final.");
@@ -563,6 +573,12 @@ export default function ContenidosPage() {
         </div>
       </section>
 
+      {!canEditContent && (
+        <section className="card readonly-note">
+          Modo solo lectura: puedes consultar contenidos y copiar textos, pero tu rol no puede editar, generar IA ni finalizar piezas.
+        </section>
+      )}
+
       <section className="grid kpis">
         {[
           [
@@ -662,7 +678,7 @@ export default function ContenidosPage() {
           <button className="btn" onClick={toggleAllVisible}>
             {selected.length ? "Limpiar selección" : "Seleccionar visibles"}
           </button>
-          {selected.length > 0 && (
+          {selected.length > 0 && canGenerateCopy && (
             <button
               className="btn blue"
               onClick={improveSelected}
@@ -673,7 +689,7 @@ export default function ContenidosPage() {
                 : `Generar copy IA seleccionados (${selected.length})`}
             </button>
           )}
-          {selected.length > 0 && (
+          {selected.length > 0 && canEditContent && (
             <button className="btn" onClick={finishSelected}>
               Finalizar seleccionadas
             </button>
@@ -754,14 +770,14 @@ export default function ContenidosPage() {
                   })
                 }
                 placeholder="Copy final"
-                disabled={item.status === "finalizada"}
+                disabled={item.status === "finalizada" || !canEditContent}
               />
               {copyGenerationModes[item.id || ""] && (
                 <small className={copyGenerationModes[item.id || ""] === "fallback" ? "copy-source-note warning" : "copy-source-note"}>
                   {generationModeLabel(copyGenerationModes[item.id || ""])}
                 </small>
               )}
-              {item.status !== "finalizada" && (
+              {item.status !== "finalizada" && canGenerateCopy && (
                 <button
                   className="btn ai-only-button"
                   type="button"
@@ -816,12 +832,12 @@ export default function ContenidosPage() {
                   {copiedId === item.id ? "✓" : "⧉"}
                 </span>
               </button>
-              {item.status !== "finalizada" && (
+              {item.status !== "finalizada" && canEditContent && (
                 <button className="btn" onClick={() => saveCopy(item, false)}>
                   Guardar
                 </button>
               )}
-              {item.status !== "finalizada" && (
+              {item.status !== "finalizada" && canEditContent && (
                 <button
                   className="btn"
                   onClick={() => saveCopy(item, false, true)}
@@ -829,7 +845,7 @@ export default function ContenidosPage() {
                   Marcar copy listo
                 </button>
               )}
-              {item.status !== "finalizada" && (
+              {item.status !== "finalizada" && canEditContent && (
                 <button className="btn blue" onClick={() => finishOne(item)}>
                   Finalizar
                 </button>

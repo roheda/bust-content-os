@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { auth } from "@/lib/firebase";
 import {
   ClientOperationalOverride,
@@ -104,6 +105,9 @@ export default function TasksPage() {
   const [finalLink, setFinalLink] = useState("");
   const [preview, setPreview] = useState<ReferenceFile | null>(null);
   const [contextPost, setContextPost] = useState<ContentRequest | null>(null);
+  const permissions = useModulePermissions("tareas");
+  const canEditTasks = permissions.canEdit;
+  const canGenerateFromTasks = permissions.canGenerate || permissions.canEdit;
 
   async function load() {
     const [
@@ -298,7 +302,7 @@ export default function TasksPage() {
   ).length;
 
   async function openTask(task: ContentRequest) {
-    const shouldStart = task.status === "asignada";
+    const shouldStart = task.status === "asignada" && canEditTasks;
     const updatedTask = shouldStart ? { ...task, status: "en_revision" } : task;
     setSelected(updatedTask);
     setFinalLink(task.finalPostLink || "");
@@ -343,6 +347,7 @@ export default function TasksPage() {
   }
 
   async function setStatus(status: string) {
+    if (!canEditTasks) return permissionAlert("cambiar el estado de tareas");
     if (!selected?.id) return;
     if (status === "pendiente_aprobacion")
       return alert(
@@ -400,6 +405,7 @@ export default function TasksPage() {
   }
 
   async function addComment() {
+    if (!canEditTasks) return permissionAlert("agregar comentarios en tareas");
     if (!selected?.id) return;
     if (!comment.trim()) return alert("Escribe un comentario.");
     const nextComment: TaskComment = {
@@ -420,6 +426,7 @@ export default function TasksPage() {
   }
 
   async function sendToApproval() {
+    if (!canEditTasks) return permissionAlert("enviar tareas a aprobación");
     if (!selected?.id) return;
     if (!finalLink.trim())
       return alert(
@@ -452,6 +459,7 @@ export default function TasksPage() {
   }
 
   async function sendToGenerator() {
+    if (!canGenerateFromTasks) return permissionAlert("enviar tareas a BUST It Now");
     if (!selected?.id) return;
     const comments = [...(selected.comments || [])];
     comments.push({
@@ -498,6 +506,12 @@ export default function TasksPage() {
           </p>
         </div>
       </section>
+
+      {!canEditTasks && (
+        <section className="card readonly-note">
+          Modo solo lectura: puedes consultar tareas, pero tu rol no puede cambiar estados, comentar ni enviar a aprobación.
+        </section>
+      )}
 
       <div className="tasks-toolbar" aria-label="Controles compactos de tareas">
         <div className="view-switch task-view-switch">
@@ -692,7 +706,7 @@ export default function TasksPage() {
               <div>
                 <div className="detail-section">
                   <h4>Herramientas</h4>
-                  <button className="btn" onClick={sendToGenerator}>
+                  <button className="btn" onClick={sendToGenerator} disabled={!canGenerateFromTasks}>
                     Enviar a BUST It Now
                   </button>
                   {selected.generatorStatus === "enviado" && (
@@ -713,6 +727,7 @@ export default function TasksPage() {
                           key={value}
                           className={selected.status === value ? "active" : ""}
                           onClick={() => setStatus(value)}
+                          disabled={!canEditTasks}
                         >
                           {label}
                         </button>
@@ -733,11 +748,13 @@ export default function TasksPage() {
                       value={finalLink}
                       onChange={(e) => setFinalLink(e.target.value)}
                       placeholder="Pega aquí el link de Drive, Canva, archivo o carpeta"
+                      disabled={!canEditTasks}
                     />
                     <button
                       className="btn blue"
                       style={{ marginTop: 10 }}
                       onClick={sendToApproval}
+                      disabled={!canEditTasks}
                     >
                       Enviar a aprobación
                     </button>
@@ -862,6 +879,7 @@ export default function TasksPage() {
                         value={comment}
                         onChange={(e) => handleCommentChange(e.target.value)}
                         onKeyDown={handleMentionKeyDown}
+                        disabled={!canEditTasks}
                         placeholder="Escribe un comentario. Usa @ para mencionar a una persona o área; Enter completa la única coincidencia."
                       />
                       {!!filteredMentionOptions.length && (
@@ -871,6 +889,7 @@ export default function TasksPage() {
                               type="button"
                               key={option.token}
                               onClick={() => insertMention(option.token)}
+                              disabled={!canEditTasks}
                             >
                               <strong>@{option.token}</strong>
                               <span>
@@ -882,7 +901,7 @@ export default function TasksPage() {
                       )}
                     </div>
                   </div>
-                  <button className="btn blue" onClick={addComment}>
+                  <button className="btn blue" onClick={addComment} disabled={!canEditTasks}>
                     Agregar comentario
                   </button>
 

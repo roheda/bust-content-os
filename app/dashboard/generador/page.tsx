@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { ChangeEvent, memo, useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { authJsonHeaders } from "@/lib/client-auth";
 import { buildGenerationPrompt } from "@/lib/build-generation-prompt";
 import {
@@ -223,6 +224,10 @@ export default function BustItNowPage() {
   const [assetCategoryFilter, setAssetCategoryFilter] = useState("all");
   const [textAssetRoleFilter, setTextAssetRoleFilter] = useState("all");
   const [savingTextAssetId, setSavingTextAssetId] = useState("");
+  const permissions = useModulePermissions("generador");
+  const canGenerateNow = permissions.canGenerate || permissions.canEdit;
+  const canEditBrief = permissions.canEdit || permissions.canGenerate;
+
 
   async function load() {
     const [c, r, h, g] = await Promise.all([
@@ -360,6 +365,7 @@ export default function BustItNowPage() {
   }
 
   async function saveBlockAsAsset(block: TextBlock) {
+    if (!canEditBrief) return permissionAlert("guardar bloques como assets");
     if (!client?.id) return alert("Selecciona un cliente antes de guardar el bloque como asset.");
     if (!block.text.trim()) return alert("Escribe texto antes de guardarlo como asset.");
 
@@ -385,6 +391,7 @@ export default function BustItNowPage() {
   }
 
   function updateBlock(id: string, patch: Partial<TextBlock>) {
+    if (!canEditBrief) return;
     setTextBlocks((blocks) => blocks.map((block) => block.id === id ? { ...block, ...patch } : block));
   }
 
@@ -403,6 +410,7 @@ export default function BustItNowPage() {
   }
 
   function handleAttachment(event: ChangeEvent<HTMLInputElement>) {
+    if (!canEditBrief) return permissionAlert("adjuntar referencias al brief");
     const file = event.target.files?.[0] || null;
     if (!file) {
       setAttachment(null);
@@ -427,6 +435,7 @@ export default function BustItNowPage() {
   }
 
   async function persistAttachmentForBrief() {
+    if (!canEditBrief) throw new Error("No tienes permiso para guardar briefs.");
     if (!attachment) return [];
     if (attachment.fileUrl) return currentAttachmentSnapshot();
     if (!client?.id) throw new Error("Selecciona un cliente antes de guardar el brief.");
@@ -489,6 +498,7 @@ export default function BustItNowPage() {
   }
 
   async function saveBriefOnly(status = "brief_ready") {
+    if (!canEditBrief) return permissionAlert("guardar briefs de generación");
     if (!client) return alert("Selecciona un cliente.");
     if (!mainMessage.trim()) return alert("Escribe el mensaje principal.");
     if (cleanBlocks().length === 0) return alert("Agrega al menos un bloque de texto.");
@@ -523,6 +533,7 @@ export default function BustItNowPage() {
   }
 
   async function generate() {
+    if (!canGenerateNow) return permissionAlert("generar imágenes con IA");
     if (aiBillingBalance && aiBillingBalance.includedAiGenerations > 0) {
       const generatedCount = variantCount;
       const projected = aiBillingBalance.aiGenerations + generatedCount;
@@ -766,7 +777,7 @@ export default function BustItNowPage() {
                       <label className="mb-3 block text-sm font-medium text-zinc-800">Imagen puntual</label>
                       <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">
                         Seleccionar archivo
-                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAttachment} className="sr-only" />
+                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAttachment} disabled={!canEditBrief} className="sr-only" />
                       </label>
                       <span className="ml-3 align-middle text-sm text-zinc-500">{attachment?.name || "Sin archivo seleccionado"}</span>
 
@@ -890,7 +901,7 @@ export default function BustItNowPage() {
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-500">Acciones</p>
                     <div className="mt-5 grid gap-3">
                       <button type="button" onClick={() => buildPrompt()} className="h-12 rounded-2xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-50">Construir prompt</button>
-                      <button type="button" onClick={() => saveBriefOnly()} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">Guardar brief de generación</button>
+                      <button type="button" onClick={() => saveBriefOnly()} disabled={!canEditBrief} className="h-12 rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">Guardar brief de generación</button>
                     </div>
                     {error ? <div className="mt-5 rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">{error}</div> : null}
                     {success ? <div className="mt-5 rounded-3xl border border-green-200 bg-green-50 px-5 py-4 text-sm font-medium text-green-700">{success}</div> : null}

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { authJsonHeaders } from "@/lib/client-auth";
 import { Brand, listUniqueBrands, saveBrand, updateBrand } from "@/lib/data";
 
@@ -63,6 +64,9 @@ export default function ClientsPage(){
   const [saving,setSaving]=useState(false);
   const [analyzing,setAnalyzing]=useState(false);
   const [message,setMessage]=useState("");
+  const permissions = useModulePermissions("clientes");
+  const canCreateClient = permissions.canCreate || permissions.canEdit;
+  const canAnalyzeClient = permissions.canGenerate || permissions.canCreate || permissions.canEdit;
 
   async function load(){
     setLoading(true);
@@ -73,6 +77,7 @@ export default function ClientsPage(){
   useEffect(()=>{load()},[]);
 
   async function analyzeWebsite(currentClient: Partial<Brand>) {
+    if(!canAnalyzeClient) { permissionAlert("analizar clientes con IA"); throw new Error("Sin permiso para analizar clientes."); }
     const response = await fetch("/api/analyze-client-website",{
       method:"POST",
       headers: await authJsonHeaders(),
@@ -84,6 +89,8 @@ export default function ClientsPage(){
   }
 
   async function createClient(runAnalysis=false){
+    if(!canCreateClient)return permissionAlert("crear clientes");
+    if(runAnalysis && !canAnalyzeClient)return permissionAlert("crear y analizar clientes con IA");
     if(!name.trim())return alert("Escribe el nombre del cliente.");
     if(runAnalysis && !website.trim() && !instagram.trim())return alert("Agrega sitio web o Instagram para analizarlo con IA.");
     setSaving(true);
@@ -135,21 +142,23 @@ export default function ClientsPage(){
       <div className="pill">{countLabel}</div>
     </section>
 
+    {!canCreateClient && <section className="card readonly-note">Modo solo lectura: puedes consultar clientes, pero tu rol no puede crear ni modificar marcas.</section>}
+
     <section className="grid two-col">
       <article className="card">
         <p className="eyebrow">Nuevo cliente</p><h2>Alta de marca</h2>
-        <div className="field"><label>Nombre del cliente</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Ej. Acerofertas"/></div>
-        <div className="field"><label>Giro o categoría</label><input value={industry} onChange={e=>setIndustry(e.target.value)} placeholder="Ej. Acero, restaurante, inmobiliaria"/></div>
-        <div className="field"><label>Sitio web</label><input value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://cliente.com"/></div>
-        <div className="field"><label>Instagram</label><input value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="@cliente o https://instagram.com/cliente"/></div>
+        <div className="field"><label>Nombre del cliente</label><input value={name} disabled={!canCreateClient} onChange={e=>setName(e.target.value)} placeholder="Ej. Acerofertas"/></div>
+        <div className="field"><label>Giro o categoría</label><input value={industry} disabled={!canCreateClient} onChange={e=>setIndustry(e.target.value)} placeholder="Ej. Acero, restaurante, inmobiliaria"/></div>
+        <div className="field"><label>Sitio web</label><input value={website} disabled={!canCreateClient} onChange={e=>setWebsite(e.target.value)} placeholder="https://cliente.com"/></div>
+        <div className="field"><label>Instagram</label><input value={instagram} disabled={!canCreateClient} onChange={e=>setInstagram(e.target.value)} placeholder="@cliente o https://instagram.com/cliente"/></div>
         <div className="brief-box">
           <h4>Alta inteligente</h4>
           <p className="mini">Si agregas sitio web o Instagram, la IA puede llenar descripción, tono, oferta, contexto regional, pilares, ángulos y 3–4 buyer personas iniciales.</p>
         </div>
         {message && <div className="feedback-item done"><p>{message}</p></div>}
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          <button className="btn blue" onClick={()=>createClient(false)} disabled={saving}>{saving&&!analyzing?"Creando...":"Crear cliente"}</button>
-          <button className="btn dark" onClick={()=>createClient(true)} disabled={saving}>{analyzing?"Analizando sitio...":"Crear y analizar con IA"}</button>
+          <button className="btn blue" onClick={()=>createClient(false)} disabled={saving || !canCreateClient}>{saving&&!analyzing?"Creando...":"Crear cliente"}</button>
+          <button className="btn dark" onClick={()=>createClient(true)} disabled={saving || !canCreateClient || !canAnalyzeClient}>{analyzing?"Analizando sitio...":"Crear y analizar con IA"}</button>
         </div>
       </article>
 

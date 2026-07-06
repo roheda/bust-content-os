@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import {
   Brand,
   ClientOperationalOverride,
@@ -72,6 +73,8 @@ export default function ConfiguracionPage(){
   const [editingCapacityId,setEditingCapacityId]=useState("");
   const [clientFilter,setClientFilter]=useState("all");
   const [busy,setBusy]=useState(false);
+  const permissions = useModulePermissions("configuracion");
+  const canConfigure = permissions.canConfigure;
 
   async function load(){
     const [loadedRules,loadedOverrides,loadedBrands,loadedCapacities] = await Promise.all([
@@ -112,6 +115,7 @@ export default function ConfiguracionPage(){
   }
 
   async function saveRule(){
+    if(!canConfigure)return permissionAlert("guardar reglas operativas");
     if(!ruleForm.contentType)return alert("Selecciona tipo de contenido");
     setBusy(true);
     try{
@@ -134,6 +138,7 @@ export default function ConfiguracionPage(){
   }
 
   async function saveOverride(){
+    if(!canConfigure)return permissionAlert("guardar ajustes por cliente");
     const selected = brands.find(x=>x.id===overrideForm.clientId);
     if(!selected?.id)return alert("Selecciona cliente");
     setBusy(true);
@@ -158,6 +163,7 @@ export default function ConfiguracionPage(){
   }
 
   async function removeRule(rule:OperationalContentRule){
+    if(!canConfigure)return permissionAlert("eliminar reglas operativas");
     if(!rule.id)return alert("Esta regla base viene por default. Si quieres cambiarla, edítala y guarda una versión personalizada.");
     if(!confirm("¿Eliminar regla operativa?"))return;
     await deleteOperationalContentRule(rule.id);
@@ -165,6 +171,7 @@ export default function ConfiguracionPage(){
   }
 
   async function removeOverride(item:ClientOperationalOverride){
+    if(!canConfigure)return permissionAlert("eliminar ajustes por cliente");
     if(!item.id)return;
     if(!confirm("¿Eliminar ajuste por cliente?"))return;
     await deleteClientOperationalOverride(item.id);
@@ -194,6 +201,7 @@ export default function ConfiguracionPage(){
   }
 
   async function saveCapacity(){
+    if(!canConfigure)return permissionAlert("guardar capacidad del equipo");
     if(!capacityForm.personName.trim())return alert("Escribe el nombre de la persona.");
     setBusy(true);
     try{
@@ -212,6 +220,7 @@ export default function ConfiguracionPage(){
   }
 
   async function removeCapacity(item:TeamDailyCapacity){
+    if(!canConfigure)return permissionAlert("eliminar capacidad del equipo");
     if(!item.id)return alert("Esta capacidad viene por default. Edítala y guarda una versión personalizada para reemplazarla.");
     if(!confirm("¿Eliminar capacidad personalizada?"))return;
     await deleteTeamDailyCapacity(item.id);
@@ -262,9 +271,9 @@ export default function ConfiguracionPage(){
             <div className="field full"><label>Notas</label><textarea value={ruleForm.notes||""} onChange={e=>setRule("notes",e.target.value)} placeholder="Qué incluye, restricciones, criterios de entrega..."/></div>
           </div>
           <div className="config-actions">
-            <button className="btn blue" onClick={saveRule}>{editingRuleId?"Guardar cambios":"Guardar regla"}</button>
-            <button className="btn" onClick={resetDefaults}>Limpiar</button>
-            <button className="btn" onClick={seedDefaults}>Ver defaults</button>
+            <button className="btn blue" onClick={saveRule} disabled={!canConfigure}>{editingRuleId?"Guardar cambios":"Guardar regla"}</button>
+            <button className="btn" onClick={resetDefaults} disabled={!canConfigure}>Limpiar</button>
+            <button className="btn" onClick={seedDefaults} disabled={!canConfigure}>Ver defaults</button>
           </div>
         </div>
 
@@ -279,7 +288,7 @@ export default function ConfiguracionPage(){
                 <td>{money(rule.internalCost)}</td>
                 <td>{money(rule.productionCost)}</td>
                 <td>{rule.deliveryDays} días · {rule.editingHours} h edición</td>
-                <td><button className="btn" onClick={()=>startRuleEdit(rule)}>Editar</button><button className="btn red" onClick={()=>removeRule(rule)}>Eliminar</button></td>
+                <td><button className="btn" onClick={()=>startRuleEdit(rule)} disabled={!canConfigure}>Editar</button><button className="btn red" onClick={()=>removeRule(rule)} disabled={!canConfigure}>Eliminar</button></td>
               </tr>)}</tbody>
             </table>
           </div>
@@ -305,8 +314,8 @@ export default function ConfiguracionPage(){
             <div className="field full"><label>Notas</label><textarea value={overrideForm.notes||""} onChange={e=>setOverride("notes",e.target.value)}/></div>
           </div>
           <div className="config-actions">
-            <button className="btn blue" onClick={saveOverride}>{editingOverrideId?"Guardar ajuste":"Guardar ajuste"}</button>
-            <button className="btn" onClick={resetOverride}>Limpiar</button>
+            <button className="btn blue" onClick={saveOverride} disabled={!canConfigure}>{editingOverrideId?"Guardar ajuste":"Guardar ajuste"}</button>
+            <button className="btn" onClick={resetOverride} disabled={!canConfigure}>Limpiar</button>
           </div>
         </div>
 
@@ -317,7 +326,7 @@ export default function ConfiguracionPage(){
             {visibleOverrides.map(item=><div className="draft-item" key={item.id}>
               <strong>{item.clientName} · {item.contentType}</strong>
               <span className="mini">Costo: {item.internalCost==null?"Base":money(item.internalCost)} · Producción: {item.productionCost==null?"Base":money(item.productionCost)} · Tiempo: {item.deliveryDays==null?"Base":`${item.deliveryDays} días`}</span>
-              <div className="config-actions"><button className="btn" onClick={()=>startOverrideEdit(item)}>Editar</button><button className="btn red" onClick={()=>removeOverride(item)}>Eliminar</button></div>
+              <div className="config-actions"><button className="btn" onClick={()=>startOverrideEdit(item)} disabled={!canConfigure}>Editar</button><button className="btn red" onClick={()=>removeOverride(item)} disabled={!canConfigure}>Eliminar</button></div>
             </div>)}
             {!visibleOverrides.length && <p className="mini">Sin ajustes para este filtro.</p>}
           </div>
@@ -334,14 +343,14 @@ export default function ConfiguracionPage(){
             <div className="field full"><label>Notas</label><textarea value={capacityForm.notes||""} onChange={e=>setCapacity("notes",e.target.value)} placeholder="Ej. edita reels complejos / apoyo a diseño..."/></div>
           </div>
           <div className="config-actions">
-            <button className="btn blue" onClick={saveCapacity}>{editingCapacityId?"Guardar cambios":"Guardar capacidad"}</button>
-            <button className="btn" onClick={resetCapacity}>Limpiar</button>
+            <button className="btn blue" onClick={saveCapacity} disabled={!canConfigure}>{editingCapacityId?"Guardar cambios":"Guardar capacidad"}</button>
+            <button className="btn" onClick={resetCapacity} disabled={!canConfigure}>Limpiar</button>
           </div>
           <div className="draft-list" style={{marginTop:14}}>
             {capacities.map(item=><div className="draft-item" key={`${item.id||"default"}-${item.personName}`}>
               <strong>{item.personName}</strong>
               <span className="mini">{item.area} · {item.dailyCapacityUnits} piezas/día · {item.active===false?"Inactiva":"Activa"}</span>
-              <div className="config-actions"><button className="btn" onClick={()=>startCapacityEdit(item)}>Editar</button><button className="btn red" onClick={()=>removeCapacity(item)}>Eliminar</button></div>
+              <div className="config-actions"><button className="btn" onClick={()=>startCapacityEdit(item)} disabled={!canConfigure}>Editar</button><button className="btn red" onClick={()=>removeCapacity(item)} disabled={!canConfigure}>Eliminar</button></div>
             </div>)}
           </div>
         </div>
