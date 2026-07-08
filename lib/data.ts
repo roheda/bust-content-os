@@ -1113,14 +1113,14 @@ export function hasMaterial(item: Partial<ContentRequest>) {
 }
 
 export function canAssignRequest(item: Partial<ContentRequest>) {
-  // Una solicitud solo puede pasar a ejecución si ya tiene insumos reales.
   // Si requiere producción, no basta con tener producción programada: debe estar marcado material listo
-  // y tener archivos o links de material entregado.
-  return hasMaterial(item);
+  // y tener archivos o links de material entregado. Si no requiere producción, puede pasar a asignación
+  // con el brief/solicitud como insumo operativo.
+  if (item.requiresProduction) return hasMaterial(item);
+  return true;
 }
 
 export function getOperationalStatus(item: ContentRequest) {
-  if (item.status === "pendiente_copy" || item.copyStatus === "pendiente" || item.copyStatus === "en_proceso") return "pendiente_copy";
   const directStatuses = [
     "eliminada",
     "finalizada",
@@ -1134,9 +1134,15 @@ export function getOperationalStatus(item: ContentRequest) {
     "en_ejecucion",
     "rebotada",
     "asignada",
-    "cancelada"
+    "cancelada",
+    "lista_asignacion"
   ];
   if (directStatuses.includes(item.status || "")) return item.status || "lista_asignacion";
+  // pendiente_copy es un estado de copy, no de asignación. Si llega a Asignación
+  // por datos heredados o borradores antiguos, se normaliza al flujo operativo real.
+  if (item.status === "pendiente_copy") {
+    return item.requiresProduction ? "pendiente_produccion" : "lista_asignacion";
+  }
   if (item.status === "material_listo" && hasMaterial(item)) return "lista_asignacion";
   if (item.requiresProduction && canAssignRequest(item)) return "lista_asignacion";
   if (item.requiresProduction) return item.productionId ? "produccion_programada" : "pendiente_produccion";
@@ -1312,11 +1318,7 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
 
   await Promise.all(items.map((item, index) => {
     const hasCopy = Boolean((item.copyIn || item.copyOut || "").trim());
-    const status = !hasCopy || item.copyStatus === "pendiente" || item.copyStatus === "en_proceso"
-      ? "pendiente_copy"
-      : item.requiresProduction
-        ? "pendiente_produccion"
-        : "lista_asignacion";
+    const status = item.requiresProduction ? "pendiente_produccion" : "lista_asignacion";
     const plan = getOperationalPlan({ ...item, batchDueDate: batch.batchDueDate });
     return saveRequest({
       ...item,

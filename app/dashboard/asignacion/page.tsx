@@ -151,7 +151,7 @@ const assignmentStatusOptions = [
   { value: "all", label: "Todos los estados" },
   {
     value: "lista_asignacion",
-    label: "Lista para asignación / Material listo",
+    label: "Pendiente de asignación / Material listo",
   },
   { value: "pendiente_produccion", label: "Pendiente producción" },
   { value: "produccion_programada", label: "Producción programada" },
@@ -1089,6 +1089,11 @@ export default function AssignmentPage() {
                         <button
                           className="btn"
                           onClick={() => {
+                            if (editing?.id === item.id) {
+                              setEditing(null);
+                              setDetailDraft({});
+                              return;
+                            }
                             setEditing(item);
                             setDetailDraft({
                               assignedArea:
@@ -1099,7 +1104,7 @@ export default function AssignmentPage() {
                             });
                           }}
                         >
-                          Detalle
+                          {editing?.id === item.id ? "Cerrar detalle" : "Detalle"}
                         </button>
                       </td>
                     </tr>
@@ -1110,9 +1115,25 @@ export default function AssignmentPage() {
           </div>
         </div>
 
-        {editing && (
-          <div className="card assignment-detail-card">
-            <h3>Detalle</h3>
+      </section>
+
+      {editing && (
+        <div className="assignment-detail-overlay" onClick={() => setEditing(null)}>
+          <aside
+            className="assignment-detail-drawer"
+            aria-label="Detalle de solicitud"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="assignment-detail-drawer-header">
+              <div>
+                <p className="eyebrow">Detalle operativo</p>
+                <h3>{editing.clientName}</h3>
+                <span>{editing.batchName || "Sin lote"}</span>
+              </div>
+              <button className="btn" onClick={() => setEditing(null)}>
+                Cerrar
+              </button>
+            </div>
             <RequestDetail
               item={editing}
               draft={detailDraft}
@@ -1125,9 +1146,9 @@ export default function AssignmentPage() {
               canAssignAction={canAssignAction}
               canRejectAction={canEditAssignment}
             />
-          </div>
-        )}
-      </section>
+          </aside>
+        </div>
+      )}
       {rejectModal && (
         <div className="modal-backdrop">
           <div className="modal-card">
