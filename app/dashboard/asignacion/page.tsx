@@ -32,6 +32,7 @@ import {
   priorities,
   updateRequest,
   deleteRequest,
+  buildRevisionUpdate,
 } from "@/lib/data";
 
 const assignableProductionAreas = ["Diseño", "Audiovisual"];
@@ -632,12 +633,17 @@ export default function AssignmentPage() {
             createdAt: new Date().toISOString(),
           },
         ];
+        const revisionUpdate = buildRevisionUpdate(current || {}, {
+          actor: currentActorName(),
+          reason: note.trim(),
+          stage: "Asignación",
+          note: note.trim()
+        });
         return updateRequest(id, {
+          ...revisionUpdate,
           status: "rebotada",
           rejectionNote: note.trim(),
           rejectedAt: new Date().toISOString(),
-          assignedTo: "",
-          assignedArea: "",
           internalNotes: note.trim(),
           comments,
         });

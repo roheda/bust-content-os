@@ -32,6 +32,8 @@ const emptyRule: OperationalContentRule = {
   internalCost: 0,
   productionCost: 0,
   editingHours: 0,
+  revisionCostMultiplier: 0.25,
+  revisionHoursMultiplier: 0.25,
   deliveryDays: 3,
   bufferHours: 4,
   requiresProductionDefault: false,
@@ -46,6 +48,8 @@ const emptyOverride: ClientOperationalOverride = {
   internalCost: undefined,
   productionCost: undefined,
   editingHours: undefined,
+  revisionCostMultiplier: undefined,
+  revisionHoursMultiplier: undefined,
   deliveryDays: undefined,
   bufferHours: undefined,
   notes: "",
@@ -125,6 +129,8 @@ export default function ConfiguracionPage(){
         internalCost: Number(ruleForm.internalCost||0),
         productionCost: Number(ruleForm.productionCost||0),
         editingHours: Number(ruleForm.editingHours||0),
+        revisionCostMultiplier: Number(ruleForm.revisionCostMultiplier ?? 0.25),
+        revisionHoursMultiplier: Number(ruleForm.revisionHoursMultiplier ?? 0.25),
         deliveryDays: Number(ruleForm.deliveryDays||0),
         bufferHours: Number(ruleForm.bufferHours||0),
         active: ruleForm.active !== false
@@ -150,6 +156,8 @@ export default function ConfiguracionPage(){
         internalCost: toOptionalNumber(overrideForm.internalCost),
         productionCost: toOptionalNumber(overrideForm.productionCost),
         editingHours: toOptionalNumber(overrideForm.editingHours),
+        revisionCostMultiplier: toOptionalRatio(overrideForm.revisionCostMultiplier),
+        revisionHoursMultiplier: toOptionalRatio(overrideForm.revisionHoursMultiplier),
         deliveryDays: toOptionalNumber(overrideForm.deliveryDays),
         bufferHours: toOptionalNumber(overrideForm.bufferHours),
         active: overrideForm.active !== false
@@ -264,6 +272,8 @@ export default function ConfiguracionPage(){
             <div className="field"><label>Costo interno por pieza</label><input type="number" value={ruleForm.internalCost} onChange={e=>setRule("internalCost",Number(e.target.value))}/></div>
             <div className="field"><label>Costo producción</label><input type="number" value={ruleForm.productionCost} onChange={e=>setRule("productionCost",Number(e.target.value))}/></div>
             <div className="field"><label>Horas edición</label><input type="number" value={ruleForm.editingHours} onChange={e=>setRule("editingHours",Number(e.target.value))}/></div>
+            <div className="field"><label>Costo rebote (% pieza)</label><input type="number" min="0" step="5" value={Math.round(Number(ruleForm.revisionCostMultiplier ?? 0.25)*100)} onChange={e=>setRule("revisionCostMultiplier",Number(e.target.value)/100)}/></div>
+            <div className="field"><label>Tiempo rebote (% edición)</label><input type="number" min="0" step="5" value={Math.round(Number(ruleForm.revisionHoursMultiplier ?? 0.25)*100)} onChange={e=>setRule("revisionHoursMultiplier",Number(e.target.value)/100)}/></div>
             <div className="field"><label>Días mínimos entrega</label><input type="number" value={ruleForm.deliveryDays} onChange={e=>setRule("deliveryDays",Number(e.target.value))}/></div>
             <div className="field"><label>Buffer horas</label><input type="number" value={ruleForm.bufferHours} onChange={e=>setRule("bufferHours",Number(e.target.value))}/></div>
             <label className="check-row"><input type="checkbox" checked={ruleForm.requiresProductionDefault} onChange={e=>setRule("requiresProductionDefault",e.target.checked)}/> Requiere producción por default</label>
@@ -281,13 +291,14 @@ export default function ConfiguracionPage(){
           <h3>Reglas base por contenido</h3>
           <div className="table-wrap">
             <table className="table config-table">
-              <thead><tr><th>Contenido</th><th>Área</th><th>Costo</th><th>Producción</th><th>Tiempo</th><th>Acciones</th></tr></thead>
+              <thead><tr><th>Contenido</th><th>Área</th><th>Costo</th><th>Producción</th><th>Tiempo</th><th>Rebote</th><th>Acciones</th></tr></thead>
               <tbody>{rules.map(rule=><tr key={`${rule.id||"default"}-${rule.contentType}`}>
                 <td><strong>{rule.label||rule.contentType}</strong><br/><span className="mini">{rule.contentType} · {rule.active===false?"Inactiva":"Activa"}</span></td>
                 <td>{rule.area}</td>
                 <td>{money(rule.internalCost)}</td>
                 <td>{money(rule.productionCost)}</td>
                 <td>{rule.deliveryDays} días · {rule.editingHours} h edición</td>
+                <td>{percent(rule.revisionCostMultiplier ?? 0.25)} costo · {percent(rule.revisionHoursMultiplier ?? 0.25)} tiempo</td>
                 <td><button className="btn" onClick={()=>startRuleEdit(rule)} disabled={!canConfigure}>Editar</button><button className="btn red" onClick={()=>removeRule(rule)} disabled={!canConfigure}>Eliminar</button></td>
               </tr>)}</tbody>
             </table>
@@ -308,6 +319,8 @@ export default function ConfiguracionPage(){
             <OptionalNumber label="Costo pieza" value={overrideForm.internalCost} onChange={v=>setOverride("internalCost",v)}/>
             <OptionalNumber label="Costo producción" value={overrideForm.productionCost} onChange={v=>setOverride("productionCost",v)}/>
             <OptionalNumber label="Horas edición" value={overrideForm.editingHours} onChange={v=>setOverride("editingHours",v)}/>
+            <OptionalPercent label="Costo rebote %" value={overrideForm.revisionCostMultiplier} onChange={v=>setOverride("revisionCostMultiplier",v)}/>
+            <OptionalPercent label="Tiempo rebote %" value={overrideForm.revisionHoursMultiplier} onChange={v=>setOverride("revisionHoursMultiplier",v)}/>
             <OptionalNumber label="Días entrega" value={overrideForm.deliveryDays} onChange={v=>setOverride("deliveryDays",v)}/>
             <OptionalNumber label="Buffer horas" value={overrideForm.bufferHours} onChange={v=>setOverride("bufferHours",v)}/>
             <label className="check-row"><input type="checkbox" checked={overrideForm.active!==false} onChange={e=>setOverride("active",e.target.checked)}/> Activo</label>
@@ -325,7 +338,7 @@ export default function ConfiguracionPage(){
           <div className="draft-list">
             {visibleOverrides.map(item=><div className="draft-item" key={item.id}>
               <strong>{item.clientName} · {item.contentType}</strong>
-              <span className="mini">Costo: {item.internalCost==null?"Base":money(item.internalCost)} · Producción: {item.productionCost==null?"Base":money(item.productionCost)} · Tiempo: {item.deliveryDays==null?"Base":`${item.deliveryDays} días`}</span>
+              <span className="mini">Costo: {item.internalCost==null?"Base":money(item.internalCost)} · Producción: {item.productionCost==null?"Base":money(item.productionCost)} · Tiempo: {item.deliveryDays==null?"Base":`${item.deliveryDays} días`} · Rebote: {item.revisionCostMultiplier==null?"Base":percent(item.revisionCostMultiplier)}</span>
               <div className="config-actions"><button className="btn" onClick={()=>startOverrideEdit(item)} disabled={!canConfigure}>Editar</button><button className="btn red" onClick={()=>removeOverride(item)} disabled={!canConfigure}>Eliminar</button></div>
             </div>)}
             {!visibleOverrides.length && <p className="mini">Sin ajustes para este filtro.</p>}
@@ -362,6 +375,7 @@ export default function ConfiguracionPage(){
             <li>La fecha al cliente no es la fecha de tarea; Tareas usa fecha programada e interna.</li>
             <li>Si una tarea no se cierra, se arrastra al siguiente día y consume una pieza de capacidad del siguiente día.</li>
             <li>Los semáforos aparecen cuando una persona supera su capacidad diaria.</li>
+            <li>Cada rebote incrementa costo y tiempo según el porcentaje configurado por tipo de contenido o cliente.</li>
           </ul>
         </div>
       </aside>
@@ -373,12 +387,26 @@ function OptionalNumber({label,value,onChange}:{label:string;value?:number;onCha
   return <div className="field"><label>{label}</label><input type="number" value={value ?? ""} onChange={e=>onChange(e.target.value === "" ? undefined : Number(e.target.value))} placeholder="Base"/></div>;
 }
 
+function OptionalPercent({label,value,onChange}:{label:string;value?:number;onChange:(value:number|undefined)=>void}){
+  return <div className="field"><label>{label}</label><input type="number" min="0" step="5" value={value == null ? "" : Math.round(Number(value)*100)} onChange={e=>onChange(e.target.value === "" ? undefined : Number(e.target.value)/100)} placeholder="Base"/></div>;
+}
+
 function Metric({label,value}:{label:string;value:string|number}){
   return <div className="kpi"><span>{label}</span><strong>{value}</strong></div>;
 }
 
 function money(value?:number){
   return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(Number(value||0));
+}
+
+function percent(value?:number){
+  return `${Math.round(Number(value ?? 0)*100)}%`;
+}
+
+function toOptionalRatio(value:any){
+  if(value === "" || value === undefined || value === null)return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
 }
 
 function toOptionalNumber(value:any){

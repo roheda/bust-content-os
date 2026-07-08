@@ -28,6 +28,7 @@ export const requestStates = [
   "asignada",
   "en_ejecucion",
   "en_revision",
+  "rebotada",
   "lista_programar",
   "programada",
   "publicada",
@@ -336,6 +337,17 @@ export type TaskComment = {
   resolvedBy?: string;
 };
 
+export type RevisionEvent = {
+  id: string;
+  at: string;
+  by: string;
+  person: string;
+  area: string;
+  reason: string;
+  stage: string;
+  note?: string;
+};
+
 export type ReferenceFile = {
   name: string;
   url: string;
@@ -445,6 +457,9 @@ export type ClientBillingBalance = {
   extraProductionRate: number;
   extraProductionCharge: number;
   productionCostConsumed: number;
+  revisionCount: number;
+  revisionCost: number;
+  revisionHours: number;
   includedProductionBudget: number;
   billableProductionBudgetOverage: number;
   aiGenerations: number;
@@ -568,6 +583,15 @@ export type ContentRequest = {
   rejectionNote?: string;
   rejectedAt?: string;
   comments?: TaskComment[];
+  revisionCount?: number;
+  revisionHistory?: RevisionEvent[];
+  revisionCost?: number;
+  revisionHours?: number;
+  lastRevisionAt?: string;
+  lastRevisionBy?: string;
+  lastRevisionPerson?: string;
+  lastRevisionArea?: string;
+  lastRevisionReason?: string;
   productionId?: string;
   productionName?: string;
 
@@ -643,6 +667,8 @@ export type OperationalContentRule = {
   internalCost: number;
   productionCost: number;
   editingHours: number;
+  revisionCostMultiplier?: number;
+  revisionHoursMultiplier?: number;
   deliveryDays: number;
   bufferHours: number;
   requiresProductionDefault: boolean;
@@ -658,6 +684,8 @@ export type ClientOperationalOverride = {
   internalCost?: number;
   productionCost?: number;
   editingHours?: number;
+  revisionCostMultiplier?: number;
+  revisionHoursMultiplier?: number;
   deliveryDays?: number;
   bufferHours?: number;
   notes?: string;
@@ -678,7 +706,14 @@ export type OperationalPlan = {
   internalCost: number;
   productionCost: number;
   totalCost: number;
+  baseCost?: number;
+  revisionCost?: number;
+  revisionCount?: number;
   editingHours: number;
+  baseEditingHours?: number;
+  revisionHours?: number;
+  revisionCostMultiplier?: number;
+  revisionHoursMultiplier?: number;
   deliveryDays: number;
   bufferHours: number;
   operationalWeight: number; // peso legacy; ahora se mantiene en 1 pieza
@@ -688,6 +723,8 @@ export type OperationalPlan = {
 };
 
 export const defaultDailyCapacityUnits = 5; // piezas por día
+export const defaultRevisionCostMultiplier = 0.25; // cada rebote suma 25% del costo configurado de la pieza
+export const defaultRevisionHoursMultiplier = 0.25; // cada rebote suma 25% del tiempo de edición configurado
 
 export const defaultTeamDailyCapacities: TeamDailyCapacity[] = organizationTeam
   .filter((member) => ["Diseño", "Audiovisual"].includes(member.area))
@@ -700,15 +737,15 @@ export const defaultTeamDailyCapacities: TeamDailyCapacity[] = organizationTeam
   }));
 
 export const defaultOperationalRules: OperationalContentRule[] = [
-  { contentType: "Reel", label: "Post Reel", area: "Audiovisual", internalCost: 1500, productionCost: 0, editingHours: 6, deliveryDays: 4, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Edición corta vertical con copy y entrega para redes." },
-  { contentType: "TikTok", label: "TikTok / Short", area: "Audiovisual", internalCost: 1300, productionCost: 0, editingHours: 5, deliveryDays: 3, bufferHours: 6, requiresProductionDefault: false, active: true, notes: "Pieza vertical rápida con ritmo dinámico." },
-  { contentType: "Carrusel", label: "Carrusel", area: "Diseño", internalCost: 1200, productionCost: 0, editingHours: 4, deliveryDays: 3, bufferHours: 6, requiresProductionDefault: false, active: true, notes: "Diseño multipágina con copy in listo." },
-  { contentType: "Post", label: "Post estático", area: "Diseño", internalCost: 750, productionCost: 0, editingHours: 2, deliveryDays: 2, bufferHours: 4, requiresProductionDefault: false, active: true, notes: "Diseño simple de feed." },
-  { contentType: "Story", label: "Story", area: "Diseño", internalCost: 450, productionCost: 0, editingHours: 1, deliveryDays: 1, bufferHours: 2, requiresProductionDefault: false, active: true, notes: "Story con adaptación rápida." },
-  { contentType: "Foto", label: "Foto / selección", area: "Audiovisual", internalCost: 650, productionCost: 0, editingHours: 2, deliveryDays: 2, bufferHours: 4, requiresProductionDefault: false, active: true, notes: "Edición, selección o adaptación de foto." },
-  { contentType: "Diseño", label: "Diseño especial", area: "Diseño", internalCost: 1500, productionCost: 0, editingHours: 5, deliveryDays: 4, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Pieza gráfica con mayor carga visual." },
-  { contentType: "Blog", label: "Blog / artículo", area: "Copy", internalCost: 1800, productionCost: 0, editingHours: 5, deliveryDays: 5, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Copy largo con estructura editorial." },
-  { contentType: "Producción", label: "Producción base", area: "Audiovisual", internalCost: 0, productionCost: 4000, editingHours: 0, deliveryDays: 7, bufferHours: 24, requiresProductionDefault: true, active: true, notes: "Costo base de producción interna o coordinación." }
+  { contentType: "Reel", label: "Post Reel", area: "Audiovisual", internalCost: 1500, productionCost: 0, editingHours: 6, revisionCostMultiplier: defaultRevisionCostMultiplier, revisionHoursMultiplier: defaultRevisionHoursMultiplier, deliveryDays: 4, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Edición corta vertical con copy y entrega para redes." },
+  { contentType: "TikTok", label: "TikTok / Short", area: "Audiovisual", internalCost: 1300, productionCost: 0, editingHours: 5, revisionCostMultiplier: defaultRevisionCostMultiplier, revisionHoursMultiplier: defaultRevisionHoursMultiplier, deliveryDays: 3, bufferHours: 6, requiresProductionDefault: false, active: true, notes: "Pieza vertical rápida con ritmo dinámico." },
+  { contentType: "Carrusel", label: "Carrusel", area: "Diseño", internalCost: 1200, productionCost: 0, editingHours: 4, revisionCostMultiplier: defaultRevisionCostMultiplier, revisionHoursMultiplier: defaultRevisionHoursMultiplier, deliveryDays: 3, bufferHours: 6, requiresProductionDefault: false, active: true, notes: "Diseño multipágina con copy in listo." },
+  { contentType: "Post", label: "Post estático", area: "Diseño", internalCost: 750, productionCost: 0, editingHours: 2, revisionCostMultiplier: defaultRevisionCostMultiplier, revisionHoursMultiplier: defaultRevisionHoursMultiplier, deliveryDays: 2, bufferHours: 4, requiresProductionDefault: false, active: true, notes: "Diseño simple de feed." },
+  { contentType: "Story", label: "Story", area: "Diseño", internalCost: 450, productionCost: 0, editingHours: 1, revisionCostMultiplier: defaultRevisionCostMultiplier, revisionHoursMultiplier: defaultRevisionHoursMultiplier, deliveryDays: 1, bufferHours: 2, requiresProductionDefault: false, active: true, notes: "Story con adaptación rápida." },
+  { contentType: "Foto", label: "Foto / selección", area: "Audiovisual", internalCost: 650, productionCost: 0, editingHours: 2, revisionCostMultiplier: defaultRevisionCostMultiplier, revisionHoursMultiplier: defaultRevisionHoursMultiplier, deliveryDays: 2, bufferHours: 4, requiresProductionDefault: false, active: true, notes: "Edición, selección o adaptación de foto." },
+  { contentType: "Diseño", label: "Diseño especial", area: "Diseño", internalCost: 1500, productionCost: 0, editingHours: 5, revisionCostMultiplier: defaultRevisionCostMultiplier, revisionHoursMultiplier: defaultRevisionHoursMultiplier, deliveryDays: 4, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Pieza gráfica con mayor carga visual." },
+  { contentType: "Blog", label: "Blog / artículo", area: "Copy", internalCost: 1800, productionCost: 0, editingHours: 5, revisionCostMultiplier: defaultRevisionCostMultiplier, revisionHoursMultiplier: defaultRevisionHoursMultiplier, deliveryDays: 5, bufferHours: 8, requiresProductionDefault: false, active: true, notes: "Copy largo con estructura editorial." },
+  { contentType: "Producción", label: "Producción base", area: "Audiovisual", internalCost: 0, productionCost: 4000, editingHours: 0, revisionCostMultiplier: defaultRevisionCostMultiplier, revisionHoursMultiplier: defaultRevisionHoursMultiplier, deliveryDays: 7, bufferHours: 24, requiresProductionDefault: true, active: true, notes: "Costo base de producción interna o coordinación." }
 ];
 
 export function mergeOperationalRule(
@@ -728,8 +765,24 @@ export function mergeOperationalRule(
     editingHours: override?.editingHours ?? base.editingHours,
     deliveryDays: override?.deliveryDays ?? base.deliveryDays,
     bufferHours: override?.bufferHours ?? base.bufferHours,
+    revisionCostMultiplier: override?.revisionCostMultiplier ?? base.revisionCostMultiplier ?? defaultRevisionCostMultiplier,
+    revisionHoursMultiplier: override?.revisionHoursMultiplier ?? base.revisionHoursMultiplier ?? defaultRevisionHoursMultiplier,
     notes: override?.notes || base.notes
   };
+}
+
+export function getRevisionCount(item: Partial<ContentRequest>) {
+  const explicit = Number(item.revisionCount || 0);
+  const history = Number(item.revisionHistory?.length || 0);
+  const legacy = (item.comments || []).filter((comment) => {
+    const body = String(comment.body || "").toLowerCase();
+    return body.includes("devuelta") || body.includes("rebotada") || body.includes("rechazada");
+  }).length;
+  return Math.max(explicit, history, legacy, 0);
+}
+
+function roundOne(value: number) {
+  return Math.round(Number(value || 0) * 10) / 10;
 }
 
 export function estimateRequestCost(
@@ -738,15 +791,69 @@ export function estimateRequestCost(
   overrides: ClientOperationalOverride[] = []
 ) {
   const rule = mergeOperationalRule(item.contentType || "Post", rules, overrides, item.clientId);
-  const productionCost = item.requiresProduction ? rule.productionCost : 0;
+  const internalCost = Number(rule.internalCost || 0);
+  const productionCost = item.requiresProduction ? Number(rule.productionCost || 0) : 0;
+  const baseCost = internalCost + productionCost;
+  const baseEditingHours = Number(rule.editingHours || 0);
+  const revisionCount = getRevisionCount(item);
+  const revisionCostMultiplier = Number(rule.revisionCostMultiplier ?? defaultRevisionCostMultiplier);
+  const revisionHoursMultiplier = Number(rule.revisionHoursMultiplier ?? defaultRevisionHoursMultiplier);
+  const revisionCost = Math.round(revisionCount * baseCost * revisionCostMultiplier);
+  const revisionHours = roundOne(revisionCount * baseEditingHours * revisionHoursMultiplier);
   return {
     rule,
-    internalCost: Number(rule.internalCost || 0),
-    productionCost: Number(productionCost || 0),
-    totalCost: Number(rule.internalCost || 0) + Number(productionCost || 0),
-    editingHours: Number(rule.editingHours || 0),
+    internalCost,
+    productionCost,
+    baseCost,
+    revisionCount,
+    revisionCostMultiplier,
+    revisionHoursMultiplier,
+    revisionCost,
+    totalCost: baseCost + revisionCost,
+    baseEditingHours,
+    revisionHours,
+    editingHours: roundOne(baseEditingHours + revisionHours),
     deliveryDays: Number(rule.deliveryDays || 0),
     bufferHours: Number(rule.bufferHours || 0)
+  };
+}
+
+export function buildRevisionUpdate(
+  item: Partial<ContentRequest>,
+  options: { actor: string; reason: string; stage: string; note?: string }
+) {
+  const at = new Date().toISOString();
+  const today = todayDateKey();
+  const previousDate = item.plannedWorkDate || item.dueDate || item.internalDueDate || item.batchDueDate || item.publishDate || "";
+  const person = item.assignedTo || "Sin responsable";
+  const area = item.assignedArea || item.suggestedArea || "Sin área";
+  const history = [...(item.revisionHistory || [])];
+  const nextCount = Math.max(getRevisionCount(item), history.length) + 1;
+  history.push({
+    id: `${Date.now()}-${nextCount}`,
+    at,
+    by: options.actor || "Sistema",
+    person,
+    area,
+    reason: options.reason || "Sin motivo",
+    stage: options.stage || "Revisión",
+    note: options.note || ""
+  });
+  return {
+    revisionCount: nextCount,
+    revisionHistory: history,
+    lastRevisionAt: at,
+    lastRevisionBy: options.actor || "Sistema",
+    lastRevisionPerson: person,
+    lastRevisionArea: area,
+    lastRevisionReason: options.reason || "Sin motivo",
+    plannedWorkDate: today,
+    dueDate: today,
+    internalDueDate: today,
+    priority: item.priority === "Urgente" ? "Urgente" : "Alta",
+    carriedOver: true,
+    carriedOverFromDate: previousDate,
+    carriedOverDays: previousDate ? Math.max(0, businessDaysBetween(previousDate, today)) : 0
   };
 }
 
@@ -958,6 +1065,15 @@ export const emptyRequest: ContentRequest = {
   deletedAt: "",
   deletedReason: "",
   comments: [],
+  revisionCount: 0,
+  revisionHistory: [],
+  revisionCost: 0,
+  revisionHours: 0,
+  lastRevisionAt: "",
+  lastRevisionBy: "",
+  lastRevisionPerson: "",
+  lastRevisionArea: "",
+  lastRevisionReason: "",
   clientDueDate: "",
   internalDueDate: "",
   plannedWorkDate: "",
@@ -1669,6 +1785,13 @@ export function calculateClientBillingBalance(args: {
   const clientProductions = productions.filter((item) => item.clientId === client.id && (!month || (item.scheduledDate || "").slice(0, 7) === month));
   const productionCount = Math.max(productionRequests.length, clientProductions.length);
   const productionCostConsumed = productionRequests.reduce((sum, item) => sum + estimateRequestCost(item, rules, overrides).productionCost, 0);
+  const revisionSummary = clientRequests.reduce((acc, item) => {
+    const cost = estimateRequestCost(item, rules, overrides);
+    acc.count += cost.revisionCount;
+    acc.cost += cost.revisionCost;
+    acc.hours += cost.revisionHours;
+    return acc;
+  }, { count: 0, cost: 0, hours: 0 });
   const aiGenerations = generatedImages.filter((item) => item.clientId === client.id && (!month || getRecordMonth(item.generatedAt || item.createdAt || item.updatedAt) === month)).length;
 
   const billableExtraContents = Math.max(0, finalized.length - Number(config.includedFinalizedContents || 0));
@@ -1698,6 +1821,9 @@ export function calculateClientBillingBalance(args: {
     extraProductionRate: Number(config.extraProductionRate || 0),
     extraProductionCharge,
     productionCostConsumed,
+    revisionCount: revisionSummary.count,
+    revisionCost: revisionSummary.cost,
+    revisionHours: revisionSummary.hours,
     includedProductionBudget: Number(config.includedProductionBudget || 0),
     billableProductionBudgetOverage,
     aiGenerations,

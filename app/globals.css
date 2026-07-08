@@ -2489,6 +2489,8 @@ a[class*="bg-black"],
 .daily-task-card.compact{grid-template-columns:1fr auto;padding:12px;border-radius:18px}
 .daily-task-card.carried{border-color:rgba(249,115,22,.34);background:linear-gradient(180deg,rgba(255,247,237,.96),rgba(255,255,255,.9))}
 .daily-task-card.overdue{border-color:rgba(220,38,38,.28);background:linear-gradient(180deg,rgba(254,242,242,.96),rgba(255,255,255,.9))}
+.daily-task-card.rejected,.list-task-card.rejected{border-color:rgba(220,38,38,.42)!important;background:linear-gradient(180deg,rgba(254,226,226,.98),rgba(255,247,237,.92))!important;box-shadow:0 16px 36px rgba(220,38,38,.12)!important}
+.daily-task-card.rejected .daily-task-dates b{color:#b42318}
 .daily-task-dates{text-align:right;white-space:nowrap}
 .daily-task-dates b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#344054}
 .daily-task-dates span{font-weight:900;color:#111827}

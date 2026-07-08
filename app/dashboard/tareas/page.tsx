@@ -13,6 +13,7 @@ import {
   TaskComment,
   TeamDailyCapacity,
   businessDaysBetween,
+  buildRevisionUpdate,
   getCapacityForPerson,
   getCapacityTone,
   getEffectiveWorkDate,
@@ -363,8 +364,11 @@ export default function TasksPage() {
       createdAt: new Date().toISOString(),
     };
     const comments = [...(selected.comments || []), nextLog];
-    await updateRequest(selected.id, { status, comments });
-    const updated = { ...selected, status, comments };
+    const revisionUpdate = status === "rebotada"
+      ? buildRevisionUpdate(selected, { actor: currentActorName(), reason: "Cambio manual a rebotada", stage: "Tareas" })
+      : {};
+    await updateRequest(selected.id, { ...revisionUpdate, status, comments });
+    const updated = { ...selected, ...revisionUpdate, status, comments };
     setSelected(updated);
     await load();
   }
@@ -1491,9 +1495,10 @@ function DailyTaskCard({
 }) {
   const carried = isCarriedTask(task);
   const overdue = isOverdue(task);
+  const rejected = task.status === "rebotada";
   return (
     <button
-      className={`daily-task-card ${compact ? "compact" : ""} ${carried ? "carried" : ""} ${overdue ? "overdue" : ""}`}
+      className={`daily-task-card ${compact ? "compact" : ""} ${carried ? "carried" : ""} ${overdue ? "overdue" : ""} ${rejected ? "rejected" : ""}`}
       onClick={() => onOpen(task)}
     >
       <div>
@@ -1506,7 +1511,7 @@ function DailyTaskCard({
         </span>
       </div>
       <div className="daily-task-dates">
-        <b>{carried ? "Arrastrada" : overdue ? "Vencida" : "Trabajar"}</b>
+        <b>{rejected ? "Rebotada" : carried ? "Arrastrada" : overdue ? "Vencida" : "Trabajar"}</b>
         <span>{getTaskDate(task) || "Sin fecha"}</span>
       </div>
       {!compact && (
@@ -1662,7 +1667,7 @@ function ListView({
         .sort((a, b) => getTaskDate(a).localeCompare(getTaskDate(b)))
         .map((task) => (
           <button
-            className={`list-task-card ${isOverdue(task) ? "task-chip overdue" : ""}`}
+            className={`list-task-card ${isOverdue(task) ? "task-chip overdue" : ""} ${task.status === "rebotada" ? "rejected" : ""}`}
             key={task.id}
             onClick={() => onOpen(task)}
           >

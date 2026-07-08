@@ -6,6 +6,7 @@ import { auth } from "@/lib/firebase";
 import {
   ContentRequest,
   TaskComment,
+  buildRevisionUpdate,
   listRequests,
   subscribeRequests,
   updateRequest,
@@ -300,7 +301,14 @@ export default function ApprovalsPage() {
       status: "open",
       createdAt: new Date().toISOString(),
     };
+    const revisionUpdate = buildRevisionUpdate(item, {
+      actor: currentActorName(),
+      reason,
+      stage: selectedStage === "kam" ? "Aprobación KAM" : "Aprobación Content",
+      note: notes
+    });
     await updateRequest(item.id, {
+      ...revisionUpdate,
       status: "rebotada",
       approvalStatus: "rechazada",
       approvalRejectionReason: reason,
