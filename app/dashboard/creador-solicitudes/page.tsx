@@ -13,12 +13,15 @@ import {
   ContentRequest,
   OperationalContentRule,
   TeamDailyCapacity,
+  CleanupRetentionSettings,
   PlannerDraft,
   RequestBatch,
   ReferenceFile,
   areas,
   contentTypes,
+  defaultCleanupRetentionSettings,
   emptyRequest,
+  getCleanupRetentionSettings,
   getRequestDate,
   hasMaterial,
   isImageFile,
@@ -38,6 +41,7 @@ import {
   listTeamDailyCapacities,
   listRequestBatches,
   listRequests,
+  markRequestBatchDeleted,
   objectives,
   savePlannerDraft,
   saveRequestBatch,
@@ -57,6 +61,8 @@ export default function CreatorPage() {
     ClientOperationalOverride[]
   >([]);
   const [teamCapacities, setTeamCapacities] = useState<TeamDailyCapacity[]>([]);
+  const [cleanupSettings, setCleanupSettings] = useState<CleanupRetentionSettings>(defaultCleanupRetentionSettings);
+  const [showFullReuseHistory, setShowFullReuseHistory] = useState(false);
   const [forceReason, setForceReason] = useState("");
   const [forceNotes, setForceNotes] = useState("");
   const [currentDraftId, setCurrentDraftId] = useState("");
@@ -105,6 +111,7 @@ export default function CreatorPage() {
       loadedRules,
       loadedOverrides,
       loadedCapacities,
+      loadedCleanupSettings,
     ] = await Promise.all([
       listUniqueBrands(),
       listRequests(),
@@ -113,6 +120,7 @@ export default function CreatorPage() {
       listOperationalContentRules(),
       listClientOperationalOverrides(),
       listTeamDailyCapacities(),
+      getCleanupRetentionSettings(),
     ]);
     setBrands(loadedBrands);
     setRequests(loadedRequests);
@@ -121,6 +129,7 @@ export default function CreatorPage() {
     setCostRules(loadedRules);
     setClientOverrides(loadedOverrides);
     setTeamCapacities(loadedCapacities);
+    setCleanupSettings(loadedCleanupSettings);
     if (!clientId && loadedBrands[0]?.id) {
       setClientId(loadedBrands[0].id);
       if (!draftName)
@@ -1354,6 +1363,43 @@ export default function CreatorPage() {
     setExpandedItemIndex((current) => (current === index ? null : index));
   }
 
+  const activeBatchIds = useMemo(() => {
+    return new Set(
+      requests
+        .filter((request) => request.status !== "eliminada")
+        .map((request) => request.batchId)
+        .filter(Boolean) as string[],
+    );
+  }, [requests]);
+
+  const reusableBatches = useMemo(() => {
+    const base = batches.filter((batch) => {
+      if (client?.id && batch.clientId !== client.id) return false;
+      if (["eliminada", "deleted", "archived"].includes(String(batch.status || ""))) return false;
+      if (cleanupSettings.hideDeletedByDefault !== false && batch.id && !activeBatchIds.has(batch.id)) return false;
+      return true;
+    });
+    const limit = Math.max(1, Number(cleanupSettings.reuseBatchLimit || 5));
+    return showFullReuseHistory ? base : base.slice(0, limit);
+  }, [batches, client?.id, cleanupSettings.hideDeletedByDefault, cleanupSettings.reuseBatchLimit, activeBatchIds, showFullReuseHistory]);
+
+  const totalReusableBatches = useMemo(() => batches.filter((batch) => {
+    if (client?.id && batch.clientId !== client.id) return false;
+    if (["eliminada", "deleted", "archived"].includes(String(batch.status || ""))) return false;
+    if (cleanupSettings.hideDeletedByDefault !== false && batch.id && !activeBatchIds.has(batch.id)) return false;
+    return true;
+  }).length, [batches, client?.id, cleanupSettings.hideDeletedByDefault, activeBatchIds]);
+
+  async function hideReusableBatch(batch: RequestBatch) {
+    if (!canDeleteDrafts) return permissionAlert("eliminar lote de reuso");
+    if (!batch.id) return;
+    const ok = window.confirm(`¿Ocultar/eliminar el lote "${batch.name}" de Lotes realizados para reusar? Sus solicitudes operativas no se borran con esta acción.`);
+    if (!ok) return;
+    await markRequestBatchDeleted(batch.id, "Oculto desde Lotes realizados para reusar");
+    await load();
+    showFeedback("Lote eliminado de la lista de reuso.");
+  }
+
   return (
     <AppShell active="Creador de Solicitudes">
       <div className="page-title">
@@ -2166,29 +2212,33 @@ export default function CreatorPage() {
           <div className="card">
             <h3>Lotes realizados para reusar</h3>
             <div className="batch-reuse-grid">
-              {batches
-                .filter((batch) =>
-                  client?.id ? batch.clientId === client.id : true,
-                )
-                .slice(0, 8)
-                .map((batch) => (
-                  <div className="batch-reuse-card" key={batch.id}>
-                    <strong>{batch.name}</strong>
-                    <span className="mini">
-                      {batch.clientName} · Límite anterior:{" "}
-                      {batch.batchDueDate || "Sin fecha"} ·{" "}
-                      {batch.totalRequests || 0} solicitudes
-                    </span>
+              {reusableBatches.map((batch) => (
+                <div className="batch-reuse-card" key={batch.id}>
+                  <strong>{batch.name}</strong>
+                  <span className="mini">
+                    {batch.clientName} · Límite anterior:{" "}
+                    {batch.batchDueDate || "Sin fecha"} ·{" "}
+                    {batch.totalRequests || 0} solicitudes
+                  </span>
+                  <div className="draft-actions">
                     <button className="btn" onClick={() => reuseBatch(batch)}>
                       Reusar lote
                     </button>
+                    <button className="btn red" onClick={() => hideReusableBatch(batch)} disabled={!canDeleteDrafts}>
+                      Eliminar de reuso
+                    </button>
                   </div>
-                ))}
-              {!batches.length && (
+                </div>
+              ))}
+              {!reusableBatches.length && (
                 <p className="mini">
-                  Cuando envíes lotes a Asignación aparecerán aquí para
-                  reutilizarlos.
+                  No hay lotes recientes disponibles para reusar. Si tienes historial, activa “Ver historial completo”.
                 </p>
+              )}
+              {totalReusableBatches > Math.max(1, Number(cleanupSettings.reuseBatchLimit || 5)) && (
+                <button className="btn" onClick={() => setShowFullReuseHistory((value) => !value)}>
+                  {showFullReuseHistory ? "Mostrar solo recientes" : "Ver historial completo"}
+                </button>
               )}
             </div>
           </div>

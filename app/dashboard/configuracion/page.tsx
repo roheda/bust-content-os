@@ -7,16 +7,22 @@ import {
   ClientOperationalOverride,
   OperationalContentRule,
   TeamDailyCapacity,
+  CleanupRetentionSettings,
+  defaultCleanupRetentionSettings,
   areas,
   contentTypes,
   defaultOperationalRules,
   deleteClientOperationalOverride,
   deleteOperationalContentRule,
   deleteTeamDailyCapacity,
+  getCleanupRetentionSettings,
   listClientOperationalOverrides,
   listOperationalContentRules,
   listTeamDailyCapacities,
   listUniqueBrands,
+  purgeDeletedRequestBatchesOlderThan,
+  purgeDeletedRequestsOlderThan,
+  saveCleanupRetentionSettings,
   saveClientOperationalOverride,
   saveOperationalContentRule,
   saveTeamDailyCapacity,
@@ -69,6 +75,8 @@ export default function ConfiguracionPage(){
   const [overrides,setOverrides]=useState<ClientOperationalOverride[]>([]);
   const [brands,setBrands]=useState<Brand[]>([]);
   const [capacities,setCapacities]=useState<TeamDailyCapacity[]>([]);
+  const [cleanupSettings,setCleanupSettings]=useState<CleanupRetentionSettings>(defaultCleanupRetentionSettings);
+  const [cleanupBusy,setCleanupBusy]=useState(false);
   const [ruleForm,setRuleForm]=useState<OperationalContentRule>(emptyRule);
   const [overrideForm,setOverrideForm]=useState<ClientOperationalOverride>(emptyOverride);
   const [editingRuleId,setEditingRuleId]=useState("");
@@ -81,16 +89,18 @@ export default function ConfiguracionPage(){
   const canConfigure = permissions.canConfigure;
 
   async function load(){
-    const [loadedRules,loadedOverrides,loadedBrands,loadedCapacities] = await Promise.all([
+    const [loadedRules,loadedOverrides,loadedBrands,loadedCapacities,loadedCleanupSettings] = await Promise.all([
       listOperationalContentRules(),
       listClientOperationalOverrides(),
       listUniqueBrands(),
-      listTeamDailyCapacities()
+      listTeamDailyCapacities(),
+      getCleanupRetentionSettings()
     ]);
     setRules(loadedRules);
     setOverrides(loadedOverrides);
     setBrands(loadedBrands);
     setCapacities(loadedCapacities);
+    setCleanupSettings(loadedCleanupSettings);
     if(!overrideForm.clientId && loadedBrands[0]?.id){
       setOverrideForm({...overrideForm,clientId:loadedBrands[0].id,clientName:loadedBrands[0].name});
     }
@@ -105,6 +115,7 @@ export default function ConfiguracionPage(){
   function setRule(k:keyof OperationalContentRule, v:any){setRuleForm({...ruleForm,[k]:v});}
   function setOverride(k:keyof ClientOperationalOverride, v:any){setOverrideForm({...overrideForm,[k]:v});}
   function setCapacity(k:keyof TeamDailyCapacity, v:any){setCapacityForm({...capacityForm,[k]:v});}
+  function setCleanup(k:keyof CleanupRetentionSettings, v:any){setCleanupSettings({...cleanupSettings,[k]:v});}
 
   function startRuleEdit(rule:OperationalContentRule){
     setEditingRuleId(rule.id||"");
@@ -240,6 +251,36 @@ export default function ConfiguracionPage(){
     setCapacityForm(emptyCapacity);
   }
 
+  async function saveCleanupSettings(){
+    if(!canConfigure)return permissionAlert("guardar reglas de limpieza");
+    setCleanupBusy(true);
+    try{
+      await saveCleanupRetentionSettings({
+        ...cleanupSettings,
+        reuseBatchLimit: Math.max(1, Number(cleanupSettings.reuseBatchLimit || 5)),
+        deletedRetentionDays: Math.max(1, Number(cleanupSettings.deletedRetentionDays || 60)),
+        hideDeletedByDefault: cleanupSettings.hideDeletedByDefault !== false,
+        enableAutoPurge: Boolean(cleanupSettings.enableAutoPurge)
+      });
+      await load();
+      alert("Configuración de limpieza guardada.");
+    }finally{setCleanupBusy(false)}
+  }
+
+  async function runRetentionCleanup(){
+    if(!canConfigure)return permissionAlert("borrar eliminados antiguos");
+    const days = Math.max(1, Number(cleanupSettings.deletedRetentionDays || 60));
+    if(!confirm(`Se borrarán definitivamente solicitudes y lotes eliminados con más de ${days} días. Esta acción no se puede deshacer. ¿Continuar?`))return;
+    setCleanupBusy(true);
+    try{
+      const [requestsDeleted,batchesDeleted] = await Promise.all([
+        purgeDeletedRequestsOlderThan(days),
+        purgeDeletedRequestBatchesOlderThan(days)
+      ]);
+      alert(`Limpieza terminada. Solicitudes borradas: ${requestsDeleted}. Lotes borrados: ${batchesDeleted}.`);
+    }finally{setCleanupBusy(false)}
+  }
+
   return <AppShell active="Configuración">
     <section className="hero">
       <div>
@@ -338,6 +379,28 @@ export default function ConfiguracionPage(){
               <div className="config-actions"><button className="btn" onClick={()=>startCapacityEdit(item)} disabled={!canConfigure}>Editar</button><button className="btn red" onClick={()=>removeCapacity(item)} disabled={!canConfigure}>Eliminar</button></div>
             </div>)}
           </div>
+        </div>
+
+        <div className="card">
+          <h3>Limpieza y retención</h3>
+          <p className="mini">Mantiene limpio el sistema sin perder historial operativo por accidente.</p>
+          <div className="form-grid" style={{marginTop:14}}>
+            <div className="field">
+              <label>Últimos lotes para reusar</label>
+              <input type="number" min="1" value={cleanupSettings.reuseBatchLimit} onChange={e=>setCleanup("reuseBatchLimit",Number(e.target.value))}/>
+            </div>
+            <div className="field">
+              <label>Conservar eliminados por días</label>
+              <input type="number" min="1" value={cleanupSettings.deletedRetentionDays} onChange={e=>setCleanup("deletedRetentionDays",Number(e.target.value))}/>
+            </div>
+            <label className="check-row"><input type="checkbox" checked={cleanupSettings.hideDeletedByDefault!==false} onChange={e=>setCleanup("hideDeletedByDefault",e.target.checked)}/> Ocultar eliminados por default</label>
+            <label className="check-row"><input type="checkbox" checked={Boolean(cleanupSettings.enableAutoPurge)} onChange={e=>setCleanup("enableAutoPurge",e.target.checked)}/> Preparar borrado automático por retención</label>
+          </div>
+          <div className="config-actions">
+            <button className="btn blue" onClick={saveCleanupSettings} disabled={!canConfigure || cleanupBusy}>{cleanupBusy?"Procesando...":"Guardar limpieza"}</button>
+            <button className="btn red" onClick={runRetentionCleanup} disabled={!canConfigure || cleanupBusy}>Borrar eliminados antiguos</button>
+          </div>
+          <p className="mini" style={{marginTop:12}}>La limpieza definitiva solo borra registros que ya estén marcados como eliminados y superen los días de retención.</p>
         </div>
 
         <div className="card">

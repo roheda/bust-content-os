@@ -636,6 +636,8 @@ export type RequestBatch = {
   totalRequests: number;
   status: string;
   batchDueDate: string;
+  deletedAt?: string;
+  deletedReason?: string;
 };
 
 export type Production = {
@@ -705,6 +707,21 @@ export type TeamDailyCapacity = {
   dailyCapacityUnits: number; // piezas máximas por día (nombre legacy para no romper datos existentes)
   active: boolean;
   notes?: string;
+};
+
+export type CleanupRetentionSettings = {
+  reuseBatchLimit: number;
+  deletedRetentionDays: number;
+  hideDeletedByDefault: boolean;
+  enableAutoPurge: boolean;
+  updatedAt?: unknown;
+};
+
+export const defaultCleanupRetentionSettings: CleanupRetentionSettings = {
+  reuseBatchLimit: 5,
+  deletedRetentionDays: 60,
+  hideDeletedByDefault: true,
+  enableAutoPurge: false
 };
 
 export type OperationalPlan = {
@@ -1398,6 +1415,70 @@ export async function listRequests() {
   const q = query(collection(db, "contentRequests"), orderBy("createdAt", "desc"));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ContentRequest));
+}
+
+export async function getCleanupRetentionSettings(): Promise<CleanupRetentionSettings> {
+  try {
+    const snap = await getDoc(doc(db, "systemSettings", "cleanupRetention"));
+    if (!snap.exists()) return defaultCleanupRetentionSettings;
+    return {
+      ...defaultCleanupRetentionSettings,
+      ...(snap.data() as Partial<CleanupRetentionSettings>)
+    };
+  } catch (error) {
+    console.warn("No se pudo cargar configuración de limpieza; usando defaults", error);
+    return defaultCleanupRetentionSettings;
+  }
+}
+
+export async function saveCleanupRetentionSettings(settings: CleanupRetentionSettings) {
+  return setDoc(doc(db, "systemSettings", "cleanupRetention"), {
+    ...settings,
+    reuseBatchLimit: Math.max(1, Number(settings.reuseBatchLimit || defaultCleanupRetentionSettings.reuseBatchLimit)),
+    deletedRetentionDays: Math.max(1, Number(settings.deletedRetentionDays || defaultCleanupRetentionSettings.deletedRetentionDays)),
+    hideDeletedByDefault: settings.hideDeletedByDefault !== false,
+    enableAutoPurge: Boolean(settings.enableAutoPurge),
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+function dateOlderThanDays(value: unknown, days: number) {
+  if (!value) return false;
+  const raw = typeof value === "string" ? value : (value as any)?.toDate ? (value as any).toDate().toISOString() : "";
+  const time = new Date(raw).getTime();
+  if (!Number.isFinite(time)) return false;
+  return time < Date.now() - Math.max(1, Number(days || 1)) * 24 * 60 * 60 * 1000;
+}
+
+export async function permanentlyDeleteRequest(id: string) {
+  return deleteDoc(doc(db, "contentRequests", id));
+}
+
+export async function purgeDeletedRequestsOlderThan(days: number) {
+  const items = await listRequests();
+  const victims = items.filter((item) => item.id && item.status === "eliminada" && dateOlderThanDays(item.deletedAt, days));
+  await Promise.all(victims.map((item) => deleteDoc(doc(db, "contentRequests", item.id!))));
+  return victims.length;
+}
+
+export async function markRequestBatchDeleted(id: string, reason = "Eliminado desde limpieza de sistema") {
+  return updateDoc(doc(db, "requestBatches", id), {
+    status: "eliminada",
+    deletedAt: new Date().toISOString(),
+    deletedReason: reason,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function permanentlyDeleteRequestBatch(id: string) {
+  return deleteDoc(doc(db, "requestBatches", id));
+}
+
+export async function purgeDeletedRequestBatchesOlderThan(days: number) {
+  const batches = await listRequestBatches();
+  const victims = batches.filter((item) => item.id && ["eliminada", "deleted", "archived"].includes(String(item.status || "")) && dateOlderThanDays(item.deletedAt, days));
+  await Promise.all(victims.map((item) => deleteDoc(doc(db, "requestBatches", item.id!))));
+  return victims.length;
 }
 
 export function subscribeRequests(onChange: (items: ContentRequest[]) => void, onError?: (error: unknown) => void) {

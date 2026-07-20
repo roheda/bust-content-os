@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "2.4.2-material-produccion-referencias",
+  "version": "2.4.3-limpieza-retencion-sistema",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -132,6 +132,11 @@ service cloud.firestore {
       allow create, update, delete: if hasPerm("configuracion", "configure");
     }
 
+    match /systemSettings/{settingId} {
+      allow read: if activeUser();
+      allow create, update, delete: if hasPerm("configuracion", "configure") || isMaster();
+    }
+
     match /generationRequests/{generationRequestId} {
       allow read: if activeUser();
       allow create, update: if hasPerm("generador", "generate") || hasPerm("generador", "edit");
