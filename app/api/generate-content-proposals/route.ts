@@ -42,6 +42,23 @@ function addDays(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
+function extractDateKey(value: string) {
+  const text = String(value || "");
+  const iso = text.match(/(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  const local = text.match(/(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})/);
+  if (local) return `${local[3]}-${local[2].padStart(2, "0")}-${local[1].padStart(2, "0")}`;
+  return "";
+}
+
+function importantDatesInsideWindow(values: string[], startDate: string, endDate: string) {
+  if (!startDate || !endDate) return [];
+  return values.filter((value) => {
+    const date = extractDateKey(value);
+    return Boolean(date && date >= startDate && date <= endDate);
+  });
+}
+
 function nextBusinessDate(date: string) {
   const d = new Date(`${date}T12:00:00`);
   if (Number.isNaN(d.getTime())) return "";
@@ -182,7 +199,9 @@ function normalizeProposal(raw: any, fallback: Proposal): Proposal {
     keyMessage: asText(raw?.keyMessage) || fallback.keyMessage,
     copyIn: asText(raw?.copyIn) || fallback.copyIn,
     cta: asText(raw?.cta) || ctaFor(objective),
-    publishDate: nextBusinessDate(asText(raw?.publishDate) || fallback.publishDate),
+    // La fecha final queda amarrada a la parrilla solicitada.
+    // La IA puede sugerir temas, pero no debe mover publicaciones a fechas fuera del rango.
+    publishDate: fallback.publishDate,
     suggestedArea: asText(raw?.suggestedArea) || (isVideoLike ? "Audiovisual" : "Diseño"),
     requiresProduction: typeof raw?.requiresProduction === "boolean" ? raw.requiresProduction : isVideoLike,
     materialAvailable: typeof raw?.materialAvailable === "boolean" ? raw.materialAvailable : !isVideoLike,
@@ -204,8 +223,17 @@ export async function POST(req: Request) {
     const goals = asList(body.goals);
     const themes = asList(body.themes);
     const must = asText(body.must);
-    const client = body.client || {};
-    const importantDates = asList(client?.brandBrain?.importantDates);
+    const rawClient = body.client || {};
+    const scheduleEndDate = addDays(startDate, (count - 1) * interval);
+    const rawImportantDates = asList(rawClient?.brandBrain?.importantDates);
+    const importantDates = importantDatesInsideWindow(rawImportantDates, startDate, scheduleEndDate);
+    const client = {
+      ...rawClient,
+      brandBrain: {
+        ...(rawClient.brandBrain || {}),
+        importantDates
+      }
+    };
     const personas: Persona[] = Array.isArray(client.buyerPersonas) ? client.buyerPersonas : [];
 
     const fallback = Array.from({ length: count }).map((_, index) => buildFallbackProposal({ index, count, startDate, interval, types, goals, themes, must, client }));
@@ -220,9 +248,9 @@ Reglas:
 - Usa únicamente estos tipos si aplican: ${types.join(", ") || "Post, Carrusel, Reel"}.
 - Usa estos objetivos si aplican: ${goals.join(", ") || "Ventas, Awareness, Confianza"}.
 - Usa estos temas como base: ${themes.join(", ") || "Temas estratégicos"}.
-- Fechas de publicación: primera fecha ${startDate}, separación ${interval} días. Sí puedes proponer sábado o domingo si estratégicamente conviene publicar ese día.
+- Fechas de publicación: usa exactamente la parrilla solicitada desde ${startDate}, separación ${interval} días. No inventes fechas fuera de esa parrilla, aunque existan temporadas o efemérides del Brand Brain.
 - Buyer personas disponibles: ${personas.map((p) => `${p.id || p.name}: ${p.name} - ${p.description || ""}`).join(" | ") || "sin buyer personas"}. Asigna buyer persona cuando tenga sentido.
-- Fechas importantes del cliente que siempre deben considerarse si son pertinentes: ${importantDates.join(" | ") || "sin fechas registradas"}.
+- Fechas importantes del cliente dentro del rango de esta parrilla (${startDate} a ${scheduleEndDate}) que puedes considerar si son pertinentes: ${importantDates.join(" | ") || "sin fechas dentro del rango"}. Si una fecha importante no cae dentro del rango, ignórala.
 - Si la pieza es Reel, TikTok o Foto y requiere capturar material nuevo, marca requiresProduction true y llena productionNotes.
 - Si no requiere producción, marca materialAvailable true y materialLinks con una nota clara de insumos: assets de marca, stock, IA o material existente.
 - Copy In debe venir como copy base listo para trabajar, no como “pendiente”.
@@ -253,7 +281,7 @@ ${JSON.stringify({
 Factores obligatorios: ${must || "sin factores adicionales"}
 Contexto resumido de cliente: ${asText(body.clientContext)}
 Contexto de mercado: ${asText(body.marketContext)}
-Historial de contenidos finalizados: ${asText(body.successfulContext)}`;
+Historial de contenidos finalizados de la marca que debes usar como referencia de aterrizaje, calidad, enfoque y estilo operativo: ${asText(body.successfulContext) || "sin contenidos finalizados registrados"}`;
 
     try {
       const text = await callBest(prompt);

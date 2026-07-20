@@ -838,15 +838,27 @@ export default function TasksPage() {
 
                 <div className="detail-section">
                   <h4>Material / referencias</h4>
+                  {(selected.materialDeliveredAt || selected.productionSpecificMaterialLink || selected.productionGeneralMaterialLinks) && (
+                    <div className="detail-copy">
+                      <strong>Material entregado por producción:</strong> {selected.materialDeliveredAt ? new Date(selected.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}
+                      {"\n"}
+                      <strong>Producción:</strong> {selected.productionName || "Sin producción ligada"}
+                      {"\n"}
+                      <strong>Link específico:</strong> {selected.productionSpecificMaterialLink || "Sin link específico"}
+                      {"\n"}
+                      <strong>Link general:</strong> {selected.productionGeneralMaterialLinks || "Sin link general"}
+                    </div>
+                  )}
                   <FilePreviewGrid
                     files={[
                       ...(selected.referenceFiles || []),
                       ...(selected.materialFiles || []),
+                      ...(selected.productionMaterialFiles || []),
                     ]}
                     onPreview={setPreview}
                   />
                   <LinkList
-                    value={`${selected.referenceLinks || ""}\n${selected.materialLinks || ""}`}
+                    value={`${selected.referenceLinks || ""}\n${selected.materialLinks || ""}\n${selected.productionSpecificMaterialLink || ""}\n${selected.productionGeneralMaterialLinks || ""}`}
                   />
                 </div>
               </div>
@@ -1013,15 +1025,27 @@ export default function TasksPage() {
             </div>
             <div className="detail-section">
               <h4>Material / referencias</h4>
+              {(contextPost.materialDeliveredAt || contextPost.productionSpecificMaterialLink || contextPost.productionGeneralMaterialLinks) && (
+                <div className="detail-copy">
+                  <strong>Material entregado por producción:</strong> {contextPost.materialDeliveredAt ? new Date(contextPost.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}
+                  {"\n"}
+                  <strong>Producción:</strong> {contextPost.productionName || "Sin producción ligada"}
+                  {"\n"}
+                  <strong>Link específico:</strong> {contextPost.productionSpecificMaterialLink || "Sin link específico"}
+                  {"\n"}
+                  <strong>Link general:</strong> {contextPost.productionGeneralMaterialLinks || "Sin link general"}
+                </div>
+              )}
               <FilePreviewGrid
                 files={[
                   ...(contextPost.referenceFiles || []),
                   ...(contextPost.materialFiles || []),
+                  ...(contextPost.productionMaterialFiles || []),
                 ]}
                 onPreview={setPreview}
               />
               <LinkList
-                value={`${contextPost.referenceLinks || ""}\n${contextPost.materialLinks || ""}\n${contextPost.finalPostLink || ""}`}
+                value={`${contextPost.referenceLinks || ""}\n${contextPost.materialLinks || ""}\n${contextPost.productionSpecificMaterialLink || ""}\n${contextPost.productionGeneralMaterialLinks || ""}\n${contextPost.finalPostLink || ""}`}
               />
             </div>
           </div>

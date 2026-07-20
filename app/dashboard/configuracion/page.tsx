@@ -245,7 +245,7 @@ export default function ConfiguracionPage(){
       <div>
         <p className="eyebrow">Sistema</p>
         <h1>Configuración operativa</h1>
-        <p>Define costos internos, tiempos estándar y ajustes por cliente para que reportes y solicitudes trabajen con tiempos reales.</p>
+        <p>Define costos internos, tiempos estándar y capacidad operativa general. Todos los clientes usan las mismas reglas por tipo de contenido.</p>
       </div>
       <button className="btn blue" onClick={load}>Actualizar</button>
     </section>
@@ -254,7 +254,7 @@ export default function ConfiguracionPage(){
       <Metric label="Reglas activas" value={rules.filter(x=>x.active!==false).length}/>
       <Metric label="Costo base acumulado" value={money(totalBaseCost)}/>
       <Metric label="Promedio entrega" value={`${avgDelivery} días`}/>
-      <Metric label="Ajustes por cliente" value={overrides.length}/>
+      <Metric label="Reglas por cliente" value="Desactivadas"/>
       <Metric label="Capacidades" value={capacities.length}/>
       <Metric label="Clientes" value={brands.length}/>
       <Metric label="Estado" value={busy?"Guardando":"Listo"}/>
@@ -264,7 +264,7 @@ export default function ConfiguracionPage(){
       <div className="grid">
         <div className="card">
           <h3>{editingRuleId?"Editar regla base":"Nueva regla base"}</h3>
-          <p className="mini">Se usa cuando el cliente no tiene una configuración especial. Ejemplo: Reel $1,500; Producción $4,000.</p>
+          <p className="mini">Se usa para todos los clientes. Ejemplo: Reel $1,500; Producción $4,000.</p>
           <div className="form-grid" style={{marginTop:14}}>
             <div className="field"><label>Tipo de contenido</label><select value={ruleForm.contentType} onChange={e=>setRule("contentType",e.target.value)}>{[...new Set([...contentTypes,"Producción"])].map(x=><option key={x}>{x}</option>)}</select></div>
             <div className="field"><label>Nombre visible</label><input value={ruleForm.label} onChange={e=>setRule("label",e.target.value)} placeholder="Ej. Post Reel"/></div>
@@ -308,41 +308,13 @@ export default function ConfiguracionPage(){
 
       <aside className="grid">
         <div className="card">
-          <h3>Ajuste especial por cliente</h3>
-          <p className="mini">Úsalo cuando un cliente cuesta distinto al estándar. Deja campos vacíos para heredar la regla base.</p>
-          <div className="field" style={{marginTop:14}}><label>Cliente</label><select value={overrideForm.clientId} onChange={e=>{
-            const brand = brands.find(x=>x.id===e.target.value);
-            setOverrideForm({...overrideForm,clientId:brand?.id||"",clientName:brand?.name||""});
-          }}>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
-          <div className="field"><label>Tipo de contenido</label><select value={overrideForm.contentType} onChange={e=>setOverride("contentType",e.target.value)}>{[...new Set([...contentTypes,"Producción"])].map(x=><option key={x}>{x}</option>)}</select></div>
-          <div className="form-grid">
-            <OptionalNumber label="Costo pieza" value={overrideForm.internalCost} onChange={v=>setOverride("internalCost",v)}/>
-            <OptionalNumber label="Costo producción" value={overrideForm.productionCost} onChange={v=>setOverride("productionCost",v)}/>
-            <OptionalNumber label="Horas edición" value={overrideForm.editingHours} onChange={v=>setOverride("editingHours",v)}/>
-            <OptionalPercent label="Costo rebote %" value={overrideForm.revisionCostMultiplier} onChange={v=>setOverride("revisionCostMultiplier",v)}/>
-            <OptionalPercent label="Tiempo rebote %" value={overrideForm.revisionHoursMultiplier} onChange={v=>setOverride("revisionHoursMultiplier",v)}/>
-            <OptionalNumber label="Días entrega" value={overrideForm.deliveryDays} onChange={v=>setOverride("deliveryDays",v)}/>
-            <OptionalNumber label="Buffer horas" value={overrideForm.bufferHours} onChange={v=>setOverride("bufferHours",v)}/>
-            <label className="check-row"><input type="checkbox" checked={overrideForm.active!==false} onChange={e=>setOverride("active",e.target.checked)}/> Activo</label>
-            <div className="field full"><label>Notas</label><textarea value={overrideForm.notes||""} onChange={e=>setOverride("notes",e.target.value)}/></div>
-          </div>
-          <div className="config-actions">
-            <button className="btn blue" onClick={saveOverride} disabled={!canConfigure}>{editingOverrideId?"Guardar ajuste":"Guardar ajuste"}</button>
-            <button className="btn" onClick={resetOverride} disabled={!canConfigure}>Limpiar</button>
-          </div>
-        </div>
-
-        <div className="card">
-          <h3>Ajustes guardados</h3>
-          <div className="field"><label>Filtrar cliente</label><select value={clientFilter} onChange={e=>setClientFilter(e.target.value)}><option value="all">Todos</option>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
-          <div className="draft-list">
-            {visibleOverrides.map(item=><div className="draft-item" key={item.id}>
-              <strong>{item.clientName} · {item.contentType}</strong>
-              <span className="mini">Costo: {item.internalCost==null?"Base":money(item.internalCost)} · Producción: {item.productionCost==null?"Base":money(item.productionCost)} · Tiempo: {item.deliveryDays==null?"Base":`${item.deliveryDays} días`} · Rebote: {item.revisionCostMultiplier==null?"Base":percent(item.revisionCostMultiplier)}</span>
-              <div className="config-actions"><button className="btn" onClick={()=>startOverrideEdit(item)} disabled={!canConfigure}>Editar</button><button className="btn red" onClick={()=>removeOverride(item)} disabled={!canConfigure}>Eliminar</button></div>
-            </div>)}
-            {!visibleOverrides.length && <p className="mini">Sin ajustes para este filtro.</p>}
-          </div>
+          <h3>Costos y tiempos por cliente desactivados</h3>
+          <p className="mini">A partir de esta versión, todos los clientes heredan las reglas base por tipo de contenido. Esto evita diferencias ocultas entre clientes y hace que reportes, costeo y planeación usen un criterio estándar.</p>
+          <ul className="config-list" style={{marginTop:14}}>
+            <li>Configura costos, tiempos, rebotes y producción en Reglas base por contenido.</li>
+            <li>Los ajustes antiguos por cliente permanecen guardados como histórico, pero ya no afectan cálculos.</li>
+            <li>Para casos especiales, cambia la regla general del tipo de contenido o crea un nuevo tipo visible.</li>
+          </ul>
         </div>
 
         <div className="card">
@@ -375,7 +347,7 @@ export default function ConfiguracionPage(){
             <li>La fecha al cliente no es la fecha de tarea; Tareas usa fecha programada e interna.</li>
             <li>Si una tarea no se cierra, se arrastra al siguiente día y consume una pieza de capacidad del siguiente día.</li>
             <li>Los semáforos aparecen cuando una persona supera su capacidad diaria.</li>
-            <li>Cada rebote incrementa costo y tiempo según el porcentaje configurado por tipo de contenido o cliente.</li>
+            <li>Cada rebote incrementa costo y tiempo según el porcentaje configurado por tipo de contenido.</li>
           </ul>
         </div>
       </aside>

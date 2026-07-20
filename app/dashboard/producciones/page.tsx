@@ -47,10 +47,12 @@ export default function ProductionsPage(){
   const [productionSort,setProductionSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"scheduledDate",direction:"asc"});
 
   const [reqClientFilter,setReqClientFilter]=useState("all");
+  const [reqBatchFilter,setReqBatchFilter]=useState("all");
   const [reqStartDate,setReqStartDate]=useState("");
   const [reqEndDate,setReqEndDate]=useState("");
 
   const [prodClientFilter,setProdClientFilter]=useState("all");
+  const [prodBatchFilter,setProdBatchFilter]=useState("all");
   const [prodStatusFilter,setProdStatusFilter]=useState("all");
   const [prodProducerFilter,setProdProducerFilter]=useState("all");
   const [prodMaterialFilter,setProdMaterialFilter]=useState("all");
@@ -136,9 +138,10 @@ export default function ProductionsPage(){
   }
 
   const teamOptions = useMemo(()=>{
+    // v8.1: Producción puede invitar a cualquier usuario activo: KAM, Content, Diseño, Dirección o Audiovisual.
     const fromUsers = users.map(user=>toTitleCase(user.name||"")).filter(Boolean);
     const fallback = organizationTeam.map(user=>toTitleCase(user.name));
-    return Array.from(new Map([...fromUsers,...fallback].filter(Boolean).filter(isProductionTeamName).map(name=>[name.toLowerCase(),name])).values()).sort((a,b)=>a.localeCompare(b,"es"));
+    return Array.from(new Map([...fromUsers,...fallback].filter(Boolean).map(name=>[name.toLowerCase(),name])).values()).sort((a,b)=>a.localeCompare(b,"es"));
   },[users]);
 
   function getInternalDueDate(item:ContentRequest){return item.internalDueDate || item.dueDate || item.batchDueDate || "";}
@@ -160,9 +163,28 @@ export default function ProductionsPage(){
     return Array.from(set);
   },[productions]);
 
+  const requestBatchOptions = useMemo(()=>{
+    const map = new Map<string,string>();
+    requests.filter(x=>x.requiresProduction).forEach(x=>map.set(x.batchId || "sin-lote", x.batchName || "Sin lote"));
+    return Array.from(map.entries()).map(([id,name])=>({id,name})).sort((a,b)=>a.name.localeCompare(b.name,"es"));
+  },[requests]);
+
+  const productionBatchOptions = useMemo(()=>{
+    const requestById = new Map(requests.map(x=>[x.id,x]));
+    const map = new Map<string,string>();
+    productions.forEach(production=>{
+      (production.requestIds || []).forEach(id=>{
+        const req = requestById.get(id);
+        if(req) map.set(req.batchId || "sin-lote", req.batchName || "Sin lote");
+      });
+    });
+    return Array.from(map.entries()).map(([id,name])=>({id,name})).sort((a,b)=>a.name.localeCompare(b.name,"es"));
+  },[productions,requests]);
+
   const productionRequests = useMemo(()=>{
     const rows = requests.filter(x=> x.requiresProduction && !x.productionId &&
       (reqClientFilter==="all" || x.clientId===reqClientFilter) &&
+      (reqBatchFilter==="all" || (x.batchId || "sin-lote")===reqBatchFilter) &&
       inDateRange(getInternalDueDate(x),reqStartDate,reqEndDate)
     );
     return sortBy(rows,requestSort,(row,key)=>{
@@ -173,15 +195,18 @@ export default function ProductionsPage(){
       if(key==="kind")return requestTypeLabel(row);
       return getInternalDueDate(row);
     });
-  },[requests,reqClientFilter,reqStartDate,reqEndDate,requestSort]);
+  },[requests,reqClientFilter,reqBatchFilter,reqStartDate,reqEndDate,requestSort]);
 
   const filteredProductions = useMemo(()=>{
+    const requestById = new Map(requests.map(req=>[req.id,req]));
     const rows = productions.filter(x=>{
       const text = `${x.title} ${x.clientName} ${x.location} ${x.locations||""} ${x.producer} ${x.team} ${x.notes} ${x.materialDueDate||""}`.toLowerCase();
+      const batchIds = new Set((x.requestIds || []).map(id=>requestById.get(id)?.batchId || "sin-lote"));
       const hasGeneralMaterial = Boolean((x.materialLinks||"").trim()) || Boolean((x.materialFiles||[]).length);
       const hasAnyPostMaterial = Boolean(Object.values(x.materialLinksByRequest||{}).some(v=>String(v||"").trim()));
       const hasMaterial = hasGeneralMaterial || hasAnyPostMaterial;
       return (prodClientFilter==="all" || x.clientId===prodClientFilter) &&
+        (prodBatchFilter==="all" || batchIds.has(prodBatchFilter)) &&
         (prodStatusFilter==="all" || x.status===prodStatusFilter) &&
         (prodProducerFilter==="all" || x.producer===prodProducerFilter) &&
         (prodMaterialFilter==="all" || (prodMaterialFilter==="with" ? hasMaterial : !hasMaterial)) &&
@@ -197,7 +222,7 @@ export default function ProductionsPage(){
       if(key==="materialDueDate")return row.materialDueDate || "";
       return row.scheduledDate || "";
     });
-  },[productions,prodClientFilter,prodStatusFilter,prodProducerFilter,prodMaterialFilter,prodStartDate,prodEndDate,prodSearch,productionSort]);
+  },[productions,requests,prodClientFilter,prodBatchFilter,prodStatusFilter,prodProducerFilter,prodMaterialFilter,prodStartDate,prodEndDate,prodSearch,productionSort]);
 
   const selectedRequests = productionRequests.filter(x=>selected.includes(x.id!)).sort((a,b)=>Number(!isVideoRequest(a))-Number(!isVideoRequest(b)));
 
@@ -296,23 +321,31 @@ export default function ProductionsPage(){
       return;
     }
     const nextStatus = "material_entregado";
-    await updateProduction(editing.id,{...editing,status:nextStatus,materialDeliveredAt:new Date().toISOString()});
+    const deliveredAt = new Date().toISOString();
+    await updateProduction(editing.id,{...editing,status:nextStatus,materialDeliveredAt:deliveredAt});
     await Promise.all((editing.requestIds||[]).map(id=>{
       const req = requests.find(x=>x.id===id);
-      const individualLink = (editing.materialLinksByRequest||{})[id] || "";
+      const individualLink = ((editing.materialLinksByRequest||{})[id] || "").trim();
+      const generalLinks = (editing.materialLinks || "").trim();
+      const mergedLinks = mergeLinks([individualLink, generalLinks, req?.materialLinks || ""]);
+      const mergedFiles = mergeFiles([...(req?.materialFiles || []), ...(editing.materialFiles || [])]);
       const comments = [...(req?.comments||[]), {
         id:`${Date.now()}-${id}`,
         author:"Sistema",
         target:"Asignación",
-        body:"Material de producción entregado. Esta solicitud ya puede asignarse.",
+        body:`Material de producción entregado. Link específico: ${individualLink || "Sin link específico"}. Link general: ${generalLinks || "Sin link general"}. Esta solicitud ya puede asignarse.`,
         mentions:["@asignacion"],
         status:"open" as const,
-        createdAt:new Date().toISOString()
+        createdAt:deliveredAt
       }];
       return updateRequest(id,{
         materialAvailable:true,
-        materialLinks:individualLink.trim(),
-        materialFiles:[],
+        materialLinks:mergedLinks,
+        materialFiles:mergedFiles,
+        productionSpecificMaterialLink:individualLink,
+        productionGeneralMaterialLinks:generalLinks,
+        productionMaterialFiles:editing.materialFiles || [],
+        materialDeliveredAt:deliveredAt,
         status:"material_listo",
         comments
       });
@@ -335,10 +368,11 @@ export default function ProductionsPage(){
       <h3>Filtros de solicitudes pendientes de producción</h3>
       <div className="filter-grid">
         <div className="field"><label>Cliente</label><select value={reqClientFilter} onChange={e=>setReqClientFilter(e.target.value)}><option value="all">Todos</option>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+        <div className="field"><label>Lote</label><select value={reqBatchFilter} onChange={e=>setReqBatchFilter(e.target.value)}><option value="all">Todos</option>{requestBatchOptions.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
         <div className="field"><label>Desde entrega interna</label><input type="date" value={reqStartDate} onChange={e=>setReqStartDate(e.target.value)}/></div>
         <div className="field"><label>Hasta entrega interna</label><input type="date" value={reqEndDate} onChange={e=>setReqEndDate(e.target.value)}/></div>
         <div className="filter-actions">
-          <button className="btn" onClick={()=>{setReqClientFilter("all");setReqStartDate("");setReqEndDate("");}}>Limpiar</button>
+          <button className="btn" onClick={()=>{setReqClientFilter("all");setReqBatchFilter("all");setReqStartDate("");setReqEndDate("");}}>Limpiar</button>
         </div>
       </div>
     </section>
@@ -373,6 +407,7 @@ export default function ProductionsPage(){
       <h3>Filtros del calendario de producciones</h3>
       <div className="filter-grid">
         <div className="field"><label>Cliente</label><select value={prodClientFilter} onChange={e=>setProdClientFilter(e.target.value)}><option value="all">Todos</option>{brands.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+        <div className="field"><label>Lote</label><select value={prodBatchFilter} onChange={e=>setProdBatchFilter(e.target.value)}><option value="all">Todos</option>{productionBatchOptions.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
         <div className="field"><label>Estado</label><select value={prodStatusFilter} onChange={e=>setProdStatusFilter(e.target.value)}><option value="all">Todos</option><option value="programada">Programada</option><option value="material_entregado">Material entregado</option><option value="cancelada">Cancelada</option></select></div>
         <div className="field"><label>Responsable</label><select value={prodProducerFilter} onChange={e=>setProdProducerFilter(e.target.value)}><option value="all">Todos</option>{producerOptions.map(x=><option key={x}>{x}</option>)}</select></div>
         <div className="field"><label>Material</label><select value={prodMaterialFilter} onChange={e=>setProdMaterialFilter(e.target.value)}><option value="all">Todo</option><option value="with">Con material</option><option value="without">Sin material</option></select></div>
@@ -380,7 +415,7 @@ export default function ProductionsPage(){
         <div className="field"><label>Hasta producción</label><input type="date" value={prodEndDate} onChange={e=>setProdEndDate(e.target.value)}/></div>
         <div className="field" style={{gridColumn:"span 2"}}><label>Buscar</label><input value={prodSearch} onChange={e=>setProdSearch(e.target.value)} placeholder="Producción, cliente, locación, responsable..."/></div>
         <div className="filter-actions">
-          <button className="btn" onClick={()=>{setProdClientFilter("all");setProdStatusFilter("all");setProdProducerFilter("all");setProdMaterialFilter("all");setProdStartDate("");setProdEndDate("");setProdSearch("");}}>Limpiar</button>
+          <button className="btn" onClick={()=>{setProdClientFilter("all");setProdBatchFilter("all");setProdStatusFilter("all");setProdProducerFilter("all");setProdMaterialFilter("all");setProdStartDate("");setProdEndDate("");setProdSearch("");}}>Limpiar</button>
         </div>
       </div>
     </section>
@@ -412,10 +447,18 @@ export default function ProductionsPage(){
           <input value={editing.materialLinks||""} onChange={e=>setEditingField("materialLinks",e.target.value)} onBlur={persistEditingMaterial} placeholder="Carpeta general de Drive, Dropbox, Frame, WeTransfer, etc."/>
           <div className="material-mode-note">Se guarda al salir del campo. Además, cada publicación debe tener su link específico.</div>
         </div>
+        <div className="field full">
+          <label>Archivos generales de producción</label>
+          <input type="file" multiple disabled={!canEditProduction || uploading} onChange={e=>uploadProductionMaterial(e.target.files)}/>
+          <div className="material-mode-note">Estos archivos se heredarán a todas las solicitudes cuando marques el material como entregado.</div>
+          {uploading && <p className="mini">Subiendo archivos...</p>}
+          <ReadOnlyFileGrid files={editing.materialFiles || []} onPreview={setPreview} emptyText="Sin archivos generales todavía."/>
+          {(editing.materialFiles || []).length>0 && canEditProduction && <div className="material-file-actions">{(editing.materialFiles || []).map((file,index)=><button type="button" className="btn mini-btn" key={`${file.url}-${index}`} onClick={()=>removeProductionFile(index)}>Quitar {file.name || `archivo ${index+1}`}</button>)}</div>}
+        </div>
       </div>
 
       <h3>Links por solicitud / post</h3>
-      <div className="table-wrap"><table className="table material-links-table"><thead><tr><th>Publicación</th><th>Idea</th><th>Fecha</th><th>Link específico *</th><th>Acción</th></tr></thead><tbody>
+      <div className="table-wrap"><table className="table material-links-table"><thead><tr><th>Publicación</th><th>Idea</th><th>Fecha</th><th>Link específico *</th><th>Acciones</th></tr></thead><tbody>
         {(editing.requestIds||[]).map(id=>{
           const req=requests.find(x=>x.id===id);
           const link=(editing.materialLinksByRequest||{})[id]||"";
@@ -424,7 +467,7 @@ export default function ProductionsPage(){
             <td><span className="mini text-clamp-2">{req?.creativeIdea||id}</span></td>
             <td>{req?.publishDate||"Sin fecha"}</td>
             <td><input value={link} onChange={e=>setPostMaterialLink(id,e.target.value)} onBlur={persistEditingMaterial} placeholder="Link exacto del material para esta pieza"/></td>
-            <td><a className="btn" href={link || "https://drive.google.com"} target="_blank">Anexar imagen</a></td>
+            <td><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{req && <button type="button" className="btn" onClick={()=>setPendingDetail(req)}>Ver solicitud</button>}{link ? <a className="btn" href={link} target="_blank">Abrir link</a> : <span className="mini">Sin link</span>}</div></td>
           </tr>
         })}
       </tbody></table></div>
@@ -435,12 +478,16 @@ export default function ProductionsPage(){
       </div>
     </section>}
 
-    {pendingDetail && <div className="modal-backdrop"><div className="modal-card">
-      <h2>Solicitud de producción</h2>
-      <div className="detail-copy"><strong>Lote:</strong> {pendingDetail.batchName||"Sin lote"}{"\n"}<strong>Cliente:</strong> {pendingDetail.clientName}{"\n"}<strong>Entrega interna:</strong> {getInternalDueDate(pendingDetail)||"Sin fecha"}{"\n"}<strong>Publicación:</strong> {pendingDetail.publishDate||"Sin fecha"}{"\n"}<strong>Tipo:</strong> {requestTypeLabel(pendingDetail)}</div>
-      <div className="detail-section"><h4>Solicitud</h4><div className="detail-copy">{pendingDetail.contentType} · {pendingDetail.objective}{"\n"}{pendingDetail.creativeIdea}</div></div>
-      <div className="detail-section"><h4>Notas producción</h4><div className="detail-copy">{pendingDetail.productionNotes||"Sin notas"}</div></div>
-      <button className="btn red" onClick={()=>setPendingDetail(null)}>Cerrar</button>
+    {pendingDetail && <div className="modal-backdrop"><div className="modal-card" style={{width:"min(980px,96vw)",maxHeight:"92vh",overflow:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+        <div>
+          <p className="eyebrow">Solicitud completa de producción</p>
+          <h2>{pendingDetail.clientName}</h2>
+          <p className="mini">{pendingDetail.batchName||"Sin lote"}</p>
+        </div>
+        <button className="btn red" onClick={()=>setPendingDetail(null)}>Cerrar</button>
+      </div>
+      <ProductionRequestDetail item={pendingDetail} onPreview={setPreview} typeLabel={requestTypeLabel(pendingDetail)} internalDueDate={getInternalDueDate(pendingDetail)}/>
     </div></div>}
 
     {preview && <PreviewModal file={preview} onClose={()=>setPreview(null)}/>}
@@ -486,6 +533,71 @@ function splitLinks(value:string){
     .split(/\s|,|\n/)
     .map(x=>x.trim())
     .filter(x=>x.startsWith("http://")||x.startsWith("https://"));
+}
+
+function mergeLinks(values:string[]){
+  const seen = new Set<string>();
+  const links:string[] = [];
+  values.forEach(value=>{
+    splitLinks(value || "").forEach(link=>{
+      if(!seen.has(link)){
+        seen.add(link);
+        links.push(link);
+      }
+    });
+  });
+  return links.join("\n");
+}
+
+function mergeFiles(files:ReferenceFile[]){
+  const seen = new Set<string>();
+  const result:ReferenceFile[] = [];
+  files.forEach(file=>{
+    const key = file.url || file.name || JSON.stringify(file);
+    if(!seen.has(key)){
+      seen.add(key);
+      result.push(file);
+    }
+  });
+  return result;
+}
+
+function LinkList({links,emptyText="Sin links."}:{links:string[];emptyText?:string}){
+  if(!links.length)return <p className="mini">{emptyText}</p>;
+  return <div className="brief-link-list">{links.map((link,index)=><a className="brief-link" href={link} target="_blank" key={`${link}-${index}`}>{link}</a>)}</div>;
+}
+
+function ReadOnlyFileGrid({files,onPreview,emptyText="Sin archivos."}:{files:ReferenceFile[];onPreview:(file:ReferenceFile)=>void;emptyText?:string}){
+  if(!(files||[]).length)return <p className="mini">{emptyText}</p>;
+  return <div className="ref-grid">
+    {(files||[]).map((file,index)=><button type="button" className="ref-thumb" onClick={()=>onPreview(file)} key={`${file.url || file.name}-${index}`}>
+      {isImageFile(file)?<img src={file.url} alt={file.name || "Referencia"}/>:isVideoFile(file)?<video src={file.url} muted playsInline preload="metadata"/>:<div className="ref-thumb-file">{file.name || "Archivo"}</div>}
+    </button>)}
+  </div>;
+}
+
+function ProductionRequestDetail({item,onPreview,typeLabel,internalDueDate}:{item:ContentRequest;onPreview:(file:ReferenceFile)=>void;typeLabel:string;internalDueDate:string}){
+  const referenceLinks = splitLinks(item.referenceLinks || "");
+  const materialLinks = splitLinks(item.materialLinks || "");
+  const specificMaterialLinks = splitLinks(item.productionSpecificMaterialLink || "");
+  const generalMaterialLinks = splitLinks(item.productionGeneralMaterialLinks || "");
+  const productionMaterialFiles = item.productionMaterialFiles || [];
+  const materialFiles = item.materialFiles || [];
+  const visibleMaterialFiles = mergeFiles([...materialFiles, ...productionMaterialFiles]);
+
+  return <div className="production-request-detail">
+    <div className="detail-copy"><strong>Lote:</strong> {item.batchName||"Sin lote"}{"\n"}<strong>Entrega interna:</strong> {internalDueDate||"Sin fecha"}{"\n"}<strong>Publicación:</strong> {item.publishDate||"Sin fecha"}{"\n"}<strong>Tipo:</strong> {typeLabel}{"\n"}<strong>Producción:</strong> {item.productionName||"Sin producción asignada"}{"\n"}<strong>Material entregado:</strong> {item.materialDeliveredAt ? new Date(item.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}</div>
+
+    <div className="detail-section"><h4>Solicitud inicial</h4><div className="detail-copy"><strong>{item.contentType} · {item.objective}</strong>{"\n"}{item.creativeIdea || "Sin idea creativa"}</div></div>
+
+    <div className="detail-section"><h4>Copy / Mensaje / CTA</h4><div className="detail-copy"><strong>Copy In:</strong> {item.copyIn||"Sin copy"}{"\n"}<strong>Mensaje:</strong> {item.keyMessage||"Sin mensaje"}{"\n"}<strong>CTA:</strong> {item.cta||"Sin CTA"}</div></div>
+
+    <div className="detail-section"><h4>Notas para producción</h4><div className="detail-copy">{item.productionNotes||"Sin notas de producción"}</div></div>
+
+    <div className="detail-section"><h4>Referencias visuales de la solicitud</h4><ReadOnlyFileGrid files={item.referenceFiles || []} onPreview={onPreview} emptyText="Sin imágenes o archivos de referencia."/><LinkList links={referenceLinks} emptyText="Sin links de referencia."/></div>
+
+    <div className="detail-section"><h4>Material entregado por producción</h4><div className="detail-copy"><strong>Link específico:</strong> {specificMaterialLinks[0] || "Pendiente"}{"\n"}<strong>Link general:</strong> {generalMaterialLinks[0] || "Pendiente"}</div><ReadOnlyFileGrid files={visibleMaterialFiles} onPreview={onPreview} emptyText="Sin archivos de material entregado."/><LinkList links={materialLinks} emptyText="Sin links de material todavía."/></div>
+  </div>;
 }
 
 function ProductionBrief({production,requests}:{production:Production;requests:ContentRequest[]}){

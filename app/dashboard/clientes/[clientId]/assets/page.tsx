@@ -3,6 +3,7 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { Brand, ClientAsset, deleteClientAsset, listBrands, listClientAssets, updateClientAsset, uploadClientAsset } from "@/lib/data";
 
 type PendingAsset = {
@@ -50,6 +51,9 @@ export default function ClientAssetsPage(){
   const [isUploading,setIsUploading] = useState(false);
   const [message,setMessage] = useState("");
   const [filter,setFilter] = useState("all");
+  const [editingAsset,setEditingAsset] = useState<ClientAsset|null>(null);
+  const permissions = useModulePermissions("clientes");
+  const canEditAssets = permissions.canEdit || permissions.canCreate || permissions.canDelete;
 
   async function load(){
     const brands = await listBrands();
@@ -97,6 +101,7 @@ export default function ClientAssetsPage(){
   }
 
   async function uploadAll(){
+    if(!canEditAssets)return permissionAlert("subir assets de clientes");
     if(!client)return alert("No encontramos el cliente.");
     if(!pending.length)return alert("Selecciona archivos para subir.");
     setIsUploading(true);
@@ -121,15 +126,35 @@ export default function ClientAssetsPage(){
   }
 
   async function toggleFeatured(asset: ClientAsset){
+    if(!canEditAssets)return permissionAlert("editar assets de clientes");
     if(!asset.id)return;
     await updateClientAsset(asset.id,{isFeatured:!asset.isFeatured});
+    setMessage(asset.isFeatured ? "Asset quitado de destacados." : "Asset marcado como destacado.");
+    await load();
+  }
+
+  async function saveAssetEdit(){
+    if(!canEditAssets)return permissionAlert("editar assets de clientes");
+    if(!editingAsset?.id)return;
+    await updateClientAsset(editingAsset.id,{
+      name: editingAsset.name,
+      type: editingAsset.type,
+      category: editingAsset.category || "",
+      tags: editingAsset.tags || [],
+      notes: editingAsset.notes || "",
+      isFeatured: Boolean(editingAsset.isFeatured)
+    });
+    setEditingAsset(null);
+    setMessage("Asset actualizado correctamente.");
     await load();
   }
 
   async function removeAsset(asset: ClientAsset){
+    if(!canEditAssets)return permissionAlert("eliminar assets de clientes");
     if(!asset.id)return;
     if(!confirm(`¿Eliminar "${asset.name}"?`))return;
-    await deleteClientAsset(asset.id);
+    await deleteClientAsset(asset.id, asset.storagePath);
+    setMessage("Asset eliminado correctamente.");
     await load();
   }
 
@@ -216,9 +241,10 @@ export default function ClientAssetsPage(){
                   <p className="mt-1 text-xs text-zinc-500">{asset.type} · {asset.category || "Sin categoría"}</p>
                   <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-600">{asset.notes || "Sin notas"}</p>
                   <div className="mt-3 flex flex-wrap gap-1.5">{asset.tags?.map((tag)=><span key={tag} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-zinc-600">{tag}</span>)}</div>
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <button type="button" onClick={()=>toggleFeatured(asset)} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100">{asset.isFeatured ? "Quitar" : "Destacar"}</button>
-                    <button type="button" onClick={()=>removeAsset(asset)} className="rounded-2xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50">Eliminar</button>
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <button type="button" onClick={()=>toggleFeatured(asset)} disabled={!canEditAssets} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:opacity-50">{asset.isFeatured ? "Quitar" : "Destacar"}</button>
+                    <button type="button" onClick={()=>setEditingAsset(asset)} disabled={!canEditAssets} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:opacity-50">Editar</button>
+                    <button type="button" onClick={()=>removeAsset(asset)} disabled={!canEditAssets} className="rounded-2xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50">Eliminar</button>
                   </div>
                 </div>
               </article>
@@ -226,6 +252,23 @@ export default function ClientAssetsPage(){
           </div>}
         </section>
       </div>
+      {editingAsset ? <div className="modal-backdrop">
+        <div className="modal-card" style={{width:"min(720px,94vw)"}}>
+          <h3>Editar asset</h3>
+          <div className="grid two-col">
+            <div className="field"><label>Nombre</label><input value={editingAsset.name || ""} onChange={(e)=>setEditingAsset({...editingAsset,name:e.target.value})}/></div>
+            <div className="field"><label>Tipo</label><select value={editingAsset.type || "reference"} onChange={(e)=>setEditingAsset({...editingAsset,type:e.target.value})}>{assetTypes.map((type)=><option key={type.id} value={type.id}>{type.label}</option>)}</select></div>
+            <div className="field"><label>Categoría</label><input list="asset-categories" value={editingAsset.category || ""} onChange={(e)=>setEditingAsset({...editingAsset,category:e.target.value})}/></div>
+            <div className="field"><label>Tags</label><input value={(editingAsset.tags || []).join(", ")} onChange={(e)=>setEditingAsset({...editingAsset,tags:splitTags(e.target.value)})} placeholder="Separados por coma"/></div>
+            <div className="field full"><label>Notas</label><textarea value={editingAsset.notes || ""} onChange={(e)=>setEditingAsset({...editingAsset,notes:e.target.value})}/></div>
+            <label className="check-row full"><input type="checkbox" checked={Boolean(editingAsset.isFeatured)} onChange={(e)=>setEditingAsset({...editingAsset,isFeatured:e.target.checked})}/> Destacado</label>
+          </div>
+          <div className="modal-actions">
+            <button className="btn" type="button" onClick={()=>setEditingAsset(null)}>Cancelar</button>
+            <button className="btn blue" type="button" onClick={saveAssetEdit}>Guardar cambios</button>
+          </div>
+        </div>
+      </div> : null}
     </main>
   </AppShell>;
 }

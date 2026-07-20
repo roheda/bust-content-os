@@ -44,7 +44,7 @@ service firebase.storage {
     match /clients/{clientId}/{allPaths=**} {
       allow read: if activeUser();
       allow create, update: if safeSize(80) && (hasPerm("clientes", "edit") || hasPerm("generador", "generate"));
-      allow delete: if hasPerm("clientes", "delete") || isMaster();
+      allow delete: if hasPerm("clientes", "delete") || hasPerm("clientes", "edit") || isMaster();
     }
 
     match /content-request-references/{allPaths=**} {

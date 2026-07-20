@@ -563,6 +563,10 @@ export type ContentRequest = {
   materialAvailable: boolean;
   materialLinks: string;
   materialFiles: ReferenceFile[];
+  productionSpecificMaterialLink?: string;
+  productionGeneralMaterialLinks?: string;
+  productionMaterialFiles?: ReferenceFile[];
+  materialDeliveredAt?: string;
   productionNotes: string;
   suggestedArea: string;
 
@@ -757,17 +761,18 @@ export function mergeOperationalRule(
   const base = rules.find(rule => rule.active !== false && rule.contentType === contentType)
     || defaultOperationalRules.find(rule => rule.contentType === contentType)
     || defaultOperationalRules[0];
-  const override = overrides.find(item => item.active !== false && item.clientId === clientId && item.contentType === contentType);
+  // v8.1: se eliminan los costos/tiempos especiales por cliente.
+  // Los overrides legacy permanecen en Firebase por historial, pero ya no afectan cálculos.
   return {
     ...base,
-    internalCost: override?.internalCost ?? base.internalCost,
-    productionCost: override?.productionCost ?? base.productionCost,
-    editingHours: override?.editingHours ?? base.editingHours,
-    deliveryDays: override?.deliveryDays ?? base.deliveryDays,
-    bufferHours: override?.bufferHours ?? base.bufferHours,
-    revisionCostMultiplier: override?.revisionCostMultiplier ?? base.revisionCostMultiplier ?? defaultRevisionCostMultiplier,
-    revisionHoursMultiplier: override?.revisionHoursMultiplier ?? base.revisionHoursMultiplier ?? defaultRevisionHoursMultiplier,
-    notes: override?.notes || base.notes
+    internalCost: base.internalCost,
+    productionCost: base.productionCost,
+    editingHours: base.editingHours,
+    deliveryDays: base.deliveryDays,
+    bufferHours: base.bufferHours,
+    revisionCostMultiplier: base.revisionCostMultiplier ?? defaultRevisionCostMultiplier,
+    revisionHoursMultiplier: base.revisionHoursMultiplier ?? defaultRevisionHoursMultiplier,
+    notes: base.notes
   };
 }
 
@@ -1112,15 +1117,24 @@ export function hasMaterial(item: Partial<ContentRequest>) {
   return Boolean(item.materialAvailable && (files > 0 || links > 0));
 }
 
+export function hasProductionDeliveredMaterial(item: Partial<ContentRequest>) {
+  const productionFiles = (item.productionMaterialFiles || []).length;
+  const specific = (item.productionSpecificMaterialLink || "").trim().length;
+  const general = (item.productionGeneralMaterialLinks || "").trim().length;
+  return Boolean(item.materialDeliveredAt || specific || general || productionFiles);
+}
+
 export function canAssignRequest(item: Partial<ContentRequest>) {
-  // Si requiere producción, no basta con tener producción programada: debe estar marcado material listo
-  // y tener archivos o links de material entregado. Si no requiere producción, puede pasar a asignación
-  // con el brief/solicitud como insumo operativo.
-  if (item.requiresProduction) return hasMaterial(item);
+  // Si requiere producción, los links pegados desde el creador NO cuentan como material listo.
+  // Solo se desbloquea cuando Producción entrega material con evidencia real.
+  if (item.requiresProduction) return hasProductionDeliveredMaterial(item);
   return true;
 }
 
 export function getOperationalStatus(item: ContentRequest) {
+  if (item.requiresProduction && item.status === "material_listo" && !hasProductionDeliveredMaterial(item)) {
+    return item.productionId ? "produccion_programada" : "pendiente_produccion";
+  }
   const directStatuses = [
     "eliminada",
     "finalizada",
@@ -1135,6 +1149,9 @@ export function getOperationalStatus(item: ContentRequest) {
     "rebotada",
     "asignada",
     "cancelada",
+    "pendiente_produccion",
+    "produccion_programada",
+    "material_listo",
     "lista_asignacion"
   ];
   if (directStatuses.includes(item.status || "")) return item.status || "lista_asignacion";
@@ -1714,7 +1731,14 @@ export async function updateClientAsset(id: string, data: Partial<ClientAsset>) 
   return updateDoc(doc(db, "clientAssets", id), { ...data, updatedAt: serverTimestamp() });
 }
 
-export async function deleteClientAsset(id: string) {
+export async function deleteClientAsset(id: string, storagePath?: string) {
+  if (storagePath) {
+    try {
+      await deleteObject(ref(storage, storagePath));
+    } catch (error) {
+      console.warn("No se pudo eliminar asset de Storage; se eliminará el registro", storagePath, error);
+    }
+  }
   return deleteDoc(doc(db, "clientAssets", id));
 }
 

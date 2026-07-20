@@ -1,6 +1,6 @@
 {
   "name": "bust-content-os",
-  "version": "2.4.1-rebotes-costeo",
+  "version": "2.4.2-material-produccion-referencias",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -354,6 +354,7 @@ export default function AssignmentPage() {
       visibleBaseItems
         .filter((item) => {
           const op = getOperationalStatus(item);
+          if (status !== "eliminada" && (op === "eliminada" || item.status === "eliminada")) return false;
           return (
             (client === "all" || item.clientId === client) &&
             (batchFilter === "all" ||
@@ -378,6 +379,10 @@ export default function AssignmentPage() {
   const assignableFiltered = useMemo(
     () => filtered.filter(canAssignRequest),
     [filtered],
+  );
+  const selectableFiltered = useMemo(
+    () => (canDeleteAssignment ? filtered : assignableFiltered),
+    [filtered, assignableFiltered, canDeleteAssignment],
   );
   const selectedItems = useMemo(
     () => visibleBaseItems.filter((item) => selected.includes(item.id || "")),
@@ -864,18 +869,18 @@ export default function AssignmentPage() {
                   <th>
                     <input
                       type="checkbox"
-                      title={canUseBulkActions ? "Seleccionar solo solicitudes listas para asignar" : "Solo lectura"}
+                      title={canDeleteAssignment ? "Seleccionar solicitudes visibles" : canUseBulkActions ? "Seleccionar solo solicitudes listas para asignar" : "Solo lectura"}
                       disabled={!canUseBulkActions}
                       checked={
-                        assignableFiltered.length > 0 &&
-                        assignableFiltered.every((item) =>
+                        selectableFiltered.length > 0 &&
+                        selectableFiltered.every((item) =>
                           selected.includes(item.id!),
                         )
                       }
                       onChange={(e) =>
                         setSelected(
                           e.target.checked
-                            ? assignableFiltered
+                            ? selectableFiltered
                                 .map((item) => item.id!)
                                 .filter(Boolean)
                             : [],
@@ -949,11 +954,11 @@ export default function AssignmentPage() {
                         <input
                           type="checkbox"
                           checked={selected.includes(item.id!)}
-                          disabled={!assignable || !canUseBulkActions}
+                          disabled={!canUseBulkActions}
                           title={
                             assignable
                               ? "Lista para asignar"
-                              : getAssignBlockReason(item)
+                              : `${getAssignBlockReason(item)} Puedes seleccionarla para eliminarla si tienes permiso.`
                           }
                           onChange={() => toggle(item.id!)}
                         />
@@ -1383,12 +1388,23 @@ function RequestDetail({
 
       <div className="detail-section">
         <h4>Material disponible</h4>
+        {(item.materialDeliveredAt || item.productionSpecificMaterialLink || item.productionGeneralMaterialLinks) && (
+          <div className="detail-copy">
+            <strong>Material entregado por producción:</strong> {item.materialDeliveredAt ? new Date(item.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}
+            {"\n"}
+            <strong>Producción:</strong> {item.productionName || "Sin producción ligada"}
+            {"\n"}
+            <strong>Link específico:</strong> {item.productionSpecificMaterialLink || "Sin link específico"}
+            {"\n"}
+            <strong>Link general:</strong> {item.productionGeneralMaterialLinks || "Sin link general"}
+          </div>
+        )}
         <FilePreviewGrid
-          files={item.materialFiles || []}
+          files={[...(item.materialFiles || []), ...(item.productionMaterialFiles || [])]}
           onPreview={onPreview}
         />
         <LinkList links={materialLinks} />
-        {!materialLinks.length && !(item.materialFiles || []).length && (
+        {!materialLinks.length && !(item.materialFiles || []).length && !(item.productionMaterialFiles || []).length && (
           <p className="mini">Sin material disponible.</p>
         )}
       </div>
@@ -1595,27 +1611,25 @@ function getAssignBlockReason(item: ContentRequest) {
 
 function StatusPill({ status }: { status: string }) {
   const option = assignmentStatusOptions.find((item) => item.value === status);
-  if (status === "eliminada")
-    return <span className="pill red">Eliminada</span>;
-  if (status === "bloqueada")
-    return <span className="pill red">Bloqueada</span>;
-  if (status === "pendiente_produccion" || status === "produccion_programada")
-    return <span className="pill orange">{option?.label || status}</span>;
-  if (status === "lista_asignacion" || status === "material_listo")
-    return (
-      <span className="pill green">
-        {option?.label || "Lista para asignar"}
-      </span>
-    );
-  if (
-    status === "asignada" ||
-    status === "en_ejecucion" ||
-    status === "en_revision"
-  )
-    return <span className="pill blue">{option?.label || status}</span>;
-  if (status === "rebotada" || status === "cancelada")
-    return <span className="pill red">{option?.label || status}</span>;
-  if (status === "finalizada" || status === "publicada")
-    return <span className="pill green">{option?.label || status}</span>;
-  return <span className="pill">{option?.label || status}</span>;
+  const colorByStatus: Record<string,string> = {
+    lista_asignacion: "teal",
+    pendiente_produccion: "orange",
+    produccion_programada: "purple",
+    material_listo: "green",
+    bloqueada: "red",
+    asignada: "blue",
+    en_ejecucion: "cyan",
+    en_revision: "amber",
+    pendiente_aprobacion: "violet",
+    pendiente_aprobacion_kam: "pink",
+    aprobada_pendiente_copyout: "lime",
+    rebotada: "red",
+    lista_programar: "sky",
+    programada: "slate",
+    publicada: "emerald",
+    finalizada: "green",
+    cancelada: "red",
+    eliminada: "gray",
+  };
+  return <span className={`pill ${colorByStatus[status] || "gray"}`}>{option?.label || status}</span>;
 }

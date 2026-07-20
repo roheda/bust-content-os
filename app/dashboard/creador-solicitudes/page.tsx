@@ -75,6 +75,8 @@ export default function CreatorPage() {
   const [creatorMode, setCreatorMode] = useState<"ia" | "manual">("ia");
   const [addPanelCollapsed, setAddPanelCollapsed] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "info"; message: string } | null>(null);
+  const [localRecovery, setLocalRecovery] = useState<any | null>(null);
+  const autosaveKey = "bust-content-os:creator-autosave:v81";
 
   const [aiCount, setAiCount] = useState(5);
   const [startDate, setStartDate] = useState("");
@@ -131,6 +133,38 @@ export default function CreatorPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = window.localStorage.getItem(autosaveKey);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      const hasWork = Boolean((parsed.items || []).length || parsed.draftName || parsed.startDate || parsed.batchDueDate);
+      if (hasWork) setLocalRecovery(parsed);
+    } catch (error) {
+      console.warn("No se pudo recuperar autosave del creador", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hasWork = Boolean(items.length || draftName.trim() || batchDueDate || startDate || manual.creativeIdea?.trim() || manual.copyIn?.trim() || manual.topic?.trim());
+    if (!hasWork) return;
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(autosaveKey, JSON.stringify({
+          savedAt: new Date().toISOString(),
+          clientId, draftName, batchDueDate, items, manual, creatorMode,
+          aiCount, startDate, interval, types, goals, themes, must, manualCount
+        }));
+      } catch (error) {
+        console.warn("No se pudo guardar autosave del creador", error);
+      }
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [clientId, draftName, batchDueDate, items, manual, creatorMode, aiCount, startDate, interval, types, goals, themes, must, manualCount]);
+
   useEffect(() => {
     if (!items.length) setAddPanelCollapsed(false);
   }, [items.length]);
@@ -198,6 +232,51 @@ export default function CreatorPage() {
       return;
     }
     setter(value);
+  }
+
+  function extractDateKeyFromText(value: string) {
+    const text = String(value || "");
+    const iso = text.match(/(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+    const local = text.match(/(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})/);
+    if (local) return `${local[3]}-${local[2].padStart(2, "0")}-${local[1].padStart(2, "0")}`;
+    return "";
+  }
+
+  function relevantImportantDatesForSchedule(count = aiCount) {
+    const allDates = client?.brandBrain?.importantDates || [];
+    if (!startDate) return [];
+    const endDate = addDays(startDate, (Math.max(1, count) - 1) * Math.max(1, interval));
+    return allDates.filter((value) => {
+      const date = extractDateKeyFromText(value);
+      return Boolean(date && date >= startDate && date <= endDate);
+    });
+  }
+
+  function clearLocalAutosave() {
+    if (typeof window !== "undefined") window.localStorage.removeItem(autosaveKey);
+    setLocalRecovery(null);
+  }
+
+  function restoreLocalAutosave() {
+    if (!localRecovery) return;
+    setClientId(localRecovery.clientId || clientId);
+    setDraftName(localRecovery.draftName || "");
+    setBatchDueDate(localRecovery.batchDueDate || "");
+    setItems(localRecovery.items || []);
+    setManual(localRecovery.manual || emptyRequest);
+    setCreatorMode(localRecovery.creatorMode || "ia");
+    setAiCount(Number(localRecovery.aiCount || 5));
+    setStartDate(localRecovery.startDate || "");
+    setInterval(Number(localRecovery.interval || 2));
+    setTypes(localRecovery.types || "Reel,Carrusel,Post");
+    setGoals(localRecovery.goals || "Ventas,Awareness,Confianza");
+    setThemes(localRecovery.themes || "Experiencia,Producto estrella,Testimonios");
+    setMust(localRecovery.must || "");
+    setManualCount(Number(localRecovery.manualCount || 5));
+    setAddPanelCollapsed(Boolean((localRecovery.items || []).length));
+    setLocalRecovery(null);
+    showFeedback("Borrador local restaurado desde guardado automático.", "info");
   }
 
   function showFeedback(message: string, type: "success" | "info" = "success") {
@@ -301,7 +380,7 @@ export default function CreatorPage() {
     setManual({ ...manual, [k]: v });
   }
 
-  function clientContext() {
+  function clientContext(scheduleImportantDates?: string[]) {
     if (!client) return "";
     const brain = client.brandBrain || {};
     return [
@@ -325,8 +404,8 @@ export default function CreatorPage() {
       brain.tone && `Tono: ${brain.tone}`,
       brain.typography &&
         `Tipografía oficial registrada: ${brain.typography} (solo referencia de marca; no usar como titular ni copy visible)`,
-      (brain.importantDates || []).length
-        ? `Fechas importantes del cliente: ${(brain.importantDates || []).join(" | ")}`
+      ((scheduleImportantDates ?? brain.importantDates) || []).length
+        ? `Fechas importantes del cliente dentro de la parrilla: ${((scheduleImportantDates ?? brain.importantDates) || []).join(" | ")}`
         : "",
       (brain.visualStyle || []).length
         ? `Estilo visual del Brand Brain: ${(brain.visualStyle || []).join(", ")}`
@@ -510,6 +589,7 @@ export default function CreatorPage() {
   }
 
   function newDraft() {
+    clearLocalAutosave();
     setCurrentDraftId("");
     setDraftName("");
     setBatchDueDate("");
@@ -556,6 +636,7 @@ export default function CreatorPage() {
     typeList: string[],
     goalList: string[],
     themeList: string[],
+    scheduleImportantDates: string[] = relevantImportantDatesForSchedule(Math.max(1, aiCount)),
   ) {
     const contentType =
       typeList[index % Math.max(typeList.length, 1)] || "Post";
@@ -568,7 +649,7 @@ export default function CreatorPage() {
       : "Diseño";
     const personas = client?.buyerPersonas || [];
     const persona = personas.length ? personas[index % personas.length] : null;
-    const importantDates = client?.brandBrain?.importantDates || [];
+    const importantDates = scheduleImportantDates || [];
     const importantDate = importantDates.length
       ? importantDates[index % importantDates.length]
       : "";
@@ -642,13 +723,15 @@ export default function CreatorPage() {
     const typeList = split(types),
       goalList = split(goals),
       themeList = split(themes);
+    const targetCount = Math.max(1, aiCount);
+    const scheduleImportantDates = relevantImportantDatesForSchedule(targetCount);
     setBusy(true);
     try {
       const response = await fetch("/api/generate-content-proposals", {
         method: "POST",
         headers: await authJsonHeaders(),
         body: JSON.stringify({
-          count: Math.max(1, aiCount),
+          count: targetCount,
           startDate,
           interval: Math.max(1, interval),
           types: typeList,
@@ -672,10 +755,10 @@ export default function CreatorPage() {
             serviceArea: client.serviceArea,
             offerSummary: client.offerSummary,
             localAudienceContext: client.localAudienceContext,
-            brandBrain: client.brandBrain,
+            brandBrain: { ...(client.brandBrain || {}), importantDates: scheduleImportantDates },
             buyerPersonas: client.buyerPersonas || [],
           },
-          clientContext: clientContext(),
+          clientContext: clientContext(scheduleImportantDates),
           marketContext: marketContext(),
           successfulContext: successfulRequestsContext(),
         }),
@@ -685,72 +768,71 @@ export default function CreatorPage() {
         throw new Error(
           payload?.error || "No se pudieron generar propuestas completas.",
         );
-      const generated = payload.proposals
-        .slice(0, Math.max(1, aiCount))
-        .map((proposal: any, index: number) => {
-          const fallback = buildFallbackAiProposal(
-            index,
-            typeList,
-            goalList,
-            themeList,
-          );
-          const contentType = proposal.contentType || fallback.contentType;
-          const isVideoLike = ["Reel", "TikTok", "Foto"].includes(contentType);
-          return hydrate(
-            {
-              ...emptyRequest,
-              ...fallback,
-              ...proposal,
-              clientId: client.id!,
-              clientName: client.name,
-              number: items.length + index + 1,
-              total: items.length + payload.proposals.length,
-              contentType,
-              objective: proposal.objective || fallback.objective,
-              platforms:
-                Array.isArray(proposal.platforms) && proposal.platforms.length
-                  ? proposal.platforms
-                  : fallback.platforms,
-              visualFormat: proposal.visualFormat || fallback.visualFormat,
-              feedPlacement: proposal.feedPlacement || fallback.feedPlacement,
-              buyerPersonaId:
-                proposal.buyerPersonaId || fallback.buyerPersonaId,
-              buyerPersonaName:
-                proposal.buyerPersonaName || fallback.buyerPersonaName,
-              buyerPersonaSnapshot:
-                proposal.buyerPersonaSnapshot || fallback.buyerPersonaSnapshot,
-              topic: proposal.topic || fallback.topic,
-              creativeIdea: proposal.creativeIdea || fallback.creativeIdea,
-              keyMessage: proposal.keyMessage || fallback.keyMessage,
-              copyIn: proposal.copyIn || fallback.copyIn,
-              copyStatus:
-                proposal.copyIn || fallback.copyIn
-                  ? "listo_para_revision"
-                  : "pendiente",
-              cta: proposal.cta || fallback.cta,
-              suggestedArea: proposal.suggestedArea || fallback.suggestedArea,
-              requiresProduction:
-                typeof proposal.requiresProduction === "boolean"
-                  ? proposal.requiresProduction
-                  : isVideoLike,
-              materialAvailable:
-                typeof proposal.materialAvailable === "boolean"
-                  ? proposal.materialAvailable
-                  : !isVideoLike,
-              materialLinks:
-                proposal.materialLinks ||
-                (!isVideoLike
-                  ? "No requiere producción. Usar assets de marca, material existente, stock o generación IA según el brief."
-                  : ""),
-              productionNotes:
-                proposal.productionNotes ||
-                (isVideoLike ? fallback.productionNotes : ""),
-              publishDate: proposal.publishDate || fallback.publishDate,
-              source: "ai-complete",
-            },
-            "ai-complete",
-          );
-        });
+      const proposalList = Array.isArray(payload.proposals) ? payload.proposals : [];
+      const generated = Array.from({ length: targetCount }).map((_, index) => {
+        const proposal = proposalList[index] || {};
+        const fallback = buildFallbackAiProposal(
+          index,
+          typeList,
+          goalList,
+          themeList,
+          scheduleImportantDates,
+        );
+        const contentType = proposal.contentType || fallback.contentType;
+        const requiresProduction =
+          typeof proposal.requiresProduction === "boolean"
+            ? proposal.requiresProduction
+            : fallback.requiresProduction;
+        return hydrate(
+          {
+            ...emptyRequest,
+            ...fallback,
+            ...proposal,
+            clientId: client.id!,
+            clientName: client.name,
+            number: items.length + index + 1,
+            total: items.length + targetCount,
+            contentType,
+            objective: proposal.objective || fallback.objective,
+            platforms:
+              Array.isArray(proposal.platforms) && proposal.platforms.length
+                ? proposal.platforms
+                : fallback.platforms,
+            visualFormat: proposal.visualFormat || fallback.visualFormat,
+            feedPlacement: proposal.feedPlacement || fallback.feedPlacement,
+            buyerPersonaId: proposal.buyerPersonaId || fallback.buyerPersonaId,
+            buyerPersonaName:
+              proposal.buyerPersonaName || fallback.buyerPersonaName,
+            buyerPersonaSnapshot:
+              proposal.buyerPersonaSnapshot || fallback.buyerPersonaSnapshot,
+            topic: proposal.topic || fallback.topic,
+            creativeIdea: proposal.creativeIdea || fallback.creativeIdea,
+            keyMessage: proposal.keyMessage || fallback.keyMessage,
+            copyIn: proposal.copyIn || fallback.copyIn,
+            copyStatus:
+              proposal.copyIn || fallback.copyIn
+                ? "listo_para_revision"
+                : "pendiente",
+            cta: proposal.cta || fallback.cta,
+            suggestedArea: proposal.suggestedArea || fallback.suggestedArea,
+            requiresProduction,
+            materialAvailable: requiresProduction
+              ? false
+              : typeof proposal.materialAvailable === "boolean"
+                ? proposal.materialAvailable
+                : fallback.materialAvailable,
+            materialLinks: requiresProduction
+              ? ""
+              : proposal.materialLinks || fallback.materialLinks,
+            productionNotes:
+              proposal.productionNotes ||
+              (requiresProduction ? fallback.productionNotes : ""),
+            publishDate: fallback.publishDate,
+            source: "ai-complete",
+          },
+          "ai-complete",
+        );
+      });
       const numbered = generated.map((item: any, index: number) => ({
         ...item,
         number: items.length + index + 1,
@@ -759,9 +841,10 @@ export default function CreatorPage() {
       setItems([...items, ...numbered]);
       setExpandedItemIndex(null);
       setAddPanelCollapsed(true);
+      showFeedback(`${generated.length} solicitud(es) generada(s) y agregada(s) al lote.`);
     } catch (error) {
-      const generated = Array.from({ length: Math.max(1, aiCount) }).map(
-        (_, i) => buildFallbackAiProposal(i, typeList, goalList, themeList),
+      const generated = Array.from({ length: targetCount }).map((_, i) =>
+        buildFallbackAiProposal(i, typeList, goalList, themeList, scheduleImportantDates),
       );
       const numbered = generated.map((item: any, index: number) => ({
         ...item,
@@ -883,6 +966,12 @@ export default function CreatorPage() {
     }
     if (k === "requiresProduction") {
       next[index].status = v ? "pendiente_produccion" : "lista_asignacion";
+      next[index].materialAvailable = v ? false : next[index].materialAvailable;
+      if (v) {
+        next[index].productionSpecificMaterialLink = "";
+        next[index].productionGeneralMaterialLinks = "";
+        next[index].materialDeliveredAt = "";
+      }
     }
     setItems(next);
   }
@@ -1113,6 +1202,7 @@ export default function CreatorPage() {
       setDraftName("");
       setForceReason("");
       setForceNotes("");
+      clearLocalAutosave();
       await load();
       showFeedback("Lote enviado correctamente a Asignación.");
     } finally {
@@ -1227,6 +1317,21 @@ export default function CreatorPage() {
           Configura costos, tiempos y capacidad diaria en Configuración.
         </span>
       </div>
+
+      {localRecovery && !items.length && (
+        <div className="inline-feedback info" style={{ alignItems: "center" }}>
+          <strong>Autoguardado</strong>
+          <span>
+            Encontré un borrador local de {localRecovery.savedAt ? new Date(localRecovery.savedAt).toLocaleString("es-MX") : "una sesión anterior"}.
+          </span>
+          <button className="btn blue" type="button" onClick={restoreLocalAutosave}>
+            Restaurar
+          </button>
+          <button className="btn" type="button" onClick={clearLocalAutosave}>
+            Descartar
+          </button>
+        </div>
+      )}
 
       {feedback && (
         <>

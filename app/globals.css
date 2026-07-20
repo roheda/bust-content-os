@@ -2622,3 +2622,14 @@ a[class*="bg-black"],
 .toast-feedback.info strong{background:#2563eb;color:#fff}
 @keyframes toastIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:760px){.toast-feedback{left:12px;right:12px;bottom:12px;max-width:none}}
+
+/* v8.1: colores operativos por status en Asignación */
+.pill.teal{background:#ccfbf1!important;color:#0f766e!important;border-color:#99f6e4!important}
+.pill.purple{background:#f3e8ff!important;color:#7e22ce!important;border-color:#e9d5ff!important}
+.pill.cyan{background:#cffafe!important;color:#0e7490!important;border-color:#a5f3fc!important}
+.pill.violet{background:#ede9fe!important;color:#6d28d9!important;border-color:#ddd6fe!important}
+.pill.pink{background:#fce7f3!important;color:#be185d!important;border-color:#fbcfe8!important}
+.pill.lime{background:#ecfccb!important;color:#4d7c0f!important;border-color:#d9f99d!important}
+.pill.sky{background:#e0f2fe!important;color:#0369a1!important;border-color:#bae6fd!important}
+.pill.slate,.pill.gray{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important}
+.pill.emerald{background:#d1fae5!important;color:#047857!important;border-color:#a7f3d0!important}
