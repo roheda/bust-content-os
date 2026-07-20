@@ -19,6 +19,12 @@ type OrderItem = {
   feedPlacement?: string;
   publishDate?: string;
   referenceLinks?: string;
+  referenceFiles?: unknown[];
+  materialLinks?: string;
+  materialFiles?: unknown[];
+  productionSpecificMaterialLink?: string;
+  productionGeneralMaterialLinks?: string;
+  productionMaterialFiles?: unknown[];
 };
 
 type SuggestedOrderItem = {
@@ -159,7 +165,9 @@ function buildPrompt(payload: Payload) {
 
   return `Eres productor audiovisual senior y asistente de dirección para sesiones de foto y video de una agencia.
 Ordena las solicitudes seleccionadas para que el equipo sepa qué grabar o fotografiar primero y qué dejar al final.
+Lee con cuidado TODA la información de cada solicitud, no solo el tipo de contenido: objetivo, tema, idea visual, mensaje, copy, CTA, notas de producción, referencias, links, archivos, lote y reglas del cliente. Deduce qué está plasmando cada visual antes de moverlo.
 Piensa especialmente en restaurantes: platillos calientes deben capturarse al salir de cocina, videos y acciones deben hacerse antes que la foto final si la temperatura/textura importa, bebidas pueden ayudar al montaje, ambiente conviene antes de que el set se ensucie, mesa completa y personas al final cuando ya hay producto suficiente.
+Si no hay evidencia suficiente para clasificar una solicitud, márcala como Producción general y explica que requiere revisión manual.
 
 Devuelve SOLO JSON válido con esta forma exacta:
 {"items":[{"id":"...","order":1,"group":"...","moment":"...","priority":"normal|high|immediate","requiresImmediateCapture":true,"reason":"explicación breve operativa"}]}

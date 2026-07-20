@@ -62,6 +62,7 @@ export default function ProductionsPage(){
   const [productionOrderInstructions,setProductionOrderInstructions]=useState("");
   const [productionOrderMode,setProductionOrderMode]=useState<"manual"|"ai">("manual");
   const [orderingWithAi,setOrderingWithAi]=useState(false);
+  const [dragProductionRequestId,setDragProductionRequestId]=useState<string|null>(null);
 
   const [reqClientFilter,setReqClientFilter]=useState("all");
   const [reqBatchFilter,setReqBatchFilter]=useState("all");
@@ -320,14 +321,51 @@ export default function ProductionsPage(){
     setForm({...form,teamMembers:next,team:next.join(", ")});
   }
 
-  function moveProductionOrder(index:number, direction:-1|1){
+  function reorderProductionRequestIds(nextIds:string[]){
+    if(!canCreateProduction)return permissionAlert("ordenar producción");
+    setProductionOrderMode("manual");
+    setForm({...form,requestIds:nextIds,productionOrderMode:"manual"});
+  }
+
+  function moveProductionRequestByDrag(sourceId:string, targetId:string){
+    if(!canCreateProduction)return permissionAlert("ordenar producción");
+    if(!sourceId || !targetId || sourceId === targetId)return;
+    const ids = [...(form.requestIds || [])];
+    const fromIndex = ids.indexOf(sourceId);
+    const toIndex = ids.indexOf(targetId);
+    if(fromIndex < 0 || toIndex < 0)return;
+    const [moved] = ids.splice(fromIndex,1);
+    ids.splice(toIndex,0,moved);
+    reorderProductionRequestIds(ids);
+  }
+
+  function quickSortProductionOrder(mode:"photo-first"|"video-first"|"keep-batch"){
     if(!canCreateProduction)return permissionAlert("ordenar producción");
     const ids = [...(form.requestIds || [])];
-    const nextIndex = index + direction;
-    if(nextIndex < 0 || nextIndex >= ids.length)return;
-    [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
-    setProductionOrderMode("manual");
-    setForm({...form,requestIds:ids,productionOrderMode:"manual"});
+    const indexed = ids.map((id,index)=>({id,index,item:requestById.get(id)}));
+    const sorted = indexed.sort((a,b)=>{
+      if(mode === "photo-first"){
+        const av = a.item ? isVideoRequest(a.item) : false;
+        const bv = b.item ? isVideoRequest(b.item) : false;
+        if(av !== bv)return av ? 1 : -1;
+      }
+      if(mode === "video-first"){
+        const av = a.item ? isVideoRequest(a.item) : false;
+        const bv = b.item ? isVideoRequest(b.item) : false;
+        if(av !== bv)return av ? -1 : 1;
+      }
+      if(mode === "keep-batch"){
+        const ab = a.item?.batchName || "";
+        const bb = b.item?.batchName || "";
+        const batchCompare = ab.localeCompare(bb,"es",{numeric:true});
+        if(batchCompare)return batchCompare;
+        const an = Number(a.item?.number || a.index);
+        const bn = Number(b.item?.number || b.index);
+        if(an !== bn)return an-bn;
+      }
+      return a.index-b.index;
+    }).map(row=>row.id);
+    reorderProductionRequestIds(sorted);
   }
 
   function removeFromProductionOrder(id:string){
@@ -372,7 +410,13 @@ export default function ProductionsPage(){
         visualFormat:item.visualFormat,
         feedPlacement:item.feedPlacement,
         publishDate:item.publishDate,
-        referenceLinks:item.referenceLinks
+        referenceLinks:item.referenceLinks,
+        referenceFiles:item.referenceFiles,
+        materialLinks:item.materialLinks,
+        materialFiles:item.materialFiles,
+        productionSpecificMaterialLink:item.productionSpecificMaterialLink,
+        productionGeneralMaterialLinks:item.productionGeneralMaterialLinks,
+        productionMaterialFiles:item.productionMaterialFiles
       }));
       const client = brands.find(brand=>brand.id===form.clientId) || null;
       const response = await fetch("/api/suggest-production-order",{
@@ -778,15 +822,26 @@ export default function ProductionsPage(){
           />
         </div>
         <div className="production-order-actions">
-          <button className="btn blue" type="button" onClick={orderSelectionWithAi} disabled={!canCreateProduction || orderingWithAi}>{orderingWithAi ? "Ordenando con IA..." : "Ordenar con IA"}</button>
-          <button className="btn" type="button" onClick={()=>{setProductionOrderMode("manual");setProductionOrderReasons({});}}>Ordenar manualmente</button>
-          <span className="mini">Puedes ajustar con subir/bajar antes de crear la producción.</span>
+          <button className="btn blue" type="button" onClick={orderSelectionWithAi} disabled={!canCreateProduction || orderingWithAi}>{orderingWithAi ? "Revisando con IA..." : "Revisar y ordenar con IA"}</button>
+          <button className="btn" type="button" onClick={()=>quickSortProductionOrder("photo-first")}>Fotos primero</button>
+          <button className="btn" type="button" onClick={()=>quickSortProductionOrder("video-first")}>Videos primero</button>
+          <button className="btn" type="button" onClick={()=>quickSortProductionOrder("keep-batch")}>Orden del lote</button>
+          <button className="btn" type="button" onClick={()=>{setProductionOrderMode("manual");setProductionOrderReasons({});}}>Limpiar sugerencia IA</button>
+          <span className="mini">Arrastra las tarjetas para acomodarlas. Los botones rápidos solo reordenan la selección visible en esta producción.</span>
         </div>
         <div className="production-order-list">
           {modalOrderedRequests.map((x,index)=>{
             const suggestion = x.id ? productionOrderReasons[x.id] : null;
-            return <div className="production-order-item" key={x.id}>
-              <div className="production-order-number">#{index+1}</div>
+            return <div
+              className={`production-order-item ${dragProductionRequestId === x.id ? "dragging" : ""}`}
+              key={x.id}
+              draggable={canCreateProduction}
+              onDragStart={event=>{setDragProductionRequestId(x.id || null); event.dataTransfer.effectAllowed="move"; if(x.id)event.dataTransfer.setData("text/plain",x.id);}}
+              onDragOver={event=>{event.preventDefault(); event.dataTransfer.dropEffect="move";}}
+              onDrop={event=>{event.preventDefault(); const sourceId = event.dataTransfer.getData("text/plain") || dragProductionRequestId || ""; if(x.id)moveProductionRequestByDrag(sourceId,x.id); setDragProductionRequestId(null);}}
+              onDragEnd={()=>setDragProductionRequestId(null)}
+            >
+              <div className="production-order-number"><span className="drag-handle">☰</span><strong>#{index+1}</strong></div>
               <div className="production-order-body">
                 <div className="production-order-title">
                   <strong>{x.contentType} · {x.objective}</strong>
@@ -802,8 +857,6 @@ export default function ProductionsPage(){
                 </div>}
               </div>
               <div className="production-order-controls">
-                <button className="btn mini-btn" type="button" onClick={()=>moveProductionOrder(index,-1)} disabled={index===0}>Subir</button>
-                <button className="btn mini-btn" type="button" onClick={()=>moveProductionOrder(index,1)} disabled={index===modalOrderedRequests.length-1}>Bajar</button>
                 <button className="btn mini-btn red" type="button" onClick={()=>removeFromProductionOrder(x.id!)}>Quitar</button>
               </div>
             </div>

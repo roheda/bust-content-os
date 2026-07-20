@@ -2668,3 +2668,12 @@ a[class*="bg-black"],
 .production-order-brief-note{border-color:rgba(249,175,27,.38)!important;background:rgba(249,175,27,.08)!important;white-space:pre-line}
 @media (max-width:900px){.production-order-item{grid-template-columns:1fr}.production-order-number{width:auto}.production-order-controls{justify-content:flex-start}}
 .btn.mini-btn{padding:8px 10px;border-radius:12px;font-size:12px}
+
+/* v8.6.1 producción: orden práctico con drag & drop */
+.production-order-item{cursor:grab;transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, opacity .16s ease}
+.production-order-item:active{cursor:grabbing}
+.production-order-item.dragging{opacity:.58;border-color:rgba(249,175,27,.65);box-shadow:0 18px 48px rgba(0,0,0,.14);transform:scale(.995)}
+.production-order-number{display:flex;align-items:center;justify-content:center;gap:6px;user-select:none}
+.drag-handle{font-size:18px;line-height:1;color:var(--muted)}
+.production-order-actions .btn{white-space:nowrap}
+@media (max-width:900px){.production-order-item{cursor:default}.drag-handle{display:none}}
