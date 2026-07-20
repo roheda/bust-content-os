@@ -599,6 +599,14 @@ export type ContentRequest = {
   lastRevisionReason?: string;
   productionId?: string;
   productionName?: string;
+  productionOrder?: number;
+  productionOrderReason?: string;
+  productionOrderGroup?: string;
+  productionOrderMoment?: string;
+  productionPriority?: "normal" | "high" | "immediate" | string;
+  requiresImmediateCapture?: boolean;
+  aiSuggestedOrder?: boolean;
+  manualOrderEdited?: boolean;
 
   // Planeación operativa automática
   clientDueDate?: string;
@@ -664,6 +672,15 @@ export type Production = {
   materialFiles?: ReferenceFile[];
   materialDueDate?: string;
   materialDeliveredAt?: string;
+  productionOrder?: Record<string, number>;
+  productionOrderReasons?: Record<string, string>;
+  productionOrderGroups?: Record<string, string>;
+  productionOrderMoments?: Record<string, string>;
+  productionOrderPriorities?: Record<string, string>;
+  productionOrderImmediate?: Record<string, boolean>;
+  productionOrderMode?: "manual" | "ai" | string;
+  productionOrderInstructions?: string;
+  productionOrderGeneratedAt?: string;
   status: string;
 };
 

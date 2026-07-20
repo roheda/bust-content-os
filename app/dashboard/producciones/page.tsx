@@ -3,6 +3,18 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { Brand, ContentRequest, PlatformUser, Production, ReferenceFile, isImageFile, isVideoFile, listUniqueBrands, listProductions, listRequests, listUsers, organizationTeam, saveProduction, updateProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
+import { authJsonHeaders } from "@/lib/client-auth";
+
+
+type ProductionOrderSuggestion = {
+  id: string;
+  order: number;
+  group: string;
+  moment: string;
+  priority: "normal" | "high" | "immediate" | string;
+  requiresImmediateCapture: boolean;
+  reason: string;
+};
 
 const empty: Production = {
   title: "",
@@ -46,6 +58,10 @@ export default function ProductionsPage(){
   const [requestSort,setRequestSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"dueDate",direction:"asc"});
   const [productionSort,setProductionSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"scheduledDate",direction:"asc"});
   const [collapsedProductionBatchIds,setCollapsedProductionBatchIds]=useState<string[]>([]);
+  const [productionOrderReasons,setProductionOrderReasons]=useState<Record<string, ProductionOrderSuggestion>>({});
+  const [productionOrderInstructions,setProductionOrderInstructions]=useState("");
+  const [productionOrderMode,setProductionOrderMode]=useState<"manual"|"ai">("manual");
+  const [orderingWithAi,setOrderingWithAi]=useState(false);
 
   const [reqClientFilter,setReqClientFilter]=useState("all");
   const [reqBatchFilter,setReqBatchFilter]=useState("all");
@@ -244,7 +260,12 @@ export default function ProductionsPage(){
 
   const visibleProductionRequestIds = useMemo(()=>productionRequests.map(x=>x.id).filter(Boolean) as string[],[productionRequests]);
   const allVisibleProductionSelected = visibleProductionRequestIds.length > 0 && visibleProductionRequestIds.every(id=>selected.includes(id));
-  const selectedRequests = productionRequests.filter(x=>selected.includes(x.id!)).sort((a,b)=>Number(!isVideoRequest(a))-Number(!isVideoRequest(b)));
+  const requestById = useMemo(()=>new Map(requests.map(item=>[item.id,item])),[requests]);
+  const selectedRequests = productionRequests.filter(x=>selected.includes(x.id!));
+  const modalOrderedRequests = useMemo(()=>{
+    const ids = form.requestIds || [];
+    return ids.map(id=>requestById.get(id)).filter(Boolean) as ContentRequest[];
+  },[form.requestIds,requestById]);
 
   function toggle(id:string){if(!canCreateProduction)return permissionAlert("seleccionar solicitudes para producción"); setSelected(selected.includes(id)?selected.filter(x=>x!==id):[...selected,id])}
 
@@ -274,8 +295,12 @@ export default function ProductionsPage(){
   function openModal(){
     if(!canCreateProduction)return permissionAlert("crear producciones");
     if(!selected.length)return alert("Selecciona solicitudes para producción");
+    const orderedIds = selectedRequests.map(item=>item.id).filter(Boolean) as string[];
     const first = selectedRequests[0];
-    setForm({...empty,clientId:first.clientId,clientName:first.clientName,title:`Producción ${first.clientName} · ${new Date().toLocaleDateString("es-MX")}`,requestIds:selected,objective:"",shotList:"",requirements:"",locations:""});
+    setProductionOrderReasons({});
+    setProductionOrderInstructions("");
+    setProductionOrderMode("manual");
+    setForm({...empty,clientId:first.clientId,clientName:first.clientName,title:`Producción ${first.clientName} · ${new Date().toLocaleDateString("es-MX")}`,requestIds:orderedIds,objective:"",shotList:"",requirements:"",locations:""});
     setShowModal(true);
   }
 
@@ -295,14 +320,133 @@ export default function ProductionsPage(){
     setForm({...form,teamMembers:next,team:next.join(", ")});
   }
 
+  function moveProductionOrder(index:number, direction:-1|1){
+    if(!canCreateProduction)return permissionAlert("ordenar producción");
+    const ids = [...(form.requestIds || [])];
+    const nextIndex = index + direction;
+    if(nextIndex < 0 || nextIndex >= ids.length)return;
+    [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
+    setProductionOrderMode("manual");
+    setForm({...form,requestIds:ids,productionOrderMode:"manual"});
+  }
+
+  function removeFromProductionOrder(id:string){
+    if(!canCreateProduction)return permissionAlert("editar orden de producción");
+    setForm({...form,requestIds:(form.requestIds || []).filter(value=>value!==id)});
+    setSelected(current=>current.filter(value=>value!==id));
+    setProductionOrderReasons(current=>{const next={...current}; delete next[id]; return next;});
+  }
+
+  function applySuggestedProductionOrder(rows:ProductionOrderSuggestion[], mode:"manual"|"ai"){
+    const validIds = new Set((form.requestIds || []));
+    const ordered = rows
+      .filter(row=>validIds.has(row.id))
+      .sort((a,b)=>Number(a.order||0)-Number(b.order||0));
+    const orderedIds = ordered.map(row=>row.id);
+    const missing = (form.requestIds || []).filter(id=>!orderedIds.includes(id));
+    const nextReasons:Record<string,ProductionOrderSuggestion> = {};
+    ordered.forEach((row,index)=>{nextReasons[row.id] = {...row,order:index+1};});
+    missing.forEach((id,index)=>{nextReasons[id] = {id,order:orderedIds.length+index+1,group:"Sin clasificar",moment:"Revisar manualmente",priority:"normal",requiresImmediateCapture:false,reason:"No se recibió sugerencia para esta solicitud; se mantiene al final para revisión."};});
+    setProductionOrderReasons(nextReasons);
+    setProductionOrderMode(mode);
+    setForm({...form,requestIds:[...orderedIds,...missing],productionOrderMode:mode,productionOrderInstructions});
+  }
+
+  async function orderSelectionWithAi(){
+    if(!canCreateProduction)return permissionAlert("ordenar producción con IA");
+    if(!(form.requestIds || []).length)return alert("No hay solicitudes seleccionadas para ordenar.");
+    setOrderingWithAi(true);
+    try{
+      const payloadItems = modalOrderedRequests.map(item=>({
+        id:item.id,
+        clientName:item.clientName,
+        batchName:item.batchName,
+        contentType:item.contentType,
+        objective:item.objective,
+        topic:item.topic,
+        creativeIdea:item.creativeIdea,
+        keyMessage:item.keyMessage,
+        copyIn:item.copyIn,
+        cta:item.cta,
+        productionNotes:item.productionNotes,
+        visualFormat:item.visualFormat,
+        feedPlacement:item.feedPlacement,
+        publishDate:item.publishDate,
+        referenceLinks:item.referenceLinks
+      }));
+      const client = brands.find(brand=>brand.id===form.clientId) || null;
+      const response = await fetch("/api/suggest-production-order",{
+        method:"POST",
+        headers: await authJsonHeaders(),
+        body:JSON.stringify({items:payloadItems,client,instructions:productionOrderInstructions,productionMode:"Producción nueva"})
+      });
+      const data = await response.json();
+      if(!response.ok)throw new Error(data?.error || "No se pudo generar el orden con IA.");
+      applySuggestedProductionOrder(data.items || [],"ai");
+      alert(data.mode === "fallback" ? "Se generó un orden operativo automático. Revisa y ajusta manualmente si hace falta." : "La IA propuso un orden de producción. Puedes ajustarlo antes de crear la producción.");
+    }catch(error:any){
+      alert(error?.message || "No se pudo ordenar con IA.");
+    }finally{
+      setOrderingWithAi(false);
+    }
+  }
+
+  function buildProductionOrderPayload(){
+    const ids = form.requestIds || [];
+    const order:Record<string,number> = {};
+    const reasons:Record<string,string> = {};
+    const groups:Record<string,string> = {};
+    const moments:Record<string,string> = {};
+    const priorities:Record<string,string> = {};
+    const immediate:Record<string,boolean> = {};
+    ids.forEach((id,index)=>{
+      const suggestion = productionOrderReasons[id];
+      order[id] = index + 1;
+      if(suggestion?.reason)reasons[id] = suggestion.reason;
+      if(suggestion?.group)groups[id] = suggestion.group;
+      if(suggestion?.moment)moments[id] = suggestion.moment;
+      if(suggestion?.priority)priorities[id] = suggestion.priority;
+      immediate[id] = Boolean(suggestion?.requiresImmediateCapture);
+    });
+    return {order,reasons,groups,moments,priorities,immediate};
+  }
+
   async function submit(){
     if(!canCreateProduction)return permissionAlert("crear producciones");
     if(!form.title||!form.scheduledDate||!form.materialDueDate||!form.startTime||!form.endTime||!(form.locations||form.location)||!form.producer||!(form.teamMembers||[]).length||!form.objective||!form.requirements||!form.shotList)return alert("Todos los campos de la producción son obligatorios, incluida la fecha límite para completar materiales.");
     if(isWeekendDate(form.scheduledDate) || isWeekendDate(form.materialDueDate))return alert("La producción y la entrega de materiales deben programarse en días hábiles, no sábado ni domingo.");
-    const ref = await saveProduction(form);
-    await Promise.all(form.requestIds.map(id=>updateRequest(id,{productionId:ref.id,productionName:form.title,status:"produccion_programada"})));
+    const orderPayload = buildProductionOrderPayload();
+    const productionData:Production = {
+      ...form,
+      productionOrder: orderPayload.order,
+      productionOrderReasons: orderPayload.reasons,
+      productionOrderGroups: orderPayload.groups,
+      productionOrderMoments: orderPayload.moments,
+      productionOrderPriorities: orderPayload.priorities,
+      productionOrderImmediate: orderPayload.immediate,
+      productionOrderMode,
+      productionOrderInstructions,
+      productionOrderGeneratedAt: new Date().toISOString()
+    };
+    const ref = await saveProduction(productionData);
+    await Promise.all(form.requestIds.map((id,index)=>updateRequest(id,{
+      productionId:ref.id,
+      productionName:form.title,
+      productionOrder:index+1,
+      productionOrderReason:orderPayload.reasons[id] || "",
+      productionOrderGroup:orderPayload.groups[id] || "",
+      productionOrderMoment:orderPayload.moments[id] || "",
+      productionPriority:orderPayload.priorities[id] || "normal",
+      requiresImmediateCapture:orderPayload.immediate[id] || false,
+      aiSuggestedOrder:productionOrderMode === "ai",
+      manualOrderEdited:productionOrderMode === "manual",
+      status:"produccion_programada"
+    })));
     setSelected([]);
     setShowModal(false);
+    setProductionOrderReasons({});
+    setProductionOrderInstructions("");
+    setProductionOrderMode("manual");
     setForm(empty);
     await load();
     alert("Producción creada");
@@ -617,8 +761,56 @@ export default function ProductionsPage(){
         <div className="field full"><label>Observaciones *</label><textarea value={form.shotList} onChange={e=>set("shotList",e.target.value)} placeholder="Observaciones generales, tomas especiales, logística o detalles relevantes. No se llena automáticamente."/></div>
         <div className="field full"><label>Requerimientos *</label><textarea value={form.requirements} onChange={e=>set("requirements",e.target.value)} placeholder="Equipo, props, permisos, modelos, productos, horarios, vestuario, etc."/></div>
       </div>
-      <h3>Solicitudes incluidas</h3>
-      {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{x.contentType} · {x.objective}</strong><span className="mini">{x.creativeIdea}</span><span className="mini">{x.productionNotes}</span></div>)}
+      <div className="production-order-panel">
+        <div className="production-order-head">
+          <div>
+            <h3>Orden de producción</h3>
+            <p className="mini">Acomoda manualmente o deja que la IA sugiera el orden según platillos, temperatura, video/foto, ambiente, preparación y mesa completa.</p>
+          </div>
+          <span className={productionOrderMode === "ai" ? "pill green" : "pill blue"}>{productionOrderMode === "ai" ? "Orden sugerido por IA" : "Orden manual"}</span>
+        </div>
+        <div className="field full">
+          <label>Instrucciones para ordenar esta producción</label>
+          <textarea
+            value={productionOrderInstructions}
+            onChange={e=>setProductionOrderInstructions(e.target.value)}
+            placeholder="Ejemplo: primero bebidas y ambiente; platillos calientes se graban en video al salir de cocina y después foto hero. Agrupar por sucursal o por cocina."
+          />
+        </div>
+        <div className="production-order-actions">
+          <button className="btn blue" type="button" onClick={orderSelectionWithAi} disabled={!canCreateProduction || orderingWithAi}>{orderingWithAi ? "Ordenando con IA..." : "Ordenar con IA"}</button>
+          <button className="btn" type="button" onClick={()=>{setProductionOrderMode("manual");setProductionOrderReasons({});}}>Ordenar manualmente</button>
+          <span className="mini">Puedes ajustar con subir/bajar antes de crear la producción.</span>
+        </div>
+        <div className="production-order-list">
+          {modalOrderedRequests.map((x,index)=>{
+            const suggestion = x.id ? productionOrderReasons[x.id] : null;
+            return <div className="production-order-item" key={x.id}>
+              <div className="production-order-number">#{index+1}</div>
+              <div className="production-order-body">
+                <div className="production-order-title">
+                  <strong>{x.contentType} · {x.objective}</strong>
+                  <span className={isVideoRequest(x)?"pill orange":"pill blue"}>{requestTypeLabel(x)}</span>
+                  {suggestion?.requiresImmediateCapture && <span className="pill red">Captura inmediata</span>}
+                </div>
+                <span className="mini text-clamp-2">{x.creativeIdea}</span>
+                <span className="mini text-clamp-2">Notas: {x.productionNotes || "Sin notas"}</span>
+                {suggestion && <div className="production-order-ai-note">
+                  <strong>{suggestion.group}</strong> · {suggestion.moment}
+                  <br/>
+                  {suggestion.reason}
+                </div>}
+              </div>
+              <div className="production-order-controls">
+                <button className="btn mini-btn" type="button" onClick={()=>moveProductionOrder(index,-1)} disabled={index===0}>Subir</button>
+                <button className="btn mini-btn" type="button" onClick={()=>moveProductionOrder(index,1)} disabled={index===modalOrderedRequests.length-1}>Bajar</button>
+                <button className="btn mini-btn red" type="button" onClick={()=>removeFromProductionOrder(x.id!)}>Quitar</button>
+              </div>
+            </div>
+          })}
+          {!modalOrderedRequests.length && <p className="mini">No hay solicitudes incluidas.</p>}
+        </div>
+      </div>
       <div style={{display:"flex",gap:12,marginTop:16}}><button className="btn blue" onClick={submit} disabled={!canCreateProduction}>Crear producción</button><button className="btn red" onClick={()=>setShowModal(false)}>Cerrar</button></div>
     </div></div>}
   </AppShell>
@@ -711,7 +903,12 @@ function ProductionRequestDetail({item,onPreview,typeLabel,internalDueDate}:{ite
 function ProductionBrief({production,requests}:{production:Production;requests:ContentRequest[]}){
   const included = ((production.requestIds||[])
     .map(id=>requests.find(x=>x.id===id))
-    .filter(Boolean) as ContentRequest[]).sort((a,b)=>Number(!isProductionVideoRequest(a))-Number(!isProductionVideoRequest(b)));
+    .filter(Boolean) as ContentRequest[]).sort((a,b)=>{
+      const orderA = production.productionOrder?.[a.id||""] || a.productionOrder || 9999;
+      const orderB = production.productionOrder?.[b.id||""] || b.productionOrder || 9999;
+      if(orderA !== orderB)return orderA - orderB;
+      return Number(!isProductionVideoRequest(a))-Number(!isProductionVideoRequest(b));
+    });
 
   const generalLinks = splitLinks(production.materialLinks||"");
 
@@ -763,15 +960,29 @@ function ProductionBrief({production,requests}:{production:Production;requests:C
           const materialLink = (production.materialLinksByRequest||{})[item.id||""] || item.materialLinks || production.materialLinks || "";
           const materialLinks = splitLinks(materialLink);
           const refs = item.referenceFiles || [];
+          const orderNumber = production.productionOrder?.[item.id||""] || item.productionOrder || index+1;
+          const orderReason = production.productionOrderReasons?.[item.id||""] || item.productionOrderReason || "";
+          const orderGroup = production.productionOrderGroups?.[item.id||""] || item.productionOrderGroup || "";
+          const orderMoment = production.productionOrderMoments?.[item.id||""] || item.productionOrderMoment || "";
+          const immediate = Boolean(production.productionOrderImmediate?.[item.id||""] || item.requiresImmediateCapture);
           return <article className="brief-request-card" key={item.id||index}>
             <div className="brief-request-head">
               <div>
-                <p className="eyebrow">Pieza {index+1}</p>
+                <p className="eyebrow">Orden de producción #{orderNumber}</p>
                 <h3 className="brief-request-title">{item.contentType} · {item.objective}</h3>
                 <p className="mini">Publica: {item.publishDate||"Sin fecha"} · Área: {item.suggestedArea||"Sin área"}</p>
               </div>
-              <span className="pill">{item.status}</span>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                {immediate && <span className="pill red">Captura inmediata</span>}
+                <span className="pill">{item.status}</span>
+              </div>
             </div>
+            {(orderGroup || orderMoment || orderReason) && <div className="brief-box production-order-brief-note">
+              <h4>Razón del orden</h4>
+              {orderGroup && <><strong>Grupo:</strong> {orderGroup}{"\n"}</>}
+              {orderMoment && <><strong>Momento ideal:</strong> {orderMoment}{"\n"}</>}
+              {orderReason && <><strong>Motivo:</strong> {orderReason}</>}
+            </div>}
 
             <div className="brief-columns">
               <div className="brief-box">

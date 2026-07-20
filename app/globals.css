@@ -2653,3 +2653,18 @@ a[class*="bg-black"],
 .empty-state{padding:22px;text-align:center;color:#667085;border:1px dashed rgba(15,23,42,.18);border-radius:18px;background:#fff}
 @media(max-width:1180px){.assignment-request-card{grid-template-columns:54px 1fr 1fr}.assignment-request-controls,.assignment-request-actions{grid-column:auto}.assignment-lot-header{align-items:flex-start;flex-direction:column}.assignment-lot-summary{justify-content:flex-start}}
 @media(max-width:760px){.assignment-request-card{grid-template-columns:1fr}.assignment-request-select{flex-direction:row;align-items:center}.assignment-lot-header{padding:12px}.assignment-lot-items{padding:10px}}
+
+/* v8.6 Orden inteligente de producción */
+.production-order-panel{margin-top:18px;border:1px solid var(--line);border-radius:22px;padding:18px;background:rgba(255,255,255,.03)}
+.production-order-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:14px}
+.production-order-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0 16px}
+.production-order-list{display:grid;gap:12px;margin-top:10px}
+.production-order-item{display:grid;grid-template-columns:58px 1fr auto;gap:14px;align-items:flex-start;padding:14px;border:1px solid var(--line);border-radius:18px;background:#fff}
+.production-order-number{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:rgba(255,255,255,.08);font-weight:800;color:var(--ink)}
+.production-order-body{display:grid;gap:6px;min-width:0}
+.production-order-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.production-order-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.production-order-ai-note{margin-top:6px;padding:10px 12px;border-radius:14px;border:1px solid rgba(249,175,27,.35);background:rgba(249,175,27,.08);font-size:12px;line-height:1.45;color:var(--ink)}
+.production-order-brief-note{border-color:rgba(249,175,27,.38)!important;background:rgba(249,175,27,.08)!important;white-space:pre-line}
+@media (max-width:900px){.production-order-item{grid-template-columns:1fr}.production-order-number{width:auto}.production-order-controls{justify-content:flex-start}}
+.btn.mini-btn{padding:8px 10px;border-radius:12px;font-size:12px}
