@@ -45,6 +45,7 @@ export default function ProductionsPage(){
   const [uploading,setUploading]=useState(false);
   const [requestSort,setRequestSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"dueDate",direction:"asc"});
   const [productionSort,setProductionSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"scheduledDate",direction:"asc"});
+  const [collapsedProductionBatchIds,setCollapsedProductionBatchIds]=useState<string[]>([]);
 
   const [reqClientFilter,setReqClientFilter]=useState("all");
   const [reqBatchFilter,setReqBatchFilter]=useState("all");
@@ -224,9 +225,51 @@ export default function ProductionsPage(){
     });
   },[productions,requests,prodClientFilter,prodBatchFilter,prodStatusFilter,prodProducerFilter,prodMaterialFilter,prodStartDate,prodEndDate,prodSearch,productionSort]);
 
+  const groupedProductionRequests = useMemo(()=>{
+    const map = new Map<string,{id:string;name:string;clientName:string;items:ContentRequest[]}>();
+    productionRequests.forEach(item=>{
+      const id = item.batchId || "sin-lote";
+      if(!map.has(id)){
+        map.set(id,{
+          id,
+          name:item.batchName || "Sin lote",
+          clientName:item.clientName || "Sin cliente",
+          items:[]
+        });
+      }
+      map.get(id)!.items.push(item);
+    });
+    return Array.from(map.values()).sort((a,b)=>a.name.localeCompare(b.name,"es",{numeric:true}));
+  },[productionRequests]);
+
+  const visibleProductionRequestIds = useMemo(()=>productionRequests.map(x=>x.id).filter(Boolean) as string[],[productionRequests]);
+  const allVisibleProductionSelected = visibleProductionRequestIds.length > 0 && visibleProductionRequestIds.every(id=>selected.includes(id));
   const selectedRequests = productionRequests.filter(x=>selected.includes(x.id!)).sort((a,b)=>Number(!isVideoRequest(a))-Number(!isVideoRequest(b)));
 
   function toggle(id:string){if(!canCreateProduction)return permissionAlert("seleccionar solicitudes para producción"); setSelected(selected.includes(id)?selected.filter(x=>x!==id):[...selected,id])}
+
+  function toggleAllVisibleProductionRequests(checked:boolean){
+    if(!canCreateProduction)return permissionAlert("seleccionar solicitudes para producción");
+    if(checked){
+      setSelected(Array.from(new Set([...selected,...visibleProductionRequestIds])));
+    }else{
+      setSelected(selected.filter(id=>!visibleProductionRequestIds.includes(id)));
+    }
+  }
+
+  function toggleProductionBatchCollapse(id:string){
+    setCollapsedProductionBatchIds(current=>current.includes(id) ? current.filter(value=>value!==id) : [...current,id]);
+  }
+
+  function toggleProductionBatchSelection(groupItems:ContentRequest[], checked:boolean){
+    if(!canCreateProduction)return permissionAlert("seleccionar solicitudes del lote para producción");
+    const ids = groupItems.map(item=>item.id).filter(Boolean) as string[];
+    if(checked){
+      setSelected(Array.from(new Set([...selected,...ids])));
+    }else{
+      setSelected(selected.filter(id=>!ids.includes(id)));
+    }
+  }
 
   function openModal(){
     if(!canCreateProduction)return permissionAlert("crear producciones");
@@ -380,21 +423,86 @@ export default function ProductionsPage(){
     <section className="grid two-col">
       <div className="card">
         <h3>Solicitudes pendientes de producción</h3>
-        <div className="table-wrap"><table className="table"><thead><tr>
-          <th></th>
-          <th><SortButton label="Lote" active={requestSort.key==="batch"} direction={requestSort.direction} onClick={()=>toggleRequestSort("batch")}/></th>
-          <th><SortButton label="Solicitud" active={requestSort.key==="request"} direction={requestSort.direction} onClick={()=>toggleRequestSort("request")}/></th>
-          <th><SortButton label="Notas producción" active={requestSort.key==="notes"} direction={requestSort.direction} onClick={()=>toggleRequestSort("notes")}/></th>
-          <th><SortButton label="Fecha publicación" active={requestSort.key==="publishDate"} direction={requestSort.direction} onClick={()=>toggleRequestSort("publishDate")}/></th>
-          <th><SortButton label="Video / estático" active={requestSort.key==="kind"} direction={requestSort.direction} onClick={()=>toggleRequestSort("kind")}/></th>
-        </tr></thead><tbody>{productionRequests.map(x=><tr key={x.id} className="clickable-row" onClick={()=>setPendingDetail(x)}>
-          <td onClick={event=>event.stopPropagation()}><input type="checkbox" checked={selected.includes(x.id!)} onChange={()=>toggle(x.id!)}/></td>
-          <td><strong>{x.batchName||"Sin lote"}</strong><br/><span className="mini">Entrega interna: {getInternalDueDate(x)||"Sin fecha"}</span><br/><span className="mini">Máx. producción: {getProductionDueDate(x)||"Sin fecha"}</span></td>
-          <td><strong>{x.clientName}</strong><br/>{x.contentType} · {x.objective}<br/><span className="mini text-clamp-2">{x.creativeIdea}</span></td>
-          <td><span className="text-clamp-2">{x.productionNotes||"Sin notas"}</span></td>
-          <td>{x.publishDate||"Sin fecha"}</td>
-          <td><span className={isVideoRequest(x)?"pill orange":"pill blue"}>{requestTypeLabel(x)}</span></td>
-        </tr>)}</tbody></table></div>{!productionRequests.length && <p className="mini">No hay solicitudes pendientes con esos filtros.</p>}
+        <div className="assignment-lot-groups">
+          <div className="assignment-lot-tools">
+            <label className="mini" style={{display:"flex",alignItems:"center",gap:8}}>
+              <input
+                type="checkbox"
+                checked={allVisibleProductionSelected}
+                disabled={!canCreateProduction || !visibleProductionRequestIds.length}
+                onChange={event=>toggleAllVisibleProductionRequests(event.target.checked)}
+              />
+              Seleccionar visibles
+            </label>
+            <button className="btn" type="button" onClick={()=>setCollapsedProductionBatchIds([])}>Abrir lotes</button>
+            <button className="btn" type="button" onClick={()=>setCollapsedProductionBatchIds(groupedProductionRequests.map(group=>group.id))}>Cerrar lotes</button>
+            <SortButton label="Lote" active={requestSort.key==="batch"} direction={requestSort.direction} onClick={()=>toggleRequestSort("batch")}/>
+            <SortButton label="Entrega" active={requestSort.key==="dueDate"} direction={requestSort.direction} onClick={()=>toggleRequestSort("dueDate")}/>
+            <SortButton label="Solicitud" active={requestSort.key==="request"} direction={requestSort.direction} onClick={()=>toggleRequestSort("request")}/>
+            <SortButton label="Fecha publicación" active={requestSort.key==="publishDate"} direction={requestSort.direction} onClick={()=>toggleRequestSort("publishDate")}/>
+            <span className="mini">Ordenado por lote · {groupedProductionRequests.length} bloque(s)</span>
+          </div>
+          {groupedProductionRequests.map(group=>{
+            const collapsed = collapsedProductionBatchIds.includes(group.id);
+            const groupIds = group.items.map(item=>item.id).filter(Boolean) as string[];
+            const allSelected = groupIds.length > 0 && groupIds.every(id=>selected.includes(id));
+            const videoCount = group.items.filter(isVideoRequest).length;
+            const staticCount = group.items.length - videoCount;
+            const selectedCount = group.items.filter(item=>item.id && selected.includes(item.id)).length;
+            return <div className="assignment-lot-block" key={group.id}>
+              <div className="assignment-lot-header">
+                <div className="assignment-lot-main">
+                  <input
+                    type="checkbox"
+                    title="Seleccionar solicitudes de este lote"
+                    disabled={!canCreateProduction || !groupIds.length}
+                    checked={allSelected}
+                    onChange={event=>toggleProductionBatchSelection(group.items,event.target.checked)}
+                  />
+                  <button type="button" className="assignment-lot-toggle" onClick={()=>toggleProductionBatchCollapse(group.id)}>
+                    <span>{collapsed ? "▸" : "▾"}</span>
+                    <strong>{group.name}</strong>
+                  </button>
+                  <span className="mini">{group.clientName}</span>
+                </div>
+                <div className="assignment-lot-summary">
+                  <span className="pill">{group.items.length} solicitudes</span>
+                  <span className="pill orange">{videoCount} video</span>
+                  <span className="pill blue">{staticCount} estático/foto</span>
+                  {selectedCount > 0 && <span className="pill green">{selectedCount} seleccionadas</span>}
+                </div>
+              </div>
+              {!collapsed && <div className="assignment-lot-items">
+                {group.items.map(item=><div key={item.id} className="assignment-request-card">
+                  <div className="assignment-request-select">
+                    <input type="checkbox" checked={selected.includes(item.id!)} disabled={!canCreateProduction} onChange={()=>toggle(item.id!)}/>
+                    <span className="mini">#{item.number || "--"} de {item.total || "--"}</span>
+                  </div>
+                  <div className="assignment-request-info">
+                    <strong>{item.clientName}</strong>
+                    <span>{item.contentType} · {item.objective}</span>
+                    <span className="mini text-clamp-2">{item.creativeIdea}</span>
+                    <span className="mini text-clamp-2">Notas: {item.productionNotes || "Sin notas de producción"}</span>
+                  </div>
+                  <div className="assignment-request-date">
+                    <strong>{getProductionDueDate(item) || "Sin fecha"}</strong>
+                    <span className="mini">Máx. producción</span>
+                    <span className="mini">Entrega interna: {getInternalDueDate(item)||"Sin fecha"}</span>
+                    <span className="mini">Publica: {item.publishDate||"Sin fecha"}</span>
+                  </div>
+                  <div className="assignment-request-status">
+                    <span className={isVideoRequest(item)?"pill orange":"pill blue"}>{requestTypeLabel(item)}</span>
+                    <span className="pill">Pendiente producción</span>
+                  </div>
+                  <div className="assignment-request-actions">
+                    <button className="btn" type="button" onClick={()=>setPendingDetail(item)}>Detalle</button>
+                  </div>
+                </div>)}
+              </div>}
+            </div>
+          })}
+          {!groupedProductionRequests.length && <div className="empty-state">No hay solicitudes pendientes con esos filtros.</div>}
+        </div>
       </div>
       <aside className="card">
         <h3>Seleccionadas</h3>
