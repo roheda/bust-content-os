@@ -1,3 +1,9 @@
 {
-  "buildCommand": "NEXT_TELEMETRY_DISABLED=1 npm run build"
+  "buildCommand": "NEXT_TELEMETRY_DISABLED=1 npm run build",
+  "crons": [
+    {
+      "path": "/api/admin/run-auto-backup",
+      "schedule": "0 * * * *"
+    }
+  ]
 }

@@ -1,6 +1,7 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
 const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
@@ -23,3 +24,4 @@ const adminApp = getApps().length
 
 export const adminAuth = adminApp ? getAuth(adminApp) : null;
 export const adminDb = adminApp ? getFirestore(adminApp) : null;
+export const adminStorage = adminApp ? getStorage(adminApp) : null;

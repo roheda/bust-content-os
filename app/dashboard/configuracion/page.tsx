@@ -8,20 +8,29 @@ import {
   OperationalContentRule,
   TeamDailyCapacity,
   CleanupRetentionSettings,
+  BackupAutomationSettings,
+  SystemBackupMeta,
+  defaultBackupAutomationSettings,
   defaultCleanupRetentionSettings,
   areas,
   contentTypes,
   defaultOperationalRules,
+  createSystemBackup,
   deleteClientOperationalOverride,
   deleteOperationalContentRule,
   deleteTeamDailyCapacity,
+  deleteSystemBackup,
+  getBackupAutomationSettings,
   getCleanupRetentionSettings,
   listClientOperationalOverrides,
+  listSystemBackups,
   listOperationalContentRules,
   listTeamDailyCapacities,
   listUniqueBrands,
   purgeDeletedRequestBatchesOlderThan,
   purgeDeletedRequestsOlderThan,
+  restoreSystemBackup,
+  saveBackupAutomationSettings,
   saveCleanupRetentionSettings,
   saveClientOperationalOverride,
   saveOperationalContentRule,
@@ -77,6 +86,9 @@ export default function ConfiguracionPage(){
   const [capacities,setCapacities]=useState<TeamDailyCapacity[]>([]);
   const [cleanupSettings,setCleanupSettings]=useState<CleanupRetentionSettings>(defaultCleanupRetentionSettings);
   const [cleanupBusy,setCleanupBusy]=useState(false);
+  const [backupSettings,setBackupSettings]=useState<BackupAutomationSettings>(defaultBackupAutomationSettings);
+  const [backups,setBackups]=useState<SystemBackupMeta[]>([]);
+  const [backupBusy,setBackupBusy]=useState(false);
   const [ruleForm,setRuleForm]=useState<OperationalContentRule>(emptyRule);
   const [overrideForm,setOverrideForm]=useState<ClientOperationalOverride>(emptyOverride);
   const [editingRuleId,setEditingRuleId]=useState("");
@@ -89,18 +101,22 @@ export default function ConfiguracionPage(){
   const canConfigure = permissions.canConfigure;
 
   async function load(){
-    const [loadedRules,loadedOverrides,loadedBrands,loadedCapacities,loadedCleanupSettings] = await Promise.all([
+    const [loadedRules,loadedOverrides,loadedBrands,loadedCapacities,loadedCleanupSettings,loadedBackupSettings,loadedBackups] = await Promise.all([
       listOperationalContentRules(),
       listClientOperationalOverrides(),
       listUniqueBrands(),
       listTeamDailyCapacities(),
-      getCleanupRetentionSettings()
+      getCleanupRetentionSettings(),
+      getBackupAutomationSettings(),
+      listSystemBackups()
     ]);
     setRules(loadedRules);
     setOverrides(loadedOverrides);
     setBrands(loadedBrands);
     setCapacities(loadedCapacities);
     setCleanupSettings(loadedCleanupSettings);
+    setBackupSettings(loadedBackupSettings);
+    setBackups(loadedBackups);
     if(!overrideForm.clientId && loadedBrands[0]?.id){
       setOverrideForm({...overrideForm,clientId:loadedBrands[0].id,clientName:loadedBrands[0].name});
     }
@@ -116,6 +132,7 @@ export default function ConfiguracionPage(){
   function setOverride(k:keyof ClientOperationalOverride, v:any){setOverrideForm({...overrideForm,[k]:v});}
   function setCapacity(k:keyof TeamDailyCapacity, v:any){setCapacityForm({...capacityForm,[k]:v});}
   function setCleanup(k:keyof CleanupRetentionSettings, v:any){setCleanupSettings({...cleanupSettings,[k]:v});}
+  function setBackup(k:keyof BackupAutomationSettings, v:any){setBackupSettings({...backupSettings,[k]:v});}
 
   function startRuleEdit(rule:OperationalContentRule){
     setEditingRuleId(rule.id||"");
@@ -281,6 +298,63 @@ export default function ConfiguracionPage(){
     }finally{setCleanupBusy(false)}
   }
 
+
+  async function saveBackupSettings(){
+    if(!canConfigure)return permissionAlert("guardar configuración de respaldos");
+    setBackupBusy(true);
+    try{
+      await saveBackupAutomationSettings({
+        ...backupSettings,
+        enabled: Boolean(backupSettings.enabled),
+        frequency: backupSettings.frequency === "weekly" ? "weekly" : "daily",
+        backupHour: Math.min(23, Math.max(0, Number(backupSettings.backupHour ?? 23))),
+        timezone: backupSettings.timezone || "America/Merida",
+        retainBackups: Math.max(1, Number(backupSettings.retainBackups || 14)),
+        includeDeleted: backupSettings.includeDeleted !== false
+      });
+      await load();
+      alert("Configuración de respaldos guardada.");
+    }finally{setBackupBusy(false)}
+  }
+
+  async function runManualBackup(){
+    if(!canConfigure)return permissionAlert("generar respaldos");
+    if(!confirm("Se generará un respaldo completo del sistema en Firebase Storage. ¿Continuar?"))return;
+    setBackupBusy(true);
+    try{
+      const backup = await createSystemBackup({type:"manual",createdBy:"Configuración",includeDeleted:backupSettings.includeDeleted});
+      await load();
+      alert(`Respaldo generado correctamente. Documentos incluidos: ${backup.totalDocuments}.`);
+    }catch(error:any){
+      alert(error?.message || "No se pudo generar el respaldo.");
+    }finally{setBackupBusy(false)}
+  }
+
+  async function restoreBackup(item:SystemBackupMeta){
+    if(!canConfigure)return permissionAlert("restaurar respaldos");
+    const answer = prompt(`Vas a restaurar el respaldo del ${formatDateTime(item.createdAt)}. Antes de restaurar se generará un respaldo preventivo del estado actual. Escribe RESTAURAR para confirmar.`);
+    if(answer !== "RESTAURAR")return;
+    setBackupBusy(true);
+    try{
+      await createSystemBackup({type:"pre_restore",createdBy:"Sistema antes de restaurar",notes:`Antes de restaurar respaldo ${item.id || item.createdAt}`});
+      const result = await restoreSystemBackup(item);
+      await load();
+      alert(`Restauración completada. Documentos restaurados: ${result.restoredDocuments}.`);
+    }catch(error:any){
+      alert(error?.message || "No se pudo restaurar el respaldo.");
+    }finally{setBackupBusy(false)}
+  }
+
+  async function removeBackup(item:SystemBackupMeta){
+    if(!canConfigure)return permissionAlert("eliminar respaldos");
+    if(!confirm("¿Eliminar este respaldo? Esta acción borrará el archivo JSON y el registro del historial."))return;
+    setBackupBusy(true);
+    try{
+      await deleteSystemBackup(item);
+      await load();
+    }finally{setBackupBusy(false)}
+  }
+
   return <AppShell active="Configuración">
     <section className="hero">
       <div>
@@ -298,6 +372,7 @@ export default function ConfiguracionPage(){
       <Metric label="Reglas por cliente" value="Desactivadas"/>
       <Metric label="Capacidades" value={capacities.length}/>
       <Metric label="Clientes" value={brands.length}/>
+      <Metric label="Respaldos" value={backups.length}/>{/* v8.4 */}
       <Metric label="Estado" value={busy?"Guardando":"Listo"}/>
     </section>
 
@@ -403,6 +478,39 @@ export default function ConfiguracionPage(){
           <p className="mini" style={{marginTop:12}}>La limpieza definitiva solo borra registros que ya estén marcados como eliminados y superen los días de retención.</p>
         </div>
 
+
+
+        <div className="card">
+          <h3>Respaldos del sistema</h3>
+          <p className="mini">Genera copias JSON de solicitudes, lotes, clientes, producción, tareas operativas, contenidos, usuarios y configuración. Los automáticos se ejecutan por Vercel Cron y respetan esta configuración.</p>
+          <div className="form-grid" style={{marginTop:14}}>
+            <label className="check-row"><input type="checkbox" checked={Boolean(backupSettings.enabled)} onChange={e=>setBackup("enabled",e.target.checked)}/> Respaldos automáticos activos</label>
+            <label className="check-row"><input type="checkbox" checked={backupSettings.includeDeleted!==false} onChange={e=>setBackup("includeDeleted",e.target.checked)}/> Incluir eliminados/papelera</label>
+            <div className="field"><label>Frecuencia</label><select value={backupSettings.frequency} onChange={e=>setBackup("frequency",e.target.value)}><option value="daily">Diario</option><option value="weekly">Semanal</option></select></div>
+            <div className="field"><label>Hora del respaldo</label><input type="number" min="0" max="23" value={backupSettings.backupHour} onChange={e=>setBackup("backupHour",Number(e.target.value))}/></div>
+            <div className="field"><label>Zona horaria</label><input value={backupSettings.timezone} onChange={e=>setBackup("timezone",e.target.value)} placeholder="America/Merida"/></div>
+            <div className="field"><label>Respaldos a conservar</label><input type="number" min="1" value={backupSettings.retainBackups} onChange={e=>setBackup("retainBackups",Number(e.target.value))}/></div>
+          </div>
+          <div className="config-actions">
+            <button className="btn blue" onClick={saveBackupSettings} disabled={!canConfigure || backupBusy}>{backupBusy?"Procesando...":"Guardar respaldos"}</button>
+            <button className="btn" onClick={runManualBackup} disabled={!canConfigure || backupBusy}>Generar respaldo ahora</button>
+          </div>
+          <p className="mini" style={{marginTop:12}}>Último automático: {backupSettings.lastAutoBackupAt ? formatDateTime(backupSettings.lastAutoBackupAt) : "Sin registro"}. Estado: {backupSettings.lastAutoBackupStatus || "Sin registro"}.</p>
+          <div className="draft-list" style={{marginTop:14}}>
+            {backups.slice(0,8).map(item=><div className="draft-item" key={item.id || item.createdAt}>
+              <strong>{item.type === "automatic" ? "Automático" : item.type === "pre_restore" ? "Preventivo" : "Manual"} · {formatDateTime(item.createdAt)}</strong>
+              <span className="mini">{item.totalDocuments} docs · {formatBytes(item.sizeBytes)} · {item.backupVersion} · {item.createdBy}</span>
+              <div className="config-actions">
+                {item.fileUrl ? <a className="btn" href={item.fileUrl} target="_blank" rel="noreferrer">Descargar</a> : null}
+                <button className="btn" onClick={()=>restoreBackup(item)} disabled={!canConfigure || backupBusy}>Restaurar</button>
+                <button className="btn red" onClick={()=>removeBackup(item)} disabled={!canConfigure || backupBusy}>Eliminar</button>
+              </div>
+            </div>)}
+            {!backups.length ? <p className="mini">Aún no hay respaldos generados.</p> : null}
+          </div>
+          <p className="mini" style={{marginTop:12}}>Para que el automático corra, configura en Vercel la variable <strong>CRON_SECRET</strong> o <strong>BACKUP_CRON_SECRET</strong>. El cron revisa cada hora y solo respalda cuando coincide con la hora configurada.</p>
+        </div>
+
         <div className="card">
           <h3>Configuraciones recomendadas</h3>
           <ul className="config-list">
@@ -436,6 +544,21 @@ function money(value?:number){
 
 function percent(value?:number){
   return `${Math.round(Number(value ?? 0)*100)}%`;
+}
+
+
+function formatDateTime(value?:string){
+  if(!value)return "—";
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime()))return value;
+  return date.toLocaleString("es-MX",{dateStyle:"medium",timeStyle:"short"});
+}
+
+function formatBytes(value?:number){
+  const bytes = Number(value||0);
+  if(bytes < 1024)return `${bytes} B`;
+  if(bytes < 1024*1024)return `${Math.round(bytes/1024)} KB`;
+  return `${(bytes/(1024*1024)).toFixed(1)} MB`;
 }
 
 function toOptionalRatio(value:any){

@@ -724,6 +724,65 @@ export const defaultCleanupRetentionSettings: CleanupRetentionSettings = {
   enableAutoPurge: false
 };
 
+
+export type BackupFrequency = "daily" | "weekly";
+
+export type BackupAutomationSettings = {
+  enabled: boolean;
+  frequency: BackupFrequency;
+  backupHour: number;
+  timezone: string;
+  retainBackups: number;
+  includeDeleted: boolean;
+  lastAutoBackupAt?: string;
+  lastAutoBackupStatus?: string;
+  updatedAt?: unknown;
+};
+
+export type SystemBackupMeta = {
+  id?: string;
+  type: "manual" | "automatic" | "pre_restore";
+  status: "completed" | "failed";
+  createdAt: string;
+  createdBy: string;
+  fileUrl: string;
+  storagePath: string;
+  sizeBytes: number;
+  collections: Record<string, number>;
+  totalDocuments: number;
+  backupVersion: string;
+  notes?: string;
+  error?: string;
+};
+
+export const defaultBackupAutomationSettings: BackupAutomationSettings = {
+  enabled: true,
+  frequency: "daily",
+  backupHour: 23,
+  timezone: "America/Merida",
+  retainBackups: 14,
+  includeDeleted: true
+};
+
+export const backupCollectionNames = [
+  "clients",
+  "clientAssets",
+  "requestBatches",
+  "contentRequests",
+  "plannerDrafts",
+  "productions",
+  "operationalContentRules",
+  "clientOperationalOverrides",
+  "teamDailyCapacities",
+  "generationRequests",
+  "generatedImages",
+  "bustItNowJobs",
+  "systemFeedback",
+  "platformUsers",
+  "userAccess",
+  "systemSettings"
+];
+
 export type OperationalPlan = {
   rule: OperationalContentRule;
   internalCost: number;
@@ -1440,6 +1499,146 @@ export async function saveCleanupRetentionSettings(settings: CleanupRetentionSet
     enableAutoPurge: Boolean(settings.enableAutoPurge),
     updatedAt: serverTimestamp()
   }, { merge: true });
+}
+
+
+export async function getBackupAutomationSettings(): Promise<BackupAutomationSettings> {
+  try {
+    const snap = await getDoc(doc(db, "systemSettings", "backupAutomation"));
+    if (!snap.exists()) return defaultBackupAutomationSettings;
+    return {
+      ...defaultBackupAutomationSettings,
+      ...(snap.data() as Partial<BackupAutomationSettings>)
+    };
+  } catch (error) {
+    console.warn("No se pudo cargar configuración de respaldos; usando defaults", error);
+    return defaultBackupAutomationSettings;
+  }
+}
+
+export async function saveBackupAutomationSettings(settings: BackupAutomationSettings) {
+  return setDoc(doc(db, "systemSettings", "backupAutomation"), {
+    ...settings,
+    enabled: Boolean(settings.enabled),
+    frequency: settings.frequency === "weekly" ? "weekly" : "daily",
+    backupHour: Math.min(23, Math.max(0, Number(settings.backupHour ?? defaultBackupAutomationSettings.backupHour))),
+    timezone: settings.timezone || defaultBackupAutomationSettings.timezone,
+    retainBackups: Math.max(1, Number(settings.retainBackups || defaultBackupAutomationSettings.retainBackups)),
+    includeDeleted: settings.includeDeleted !== false,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+export async function listSystemBackups() {
+  const q = query(collection(db, "systemBackups"), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as SystemBackupMeta));
+}
+
+function safeTimestampSlug(date = new Date()) {
+  return date.toISOString().replace(/[:.]/g, "-");
+}
+
+async function collectBackupPayload(includeDeleted = true) {
+  const collections: Record<string, { id: string; data: any }[]> = {};
+  const counts: Record<string, number> = {};
+  let totalDocuments = 0;
+
+  for (const collectionName of backupCollectionNames) {
+    const snap = await getDocs(collection(db, collectionName));
+    let docs = snap.docs.map((item) => ({ id: item.id, data: item.data() }));
+    if (!includeDeleted && ["contentRequests", "requestBatches"].includes(collectionName)) {
+      docs = docs.filter((item) => !["eliminada", "deleted", "archived"].includes(String(item.data?.status || "")));
+    }
+    collections[collectionName] = docs;
+    counts[collectionName] = docs.length;
+    totalDocuments += docs.length;
+  }
+
+  return {
+    backupVersion: "v8.4",
+    generatedAt: new Date().toISOString(),
+    app: "BUST Content OS",
+    collections,
+    counts,
+    totalDocuments
+  };
+}
+
+export async function createSystemBackup(options?: { type?: SystemBackupMeta["type"]; createdBy?: string; notes?: string; includeDeleted?: boolean; }) {
+  const settings = await getBackupAutomationSettings();
+  const includeDeleted = options?.includeDeleted ?? settings.includeDeleted;
+  const payload = await collectBackupPayload(includeDeleted);
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const storagePath = `system-backups/${safeTimestampSlug()}-${options?.type || "manual"}.json`;
+  const fileRef = ref(storage, storagePath);
+  await uploadBytes(fileRef, blob);
+  const fileUrl = await getDownloadURL(fileRef);
+  const meta: Omit<SystemBackupMeta, "id"> = {
+    type: options?.type || "manual",
+    status: "completed",
+    createdAt: payload.generatedAt,
+    createdBy: options?.createdBy || "Configuración",
+    fileUrl,
+    storagePath,
+    sizeBytes: blob.size,
+    collections: payload.counts,
+    totalDocuments: payload.totalDocuments,
+    backupVersion: payload.backupVersion,
+    notes: options?.notes || ""
+  };
+  const refDoc = await addDoc(collection(db, "systemBackups"), {
+    ...meta,
+    createdAtTimestamp: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+  await purgeOldSystemBackups(settings.retainBackups);
+  return { id: refDoc.id, ...meta } as SystemBackupMeta;
+}
+
+export async function deleteSystemBackup(item: SystemBackupMeta) {
+  if (item.storagePath) {
+    try { await deleteObject(ref(storage, item.storagePath)); } catch (error) { console.warn("No se pudo borrar archivo de respaldo", error); }
+  }
+  if (item.id) await deleteDoc(doc(db, "systemBackups", item.id));
+}
+
+export async function purgeOldSystemBackups(retainBackups = defaultBackupAutomationSettings.retainBackups) {
+  const backups = await listSystemBackups();
+  const keep = Math.max(1, Number(retainBackups || defaultBackupAutomationSettings.retainBackups));
+  const oldItems = backups.slice(keep);
+  await Promise.all(oldItems.map((item) => deleteSystemBackup(item)));
+  return oldItems.length;
+}
+
+async function commitInChunks(writes: { collectionName: string; id: string; data: any }[]) {
+  const chunkSize = 450;
+  for (let index = 0; index < writes.length; index += chunkSize) {
+    const chunk = writes.slice(index, index + chunkSize);
+    const batch = writeBatch(db);
+    chunk.forEach((item) => batch.set(doc(db, item.collectionName, item.id), item.data));
+    await batch.commit();
+  }
+}
+
+export async function restoreSystemBackup(item: SystemBackupMeta) {
+  if (!item.fileUrl) throw new Error("El respaldo no tiene archivo descargable.");
+  const response = await fetch(item.fileUrl);
+  if (!response.ok) throw new Error("No se pudo descargar el respaldo.");
+  const backup = await response.json();
+  const collections = backup?.collections || {};
+  const writes: { collectionName: string; id: string; data: any }[] = [];
+
+  Object.entries(collections).forEach(([collectionName, docs]) => {
+    if (!backupCollectionNames.includes(collectionName)) return;
+    (docs as any[]).forEach((entry) => {
+      if (entry?.id && entry?.data) writes.push({ collectionName, id: entry.id, data: entry.data });
+    });
+  });
+
+  await commitInChunks(writes);
+  return { restoredDocuments: writes.length, restoredCollections: Object.keys(collections).length };
 }
 
 function dateOlderThanDays(value: unknown, days: number) {

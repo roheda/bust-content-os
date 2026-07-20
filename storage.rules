@@ -59,6 +59,14 @@ service firebase.storage {
       allow delete: if hasPerm("generador", "delete") || isMaster();
     }
 
+
+
+    match /system-backups/{allPaths=**} {
+      allow read: if activeUser();
+      allow create, update: if safeSize(200) && (hasPerm("configuracion", "configure") || isMaster());
+      allow delete: if hasPerm("configuracion", "configure") || isMaster();
+    }
+
     // Para cualquier carpeta nueva: cerrado hasta definir regla explícita.
     match /{allPaths=**} {
       allow read, write: if false;
