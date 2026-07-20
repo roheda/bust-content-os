@@ -200,6 +200,7 @@ export default function AssignmentPage() {
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [bulkAssignee, setBulkAssignee] = useState("");
+  const [collapsedBatchIds, setCollapsedBatchIds] = useState<string[]>([]);
   const [sort, setSort] = useState<{ key: string; direction: "asc" | "desc" }>({
     key: "batch",
     direction: "asc",
@@ -376,6 +377,25 @@ export default function AssignmentPage() {
     [visibleBaseItems, client, batchFilter, area, status, sort],
   );
 
+  const groupedFiltered = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; clientName: string; items: ContentRequest[] }>();
+    filtered.forEach((item) => {
+      const id = item.batchId || "sin-lote";
+      if (!map.has(id)) {
+        map.set(id, {
+          id,
+          name: item.batchName || "Sin lote",
+          clientName: item.clientName || "Sin cliente",
+          items: [],
+        });
+      }
+      map.get(id)!.items.push(item);
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "es", { numeric: true }),
+    );
+  }, [filtered]);
+
   const assignableFiltered = useMemo(
     () => filtered.filter(canAssignRequest),
     [filtered],
@@ -411,6 +431,44 @@ export default function AssignmentPage() {
         ? selected.filter((x) => x !== id)
         : [...selected, id],
     );
+  }
+
+  function toggleBatchCollapse(id: string) {
+    setCollapsedBatchIds((current) =>
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id],
+    );
+  }
+
+  function toggleBatchSelection(groupItems: ContentRequest[], checked: boolean) {
+    if (!canUseBulkActions) {
+      permissionAlert("seleccionar solicitudes del lote desde Asignación");
+      return;
+    }
+    const allowed = (canDeleteAssignment ? groupItems : groupItems.filter(canAssignRequest))
+      .map((item) => item.id!)
+      .filter(Boolean);
+    if (checked) {
+      setSelected(Array.from(new Set([...selected, ...allowed])));
+    } else {
+      setSelected(selected.filter((id) => !allowed.includes(id)));
+    }
+  }
+
+  function openAssignmentDetail(item: ContentRequest) {
+    if (editing?.id === item.id) {
+      setEditing(null);
+      setDetailDraft({});
+      return;
+    }
+    setEditing(item);
+    setDetailDraft({
+      assignedArea: item.assignedArea || item.suggestedArea,
+      assignedTo: item.assignedTo || "",
+      priority: item.priority || "Media",
+      internalNotes: item.internalNotes || "",
+    });
   }
 
   async function update(id: string, data: Partial<ContentRequest>) {
@@ -862,261 +920,197 @@ export default function AssignmentPage() {
       <section className="grid assignment-wide-grid">
         <div className="card">
           <h3>Solicitudes para asignar</h3>
-          <div className="table-wrap assignment-table-wrap">
-            <table className="table assignment-table">
-              <thead>
-                <tr>
-                  <th>
-                    <input
-                      type="checkbox"
-                      title={canDeleteAssignment ? "Seleccionar solicitudes visibles" : canUseBulkActions ? "Seleccionar solo solicitudes listas para asignar" : "Solo lectura"}
-                      disabled={!canUseBulkActions}
-                      checked={
-                        selectableFiltered.length > 0 &&
-                        selectableFiltered.every((item) =>
-                          selected.includes(item.id!),
-                        )
-                      }
-                      onChange={(e) =>
-                        setSelected(
-                          e.target.checked
-                            ? selectableFiltered
-                                .map((item) => item.id!)
-                                .filter(Boolean)
-                            : [],
-                        )
-                      }
-                    />
-                  </th>
-                  <th>
-                    <SortButton
-                      label="Lote"
-                      active={sort.key === "batch"}
-                      direction={sort.direction}
-                      onClick={() => toggleSort("batch")}
-                    />
-                  </th>
-                  <th>
-                    <SortButton
-                      label="Solicitud"
-                      active={sort.key === "request"}
-                      direction={sort.direction}
-                      onClick={() => toggleSort("request")}
-                    />
-                  </th>
-                  <th>
-                    <SortButton
-                      label="Fecha interna"
-                      active={sort.key === "dueDate"}
-                      direction={sort.direction}
-                      onClick={() => toggleSort("dueDate")}
-                    />
-                  </th>
-                  <th>
-                    <SortButton
-                      label="Estado"
-                      active={sort.key === "status"}
-                      direction={sort.direction}
-                      onClick={() => toggleSort("status")}
-                    />
-                  </th>
-                  <th>
-                    <SortButton
-                      label="Área"
-                      active={sort.key === "area"}
-                      direction={sort.direction}
-                      onClick={() => toggleSort("area")}
-                    />
-                  </th>
-                  <th>
-                    <SortButton
-                      label="Asignación"
-                      active={sort.key === "assignedTo"}
-                      direction={sort.direction}
-                      onClick={() => toggleSort("assignedTo")}
-                    />
-                  </th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((item) => {
-                  const op = getOperationalStatus(item);
-                  const assignable = canAssignRequest(item);
-                  const rowArea = getAreaForItem(item);
-                  const rowTeamOptions = getTeamOptionsForArea(rowArea);
-                  return (
-                    <tr
-                      key={item.id}
-                      className={!assignable ? "row-muted" : ""}
-                    >
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selected.includes(item.id!)}
-                          disabled={!canUseBulkActions}
-                          title={
-                            assignable
-                              ? "Lista para asignar"
-                              : `${getAssignBlockReason(item)} Puedes seleccionarla para eliminarla si tienes permiso.`
-                          }
-                          onChange={() => toggle(item.id!)}
-                        />
-                      </td>
-                      <td>
-                        <strong>{item.batchName || "Sin lote"}</strong>
-                        <br />
-                        <span className="mini">
-                          #{item.number || "--"} de {item.total || "--"}
-                        </span>
-                      </td>
-                      <td>
-                        <strong>{item.clientName}</strong>
-                        <br />
-                        <span>
-                          {item.contentType} · {item.objective}
-                        </span>
-                        <br />
-                        <span className="mini text-clamp-2">
-                          {item.creativeIdea}
-                        </span>
-                        <br />
-                        <span className="mini">
-                          Publica: {item.publishDate || "Sin fecha"}
-                        </span>
-                        {item.rejectionNote && (
-                          <div className="reject-note text-clamp-2">
-                            Rebotada: {item.rejectionNote}
+          <div className="assignment-lot-groups">
+            <div className="assignment-lot-tools">
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setCollapsedBatchIds([])}
+              >
+                Abrir lotes
+              </button>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setCollapsedBatchIds(groupedFiltered.map((group) => group.id))}
+              >
+                Cerrar lotes
+              </button>
+              <span className="mini">
+                Ordenado por lote · {groupedFiltered.length} bloque(s)
+              </span>
+            </div>
+            {groupedFiltered.map((group) => {
+              const collapsed = collapsedBatchIds.includes(group.id);
+              const assignableCount = group.items.filter(canAssignRequest).length;
+              const productionCount = group.items.filter(
+                (item) => getOperationalStatus(item) === "pendiente_produccion",
+              ).length;
+              const deletedCount = group.items.filter(
+                (item) => getOperationalStatus(item) === "eliminada",
+              ).length;
+              const groupSelectable = (canDeleteAssignment
+                ? group.items
+                : group.items.filter(canAssignRequest)
+              ).filter((item) => item.id);
+              const allSelected =
+                groupSelectable.length > 0 &&
+                groupSelectable.every((item) => selected.includes(item.id!));
+              return (
+                <div className="assignment-lot-block" key={group.id}>
+                  <div className="assignment-lot-header">
+                    <div className="assignment-lot-main">
+                      <input
+                        type="checkbox"
+                        title="Seleccionar solicitudes de este lote"
+                        disabled={!canUseBulkActions || !groupSelectable.length}
+                        checked={allSelected}
+                        onChange={(event) =>
+                          toggleBatchSelection(group.items, event.target.checked)
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="assignment-lot-toggle"
+                        onClick={() => toggleBatchCollapse(group.id)}
+                      >
+                        <span>{collapsed ? "▸" : "▾"}</span>
+                        <strong>{group.name}</strong>
+                      </button>
+                      <span className="mini">{group.clientName}</span>
+                    </div>
+                    <div className="assignment-lot-summary">
+                      <span className="pill">{group.items.length} solicitudes</span>
+                      <span className="pill green">{assignableCount} asignables</span>
+                      <span className="pill orange">{productionCount} producción</span>
+                      {deletedCount > 0 && <span className="pill gray">{deletedCount} eliminadas</span>}
+                    </div>
+                  </div>
+                  {!collapsed && (
+                    <div className="assignment-lot-items">
+                      {group.items.map((item) => {
+                        const op = getOperationalStatus(item);
+                        const assignable = canAssignRequest(item);
+                        const rowArea = getAreaForItem(item);
+                        const rowTeamOptions = getTeamOptionsForArea(rowArea);
+                        return (
+                          <div
+                            key={item.id}
+                            className={`assignment-request-card ${!assignable ? "row-muted" : ""}`}
+                          >
+                            <div className="assignment-request-select">
+                              <input
+                                type="checkbox"
+                                checked={selected.includes(item.id!)}
+                                disabled={!canUseBulkActions}
+                                title={
+                                  assignable
+                                    ? "Lista para asignar"
+                                    : `${getAssignBlockReason(item)} Puedes seleccionarla para eliminarla si tienes permiso.`
+                                }
+                                onChange={() => toggle(item.id!)}
+                              />
+                              <span className="mini">#{item.number || "--"} de {item.total || "--"}</span>
+                            </div>
+                            <div className="assignment-request-info">
+                              <strong>{item.clientName}</strong>
+                              <span>{item.contentType} · {item.objective}</span>
+                              <span className="mini text-clamp-2">{item.creativeIdea}</span>
+                              <span className="mini">Publica: {item.publishDate || "Sin fecha"}</span>
+                              {item.rejectionNote && (
+                                <div className="reject-note text-clamp-2">
+                                  Rebotada: {item.rejectionNote}
+                                </div>
+                              )}
+                            </div>
+                            <div className="assignment-request-date">
+                              <strong>
+                                {item.internalDueDate || item.dueDate || item.batchDueDate || "Sin fecha"}
+                              </strong>
+                              <span className="mini">
+                                Interna · Final: {item.publishDate || item.clientDueDate || "Sin fecha"}
+                              </span>
+                              {item.productionDueDate && (
+                                <span className="mini">Máx. producción: {item.productionDueDate}</span>
+                              )}
+                            </div>
+                            <div className="assignment-request-status">
+                              <StatusPill status={op} />
+                              {!assignable && (
+                                <p className="mini warn-text">{getAssignBlockReason(item)}</p>
+                              )}
+                            </div>
+                            <div className="assignment-request-controls">
+                              <select
+                                className="assignment-area-select"
+                                value={item.assignedArea || item.suggestedArea || "Diseño"}
+                                disabled={!canAssignAction}
+                                onChange={(e) =>
+                                  item.id &&
+                                  update(item.id, {
+                                    assignedArea: e.target.value,
+                                    assignedTo: "",
+                                  })
+                                }
+                              >
+                                {assignableProductionAreas.map((x) => (
+                                  <option key={x}>{x}</option>
+                                ))}
+                              </select>
+                              <select
+                                className="assignment-person-select"
+                                value={rowTeamOptions.includes(item.assignedTo || "") ? item.assignedTo || "" : ""}
+                                onChange={(e) =>
+                                  item.id && update(item.id, { assignedTo: e.target.value })
+                                }
+                                disabled={!canAssignAction}
+                                title={`Solo aparecen personas de ${rowArea}`}
+                              >
+                                <option value="">Sin asignar</option>
+                                {rowTeamOptions.map((x) => (
+                                  <option key={x}>{x}</option>
+                                ))}
+                              </select>
+                              <select
+                                className="assignment-priority-select"
+                                value={item.priority || "Media"}
+                                disabled={!canAssignAction}
+                                onChange={(e) =>
+                                  item.id && update(item.id, { priority: e.target.value })
+                                }
+                              >
+                                {priorities.map((x) => (
+                                  <option key={x}>{x}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="assignment-request-actions">
+                              <button
+                                className="btn blue"
+                                disabled={!assignable || !canUseBulkActions}
+                                title={assignable ? "Asignar" : getAssignBlockReason(item)}
+                                onClick={() => assign(item)}
+                              >
+                                Asignar
+                              </button>
+                              <button
+                                className="btn"
+                                onClick={() => openAssignmentDetail(item)}
+                              >
+                                {editing?.id === item.id ? "Cerrar detalle" : "Detalle"}
+                              </button>
+                            </div>
                           </div>
-                        )}
-                      </td>
-                      <td>
-                        <strong>
-                          {item.internalDueDate ||
-                            item.dueDate ||
-                            item.batchDueDate ||
-                            "Sin fecha"}
-                        </strong>
-                        <br />
-                        <span className="mini">
-                          Interna · Final:{" "}
-                          {item.publishDate ||
-                            item.clientDueDate ||
-                            "Sin fecha"}
-                        </span>
-                        {item.productionDueDate && (
-                          <>
-                            <br />
-                            <span className="mini">
-                              Máx. producción: {item.productionDueDate}
-                            </span>
-                          </>
-                        )}
-                      </td>
-                      <td>
-                        <StatusPill status={op} />
-                        {!assignable && (
-                          <p className="mini warn-text">
-                            {getAssignBlockReason(item)}
-                          </p>
-                        )}
-                      </td>
-                      <td>{item.suggestedArea}</td>
-                      <td>
-                        <select
-                          className="assignment-area-select"
-                          value={
-                            item.assignedArea || item.suggestedArea || "Diseño"
-                          }
-                          disabled={!canAssignAction}
-                          onChange={(e) =>
-                            item.id &&
-                            update(item.id, {
-                              assignedArea: e.target.value,
-                              assignedTo: "",
-                            })
-                          }
-                        >
-                          {assignableProductionAreas.map((x) => (
-                            <option key={x}>{x}</option>
-                          ))}
-                        </select>
-                        <br />
-                        <br />
-                        <select
-                          className="assignment-person-select"
-                          value={
-                            rowTeamOptions.includes(item.assignedTo || "")
-                              ? item.assignedTo || ""
-                              : ""
-                          }
-                          onChange={(e) =>
-                            item.id &&
-                            update(item.id, { assignedTo: e.target.value })
-                          }
-                          disabled={!canAssignAction}
-                          title={`Solo aparecen personas de ${rowArea}`}
-                        >
-                          <option value="">Sin asignar</option>
-                          {rowTeamOptions.map((x) => (
-                            <option key={x}>{x}</option>
-                          ))}
-                        </select>
-                        <br />
-                        <br />
-                        <select
-                          className="assignment-priority-select"
-                          value={item.priority || "Media"}
-                          disabled={!canAssignAction}
-                          onChange={(e) =>
-                            item.id &&
-                            update(item.id, { priority: e.target.value })
-                          }
-                        >
-                          {priorities.map((x) => (
-                            <option key={x}>{x}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        <button
-                          className="btn blue"
-                          disabled={!assignable || !canUseBulkActions}
-                          title={
-                            assignable ? "Asignar" : getAssignBlockReason(item)
-                          }
-                          onClick={() => assign(item)}
-                        >
-                          Asignar
-                        </button>
-                        <br />
-                        <br />
-                        <button
-                          className="btn"
-                          onClick={() => {
-                            if (editing?.id === item.id) {
-                              setEditing(null);
-                              setDetailDraft({});
-                              return;
-                            }
-                            setEditing(item);
-                            setDetailDraft({
-                              assignedArea:
-                                item.assignedArea || item.suggestedArea,
-                              assignedTo: item.assignedTo || "",
-                              priority: item.priority || "Media",
-                              internalNotes: item.internalNotes || "",
-                            });
-                          }}
-                        >
-                          {editing?.id === item.id ? "Cerrar detalle" : "Detalle"}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {!groupedFiltered.length && (
+              <div className="empty-state">No hay solicitudes con los filtros actuales.</div>
+            )}
           </div>
         </div>
 

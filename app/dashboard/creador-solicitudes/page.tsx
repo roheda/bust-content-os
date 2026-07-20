@@ -76,7 +76,7 @@ export default function CreatorPage() {
   const [addPanelCollapsed, setAddPanelCollapsed] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "info"; message: string } | null>(null);
   const [localRecovery, setLocalRecovery] = useState<any | null>(null);
-  const autosaveKey = "bust-content-os:creator-autosave:v81";
+  const autosaveKey = "bust-content-os:creator-autosave:v82";
 
   const [aiCount, setAiCount] = useState(5);
   const [startDate, setStartDate] = useState("");
@@ -263,7 +263,7 @@ export default function CreatorPage() {
     setClientId(localRecovery.clientId || clientId);
     setDraftName(localRecovery.draftName || "");
     setBatchDueDate(localRecovery.batchDueDate || "");
-    setItems(localRecovery.items || []);
+    setItems(normalizeCreatorItems(localRecovery.items || []));
     setManual(localRecovery.manual || emptyRequest);
     setCreatorMode(localRecovery.creatorMode || "ia");
     setAiCount(Number(localRecovery.aiCount || 5));
@@ -300,9 +300,9 @@ export default function CreatorPage() {
   }
 
   function initialOperationalStatus(req: Partial<ContentRequest>) {
-    return shouldStartInProduction(req)
-      ? "pendiente_produccion"
-      : "lista_asignacion";
+    // La ruta operativa final la decide el checkbox/campo requiresProduction.
+    // Un Reel puede ir directo a asignación si ya tiene material listo o no requiere producción.
+    return req.requiresProduction ? "pendiente_produccion" : "lista_asignacion";
   }
 
   function creationDateLabel() {
@@ -316,6 +316,86 @@ export default function CreatorPage() {
   function defaultBatchName(clientName = client?.name || "Cliente") {
     return `${clientName} · Creado ${creationDateLabel()}`;
   }
+
+  function createLocalDraftId(prefix = "draft") {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  function normalizeCreatorItems(list: ContentRequest[]) {
+    const total = list.length;
+    return list.map((item, index) => {
+      const requiresProduction = Boolean(item.requiresProduction);
+      const base = {
+        ...item,
+        localDraftId: item.localDraftId || createLocalDraftId(String(item.source || "item")),
+        number: index + 1,
+        total,
+        status: initialOperationalStatus({ ...item, requiresProduction }),
+        materialAvailable: requiresProduction ? false : item.materialAvailable,
+        productionSpecificMaterialLink: requiresProduction ? "" : item.productionSpecificMaterialLink || "",
+        productionGeneralMaterialLinks: requiresProduction ? "" : item.productionGeneralMaterialLinks || "",
+        materialDeliveredAt: requiresProduction ? "" : item.materialDeliveredAt || "",
+      };
+      const plan = getOperationalPlan({ ...base, batchDueDate: base.batchDueDate || batchDueDate }, costRules, clientOverrides);
+      const risk = getDeliveryRisk(plan.clientDueDate, plan.deliveryDays);
+      return {
+        ...base,
+        clientDueDate: plan.clientDueDate,
+        internalDueDate: plan.internalDueDate,
+        productionDueDate: requiresProduction ? plan.productionDueDate : "",
+        dueDate: base.dueDate || plan.internalDueDate || base.batchDueDate || batchDueDate,
+        operationalCost: plan.totalCost,
+        operationalHours: plan.editingHours,
+        operationalWeight: 1,
+        operationalRisk:
+          risk.tone === "bad" ? "red" : risk.tone === "mid" ? "yellow" : "green",
+      } as ContentRequest;
+    });
+  }
+
+  function prepareItemsForPersistence(list: ContentRequest[], dueDateValue = batchDueDate) {
+    return normalizeCreatorItems(
+      list.map((item) => ({
+        ...item,
+        id: undefined,
+        clientId: client?.id || item.clientId || "",
+        clientName: client?.name || item.clientName || "",
+        batchDueDate: dueDateValue,
+        dueDate: item.dueDate || dueDateValue,
+      })),
+    );
+  }
+
+  function recoveredReuseItem(number: number, total: number, batch: RequestBatch): ContentRequest {
+    return {
+      ...emptyRequest,
+      localDraftId: createLocalDraftId("reuse-recovered"),
+      clientId: batch.clientId,
+      clientName: batch.clientName,
+      number,
+      total,
+      contentType: "Post",
+      objective: "Ventas",
+      platforms: ["Instagram", "Facebook"],
+      visualFormat: "Cuadrado 1:1",
+      feedPlacement: "Feed",
+      topic: `Solicitud ${number} faltante del lote original`,
+      creativeIdea:
+        "Completar manualmente. El lote original declara esta solicitud, pero no se encontró el registro completo al reusar el lote.",
+      keyMessage: "Completar mensaje clave antes de enviar.",
+      copyIn: "Completar copy in antes de enviar.",
+      copyStatus: "en_proceso",
+      cta: "Completar CTA",
+      publishDate: "",
+      status: "lista_asignacion",
+      source: "reuse-recovered",
+      requiresProduction: false,
+      materialAvailable: true,
+      materialLinks: "Solicitud recuperada para cuadrar el conteo del lote original.",
+      suggestedArea: "Diseño",
+    };
+  }
+
 
   function isAutoBatchName(name: string) {
     return !name || / · (Lote|Creado) /.test(name);
@@ -535,6 +615,7 @@ export default function CreatorPage() {
       return permissionAlert("guardar borradores de solicitudes");
     if (!client?.id) return alert("Selecciona cliente");
     const name = draftName || defaultBatchName(client.name);
+    const itemsForSave = prepareItemsForPersistence(items, batchDueDate);
     setBusy(true);
     try {
       if (currentDraftId) {
@@ -544,11 +625,7 @@ export default function CreatorPage() {
           clientName: client.name,
           status: "draft",
           batchDueDate,
-          items: items.map((x) => ({
-            ...x,
-            batchDueDate,
-            dueDate: x.dueDate || batchDueDate,
-          })),
+          items: itemsForSave,
         });
       } else {
         const ref = await savePlannerDraft({
@@ -557,17 +634,14 @@ export default function CreatorPage() {
           clientName: client.name,
           status: "draft",
           batchDueDate,
-          items: items.map((x) => ({
-            ...x,
-            batchDueDate,
-            dueDate: x.dueDate || batchDueDate,
-          })),
+          items: itemsForSave,
         });
         setCurrentDraftId(ref.id);
       }
       setDraftName(name);
+      setItems(itemsForSave);
       await load();
-      showFeedback(`Borrador guardado correctamente: ${name}.`);
+      showFeedback(`Borrador guardado correctamente: ${name}. ${itemsForSave.length} solicitud(es) guardada(s).`);
     } finally {
       setBusy(false);
     }
@@ -579,10 +653,12 @@ export default function CreatorPage() {
     setBatchDueDate(draft.batchDueDate || "");
     setClientId(draft.clientId);
     setItems(
-      (draft.items || []).map((item) => ({
-        ...item,
-        batchDueDate: draft.batchDueDate || item.batchDueDate || "",
-      })),
+      normalizeCreatorItems(
+        (draft.items || []).map((item) => ({
+          ...item,
+          batchDueDate: draft.batchDueDate || item.batchDueDate || "",
+        })),
+      ),
     );
     setExpandedItemIndex(null);
     setAddPanelCollapsed(Boolean((draft.items || []).length));
@@ -600,34 +676,59 @@ export default function CreatorPage() {
   }
 
   function reuseBatch(batch: RequestBatch) {
-    const batchItems = requests
+    const activeBatchItems = requests
       .filter((x) => x.batchId === batch.id)
+      .filter((x) => x.status !== "eliminada")
       .sort((a, b) => (a.number || 0) - (b.number || 0));
-    if (!batchItems.length)
-      return alert("Este lote no tiene solicitudes para reusar.");
+    if (!activeBatchItems.length)
+      return alert("Este lote no tiene solicitudes activas para reusar.");
+
+    const declaredTotal = Math.max(
+      Number(batch.totalRequests || 0),
+      activeBatchItems.length,
+    );
+    const existingNumbers = new Set(
+      activeBatchItems.map((item, index) => Number(item.number || index + 1)),
+    );
+    const missingNumbers = Array.from({ length: declaredTotal })
+      .map((_, index) => index + 1)
+      .filter((number) => !existingNumbers.has(number));
+
+    const clonedItems = activeBatchItems.map((item) => ({
+      ...item,
+      id: undefined,
+      localDraftId: createLocalDraftId("reuse"),
+      batchId: undefined,
+      batchName: undefined,
+      batchDueDate: "",
+      dueDate: "",
+      publishDate: "",
+      status: item.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
+      source: "reuse",
+    }));
+
+    const recoveredItems = missingNumbers.map((number) =>
+      recoveredReuseItem(number, declaredTotal, batch),
+    );
+    const nextItems = normalizeCreatorItems(
+      [...clonedItems, ...recoveredItems].sort(
+        (a, b) => (a.number || 0) - (b.number || 0),
+      ),
+    );
+
     setCurrentDraftId("");
     setClientId(batch.clientId);
     setDraftName(`${batch.name} · Reuso`);
     setBatchDueDate("");
-    setItems(
-      batchItems.map((item, index) => ({
-        ...item,
-        id: undefined,
-        batchId: undefined,
-        batchName: undefined,
-        batchDueDate: "",
-        dueDate: "",
-        publishDate: "",
-        status: item.requiresProduction
-          ? "pendiente_produccion"
-          : "lista_asignacion",
-        source: "reuse",
-        number: index + 1,
-        total: batchItems.length,
-      })),
-    );
+    setItems(nextItems);
     setExpandedItemIndex(null);
     setAddPanelCollapsed(true);
+    showFeedback(
+      missingNumbers.length
+        ? `Lote reutilizado con advertencia: ${activeBatchItems.length} solicitud(es) encontradas y ${missingNumbers.length} espacio(s) recuperado(s) para completar el conteo original de ${declaredTotal}. Revisa las solicitudes recuperadas antes de enviar.`
+        : `Lote reutilizado correctamente: ${nextItems.length} solicitud(es).`,
+      missingNumbers.length ? "info" : "success",
+    );
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -838,7 +939,7 @@ export default function CreatorPage() {
         number: items.length + index + 1,
         total: items.length + generated.length,
       }));
-      setItems([...items, ...numbered]);
+      setItems(normalizeCreatorItems([...items, ...numbered]));
       setExpandedItemIndex(null);
       setAddPanelCollapsed(true);
       showFeedback(`${generated.length} solicitud(es) generada(s) y agregada(s) al lote.`);
@@ -851,7 +952,7 @@ export default function CreatorPage() {
         number: items.length + index + 1,
         total: items.length + generated.length,
       }));
-      setItems([...items, ...numbered]);
+      setItems(normalizeCreatorItems([...items, ...numbered]));
       setExpandedItemIndex(null);
       setAddPanelCollapsed(true);
       alert(
@@ -900,7 +1001,7 @@ export default function CreatorPage() {
         "manual-blank",
       ),
     );
-    setItems([...items, ...generated]);
+    setItems(normalizeCreatorItems([...items, ...generated]));
     setExpandedItemIndex(null);
     setAddPanelCollapsed(true);
     showFeedback(`${count} solicitud(es) en blanco agregada(s) al lote.`);
@@ -913,18 +1014,20 @@ export default function CreatorPage() {
         "Agrega al menos tema, idea o copy para una solicitud manual completa; para generar espacios vacíos usa Modo Manual > Crear solicitudes en blanco.",
       );
     if (!draftName) setDraftName(defaultBatchName(client.name));
-    setItems([
-      ...items,
-      hydrate(
-        {
-          ...manual,
-          copyStatus: manual.copyIn?.trim()
-            ? "listo_para_revision"
-            : "pendiente",
-        },
-        "manual",
-      ),
-    ]);
+    setItems(
+      normalizeCreatorItems([
+        ...items,
+        hydrate(
+          {
+            ...manual,
+            copyStatus: manual.copyIn?.trim()
+              ? "listo_para_revision"
+              : "pendiente",
+          },
+          "manual",
+        ),
+      ]),
+    );
     setExpandedItemIndex(null);
     setAddPanelCollapsed(true);
     setManual(emptyRequest);
@@ -973,7 +1076,7 @@ export default function CreatorPage() {
         next[index].materialDeliveredAt = "";
       }
     }
-    setItems(next);
+    setItems(normalizeCreatorItems(next));
   }
 
   function updateItemPersona(index: number, persona?: ClientBuyerPersona) {
@@ -984,12 +1087,12 @@ export default function CreatorPage() {
       buyerPersonaName: persona?.name || "Sin enfoque particular",
       buyerPersonaSnapshot: persona || null,
     };
-    setItems(next);
+    setItems(normalizeCreatorItems(next));
   }
 
   function removeItem(index: number) {
     if (!confirm("¿Quitar solicitud del borrador?")) return;
-    setItems(items.filter((_, i) => i !== index));
+    setItems(normalizeCreatorItems(items.filter((_, i) => i !== index)));
     setExpandedItemIndex((current) => {
       if (current === null) return null;
       if (current === index) return null;
@@ -1002,12 +1105,13 @@ export default function CreatorPage() {
     const duplicated = {
       ...source,
       id: undefined,
+      localDraftId: createLocalDraftId("duplicate"),
       source: "manual",
       number: items.length + 1,
       total: items.length + 1,
       status: initialOperationalStatus(source),
     };
-    setItems([...items, duplicated]);
+    setItems(normalizeCreatorItems([...items, duplicated]));
     setExpandedItemIndex(null);
     setAddPanelCollapsed(true);
     showFeedback("Solicitud duplicada y agregada al lote.", "info");
@@ -1095,12 +1199,12 @@ export default function CreatorPage() {
     setItems(next);
   }
 
-  function validateBatch() {
-    if (!items.length) {
+  function validateBatch(list: ContentRequest[] = items) {
+    if (!list.length) {
       alert("No hay solicitudes en el lote");
       return false;
     }
-    const errors = items
+    const errors = list
       .map((item, index) => ({ index, error: validateCreatorItem(item) }))
       .filter((x) => x.error);
     if (errors.length) {
@@ -1110,7 +1214,7 @@ export default function CreatorPage() {
       return false;
     }
     const today = todayDateKey();
-    const expiredProduction = items.findIndex((item) => {
+    const expiredProduction = list.findIndex((item) => {
       const plan = getOperationalPlan(item, costRules, clientOverrides);
       return Boolean(
         item.requiresProduction &&
@@ -1134,7 +1238,48 @@ export default function CreatorPage() {
     if (!client?.id) return alert("Selecciona cliente");
     const name = draftName || defaultBatchName(client.name);
     if (!batchDueDate) return alert("Define la fecha límite del lote.");
-    if (!validateBatch()) return;
+    const preparedItems = prepareItemsForPersistence(items, batchDueDate).map(
+      (x, i) => {
+        const plan = getOperationalPlan(
+          { ...x, batchDueDate },
+          costRules,
+          clientOverrides,
+        );
+        const risk = getDeliveryRisk(plan.clientDueDate, plan.deliveryDays);
+        return {
+          ...x,
+          id: undefined,
+          number: i + 1,
+          total: items.length,
+          batchDueDate,
+          clientDueDate: plan.clientDueDate,
+          internalDueDate: plan.internalDueDate,
+          productionDueDate: x.requiresProduction ? plan.productionDueDate : "",
+          dueDate: x.dueDate || plan.internalDueDate || batchDueDate,
+          operationalCost: plan.totalCost,
+          operationalHours: plan.editingHours,
+          operationalWeight: 1,
+          operationalRisk:
+            risk.tone === "bad" || planningSummary.riskTone === "red"
+              ? "red"
+              : risk.tone === "mid"
+                ? "yellow"
+                : "green",
+          forcedDate: planningSummary.riskTone === "red",
+          forcedDateReason:
+            planningSummary.riskTone === "red" ? forceReason : "",
+          forcedDateNotes:
+            planningSummary.riskTone === "red" ? forceNotes : "",
+          status: x.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
+        } as ContentRequest;
+      },
+    );
+    if (!validateBatch(preparedItems)) return;
+    if (preparedItems.length !== items.length) {
+      return alert(
+        `No se puede enviar: en pantalla hay ${items.length} solicitud(es), pero se prepararon ${preparedItems.length}. Guarda borrador y vuelve a intentar.`,
+      );
+    }
     if (planningSummary.riskTone === "red" && !forceReason) {
       return alert(
         "La fecha no es viable con la carga o tiempos actuales. Elige una fecha viable o agrega justificación para forzarla.",
@@ -1142,59 +1287,28 @@ export default function CreatorPage() {
     }
     setBusy(true);
     try {
-      await saveRequestBatch(
+      const summary = await saveRequestBatch(
         {
           name,
           clientId: client.id,
           clientName: client.name,
-          totalRequests: items.length,
+          totalRequests: preparedItems.length,
           status: "sent_to_assignment",
           batchDueDate,
         },
-        items.map((x, i) => {
-          const plan = getOperationalPlan(
-            { ...x, batchDueDate },
-            costRules,
-            clientOverrides,
-          );
-          const risk = getDeliveryRisk(plan.clientDueDate, plan.deliveryDays);
-          return {
-            ...x,
-            number: i + 1,
-            total: items.length,
-            batchDueDate,
-            clientDueDate: plan.clientDueDate,
-            internalDueDate: plan.internalDueDate,
-            productionDueDate: x.requiresProduction
-              ? plan.productionDueDate
-              : "",
-            dueDate: x.dueDate || plan.internalDueDate || batchDueDate,
-            operationalCost: plan.totalCost,
-            operationalHours: plan.editingHours,
-            operationalWeight: 1,
-            operationalRisk:
-              risk.tone === "bad" || planningSummary.riskTone === "red"
-                ? "red"
-                : risk.tone === "mid"
-                  ? "yellow"
-                  : "green",
-            forcedDate: planningSummary.riskTone === "red",
-            forcedDateReason:
-              planningSummary.riskTone === "red" ? forceReason : "",
-            forcedDateNotes:
-              planningSummary.riskTone === "red" ? forceNotes : "",
-          };
-        }),
+        preparedItems,
       );
+      if (summary.total !== preparedItems.length) {
+        alert(
+          `El lote no se marcó como completado porque se esperaba guardar ${preparedItems.length} solicitud(es) y el sistema reportó ${summary.total}.`,
+        );
+        return;
+      }
       if (currentDraftId)
         await updatePlannerDraft(currentDraftId, {
           status: "sent_to_assignment",
           batchDueDate,
-          items: items.map((x) => ({
-            ...x,
-            batchDueDate,
-            dueDate: x.dueDate || batchDueDate,
-          })),
+          items: preparedItems,
         });
       setItems([]);
       setCurrentDraftId("");
@@ -1204,11 +1318,20 @@ export default function CreatorPage() {
       setForceNotes("");
       clearLocalAutosave();
       await load();
-      showFeedback("Lote enviado correctamente a Asignación.");
+      showFeedback(
+        `Lote enviado correctamente. ${summary.total} solicitud(es) procesadas: ${summary.productionCount} a Producción y ${summary.assignmentCount} a Asignación. 0 omitidas.`,
+      );
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? `No se pudo enviar el lote: ${error.message}`
+          : "No se pudo enviar el lote.",
+      );
     } finally {
       setBusy(false);
     }
   }
+
 
   async function removeDraft(id?: string) {
     if (!canDeleteDrafts) return permissionAlert("eliminar borradores");
@@ -2603,6 +2726,7 @@ const feedOptions = [
   "Reel",
   "Story",
   "TikTok",
+  "Portada Reel",
 ];
 
 function toggleArrayValue(values: string[] | undefined, value: string) {

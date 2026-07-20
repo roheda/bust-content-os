@@ -12,7 +12,8 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  where
+  where,
+  writeBatch
 } from "firebase/firestore";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "./firebase";
@@ -614,6 +615,7 @@ export type ContentRequest = {
   carriedOver?: boolean;
   carriedOverFromDate?: string;
   carriedOverDays?: number;
+  localDraftId?: string;
 };
 
 export type PlannerDraft = {
@@ -1325,23 +1327,38 @@ export async function saveRequest(item: ContentRequest) {
 }
 
 export async function saveRequestBatch(batch: RequestBatch, items: ContentRequest[]) {
-  const batchRef = await addDoc(collection(db, "requestBatches"), {
+  const normalizedItems = items.map((item, index) => ({
+    ...item,
+    id: undefined,
+    localDraftId: item.localDraftId || `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+    number: index + 1,
+    total: items.length
+  }));
+
+  const productionCount = normalizedItems.filter((item) => item.requiresProduction).length;
+  const assignmentCount = normalizedItems.length - productionCount;
+
+  const firestoreBatch = writeBatch(db);
+  const batchRef = doc(collection(db, "requestBatches"));
+  firestoreBatch.set(batchRef, {
     ...batch,
+    totalRequests: normalizedItems.length,
+    status: batch.status || "sent_to_assignment",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
 
-  const batchId = batchRef.id;
-
-  await Promise.all(items.map((item, index) => {
+  normalizedItems.forEach((item, index) => {
     const hasCopy = Boolean((item.copyIn || item.copyOut || "").trim());
     const status = item.requiresProduction ? "pendiente_produccion" : "lista_asignacion";
     const plan = getOperationalPlan({ ...item, batchDueDate: batch.batchDueDate });
-    return saveRequest({
-      ...item,
+    const requestRef = doc(collection(db, "contentRequests"));
+    const { id: _id, ...requestPayload } = item;
+    firestoreBatch.set(requestRef, {
+      ...requestPayload,
       number: index + 1,
-      total: items.length,
-      batchId,
+      total: normalizedItems.length,
+      batchId: batchRef.id,
       batchName: batch.name,
       batchDueDate: batch.batchDueDate,
       clientDueDate: plan.clientDueDate || item.publishDate || batch.batchDueDate,
@@ -1353,11 +1370,21 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
       operationalHours: item.operationalHours ?? plan.editingHours,
       operationalWeight: 1,
       operationalRisk: item.operationalRisk || "green",
-      status
+      status,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     });
-  }));
+  });
 
-  return batchId;
+  await firestoreBatch.commit();
+
+  return {
+    batchId: batchRef.id,
+    total: normalizedItems.length,
+    assignmentCount,
+    productionCount,
+    omitted: [] as string[]
+  };
 }
 
 
