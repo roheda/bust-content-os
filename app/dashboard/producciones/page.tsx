@@ -894,6 +894,17 @@ function SortButton({label,active,direction,onClick}:{label:string;active:boolea
   return <button type="button" className={active?"sort-button active":"sort-button"} onClick={onClick}>{label} {active ? (direction==="asc"?"↑":"↓") : "↕"}</button>;
 }
 
+
+function getLotSequenceNumberLabel(item?:ContentRequest|null, fallbackIndex?:number){
+  const raw = item?.lotSequenceNumber ?? item?.number ?? (typeof fallbackIndex === "number" ? fallbackIndex + 1 : undefined);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : "--";
+}
+
+function lotSequenceLabel(item?:ContentRequest|null, fallbackIndex?:number){
+  return `Post #${getLotSequenceNumberLabel(item,fallbackIndex)}`;
+}
+
 function isProductionVideoRequest(item:ContentRequest){
   const text = `${item.contentType} ${item.visualFormat || ""} ${item.feedPlacement || ""}`.toLowerCase();
   return /reel|video|tik|vertical|story/.test(text);
