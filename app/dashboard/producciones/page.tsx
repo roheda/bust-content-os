@@ -89,6 +89,20 @@ export default function ProductionsPage(){
     setProductions(loadedProductions.filter(x=>x.status!=="eliminada"));
     setUsers(loadedUsers.filter(user=>user.status!=="inactive"));
   }
+
+  function printProductionBrief(){
+    if(typeof document === "undefined")return;
+    document.body.classList.add("printing-production-brief");
+    const cleanup = ()=>{
+      document.body.classList.remove("printing-production-brief");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    setTimeout(()=>{
+      window.print();
+      setTimeout(cleanup, 1500);
+    }, 80);
+  }
   useEffect(()=>{load()},[]);
 
   function inDateRange(value:string|undefined, start:string, end:string){
@@ -767,7 +781,7 @@ export default function ProductionsPage(){
 
     {brief && <div className="modal-backdrop"><div className="modal-card" style={{width:"min(1200px,96vw)"}}>
       <div className="brief-actions">
-        <button className="btn blue" onClick={()=>window.print()}>Imprimir / Guardar PDF tamaño hoja</button>
+        <button className="btn blue" onClick={printProductionBrief}>Imprimir / Guardar PDF tamaño hoja</button>
         <button className="btn red" onClick={()=>setBrief(null)}>Cerrar</button>
       </div>
       <ProductionBrief production={brief} requests={requests}/>

@@ -2698,3 +2698,78 @@ a[class*="bg-black"],
 .production-order-expanded{margin-top:10px}
 @media(max-width:900px){.inline-request-detail-grid{grid-template-columns:1fr 1fr}.inline-detail-full{grid-column:1 / -1}}
 @media(max-width:640px){.inline-request-detail-grid{grid-template-columns:1fr}}
+
+
+/* v8.6.4: exportar brief de producción sin páginas iniciales vacías */
+@media print{
+  body.printing-production-brief .main > :not(.modal-backdrop){
+    display:none!important;
+  }
+  body.printing-production-brief .modal-backdrop{
+    display:block!important;
+    visibility:visible!important;
+    position:static!important;
+    inset:auto!important;
+    width:100%!important;
+    min-height:0!important;
+    height:auto!important;
+    overflow:visible!important;
+    padding:0!important;
+    margin:0!important;
+    background:#fff!important;
+  }
+  body.printing-production-brief .modal-card{
+    display:block!important;
+    visibility:visible!important;
+    position:static!important;
+    width:100%!important;
+    max-width:none!important;
+    max-height:none!important;
+    min-height:0!important;
+    height:auto!important;
+    overflow:visible!important;
+    padding:0!important;
+    margin:0!important;
+    border:0!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+    background:#fff!important;
+  }
+  body.printing-production-brief .production-brief{
+    display:block!important;
+    visibility:visible!important;
+    position:static!important;
+    width:100%!important;
+    max-width:none!important;
+    min-height:0!important;
+    height:auto!important;
+    overflow:visible!important;
+    padding:0!important;
+    margin:0!important;
+    border:0!important;
+    border-radius:0!important;
+    background:#fff!important;
+  }
+  body.printing-production-brief .production-brief,
+  body.printing-production-brief .production-brief *{
+    visibility:visible!important;
+  }
+  body.printing-production-brief .brief-actions,
+  body.printing-production-brief .sidebar,
+  body.printing-production-brief .pending-fab,
+  body.printing-production-brief .pending-panel{
+    display:none!important;
+    visibility:hidden!important;
+  }
+  body.printing-production-brief .shell,
+  body.printing-production-brief .main{
+    display:block!important;
+    width:100%!important;
+    max-width:none!important;
+    min-height:0!important;
+    padding:0!important;
+    margin:0!important;
+    overflow:visible!important;
+    background:#fff!important;
+  }
+}
