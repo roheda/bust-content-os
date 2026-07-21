@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
-import { Brand, ContentRequest, PlatformUser, Production, ReferenceFile, isImageFile, isVideoFile, listUniqueBrands, listProductions, listRequests, listUsers, organizationTeam, saveProduction, updateProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
+import { Brand, ContentRequest, PlatformUser, Production, ReferenceFile, isImageFile, isVideoFile, listUniqueBrands, listProductions, listRequests, listUsers, organizationTeam, saveProduction, updateProduction, deleteProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
 import { authJsonHeaders } from "@/lib/client-auth";
 
 
@@ -54,6 +54,7 @@ export default function ProductionsPage(){
   const [preview,setPreview]=useState<ReferenceFile|null>(null);
   const [brief,setBrief]=useState<Production|null>(null);
   const [pendingDetail,setPendingDetail]=useState<ContentRequest|null>(null);
+  const [expandedProductionRequestId,setExpandedProductionRequestId]=useState<string|null>(null);
   const [uploading,setUploading]=useState(false);
   const [requestSort,setRequestSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"dueDate",direction:"asc"});
   const [productionSort,setProductionSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"scheduledDate",direction:"asc"});
@@ -85,7 +86,7 @@ export default function ProductionsPage(){
     const [loadedBrands, loadedRequests, loadedProductions, loadedUsers] = await Promise.all([listUniqueBrands(), listRequests(), listProductions(), listUsers()]);
     setBrands(loadedBrands);
     setRequests(loadedRequests.filter(x=>x.status!=="eliminada"));
-    setProductions(loadedProductions);
+    setProductions(loadedProductions.filter(x=>x.status!=="eliminada"));
     setUsers(loadedUsers.filter(user=>user.status!=="inactive"));
   }
   useEffect(()=>{load()},[]);
@@ -280,6 +281,11 @@ export default function ProductionsPage(){
   },[form.requestIds,requestById]);
 
   function toggle(id:string){if(!canCreateProduction)return permissionAlert("seleccionar solicitudes para producción"); setSelected(selected.includes(id)?selected.filter(x=>x!==id):[...selected,id])}
+
+  function toggleExpandedProductionRequest(id?:string){
+    if(!id)return;
+    setExpandedProductionRequestId(current=>current===id?null:id);
+  }
 
   function toggleAllVisibleProductionRequests(checked:boolean){
     if(!canCreateProduction)return permissionAlert("seleccionar solicitudes para producción");
@@ -554,6 +560,17 @@ export default function ProductionsPage(){
     await updateProduction(editing.id,{...editing});
   }
 
+  async function removeProduction(item:Production){
+    if(!canEditProduction)return permissionAlert("eliminar producciones");
+    if(!item.id)return;
+    const ok = confirm(`¿Eliminar la producción "${item.title}"? Se moverá a Eliminadas y se borrará definitivamente después de los días configurados.`);
+    if(!ok)return;
+    await deleteProduction(item.id,"Eliminada desde Producciones");
+    if(editing?.id===item.id)setEditing(null);
+    if(brief?.id===item.id)setBrief(null);
+    await load();
+  }
+
   async function saveProductionMaterial(markDelivered=false){
     if(!canEditProduction)return permissionAlert("marcar material de producción");
     if(!editing?.id)return;
@@ -678,17 +695,20 @@ export default function ProductionsPage(){
                 </div>
               </div>
               {!collapsed && <div className="assignment-lot-items">
-                {group.items.map(item=><div key={item.id} className="assignment-request-card">
+                {group.items.map(item=>{
+                  const expanded = expandedProductionRequestId===item.id;
+                  return <div key={item.id} className={expanded?"assignment-request-card expanded":"assignment-request-card"}>
                   <div className="assignment-request-select">
                     <input type="checkbox" checked={selected.includes(item.id!)} disabled={!canCreateProduction} onChange={()=>toggle(item.id!)}/>
                     <span className="mini">{lotSequenceLabel(item)} de {item.total || "--"}</span>
                   </div>
-                  <div className="assignment-request-info">
+                  <button type="button" className="assignment-request-info request-open-zone" onClick={()=>toggleExpandedProductionRequest(item.id)}>
                     <strong>{item.clientName}</strong>
                     <span>{item.contentType} · {item.objective}</span>
                     <span className="mini text-clamp-2">{item.creativeIdea}</span>
-                    <span className="mini text-clamp-2">Notas: {item.productionNotes || "Sin notas de producción"}</span>
-                  </div>
+                    <span className="mini text-clamp-2"><strong>Notas producción:</strong> {item.productionNotes || "Sin notas de producción"}</span>
+                    <span className="mini">{expanded?"Ocultar información completa":"Clic para abrir información completa del post"}</span>
+                  </button>
                   <div className="assignment-request-date">
                     <strong>{getProductionDueDate(item) || "Sin fecha"}</strong>
                     <span className="mini">Máx. producción</span>
@@ -700,9 +720,11 @@ export default function ProductionsPage(){
                     <span className="pill">Pendiente producción</span>
                   </div>
                   <div className="assignment-request-actions">
-                    <button className="btn" type="button" onClick={()=>setPendingDetail(item)}>Detalle</button>
+                    <button className="btn" type="button" onClick={()=>toggleExpandedProductionRequest(item.id)}>{expanded?"Cerrar":"Ver completo"}</button>
+                    <button className="btn" type="button" onClick={()=>setPendingDetail(item)}>Modal</button>
                   </div>
-                </div>)}
+                  {expanded && <div className="request-expanded-detail"><ProductionRequestInlineDetail item={item} typeLabel={requestTypeLabel(item)} internalDueDate={getInternalDueDate(item)} onPreview={setPreview}/></div>}
+                </div>})}
               </div>}
             </div>
           })}
@@ -735,10 +757,10 @@ export default function ProductionsPage(){
 
     <section className="card" style={{marginTop:24}}>
       <h3>Calendario de producciones</h3>
-      <table className="table"><thead><tr><th><SortButton label="Producción" active={productionSort.key==="title"} direction={productionSort.direction} onClick={()=>toggleProductionSort("title")}/></th><th><SortButton label="Cliente" active={productionSort.key==="client"} direction={productionSort.direction} onClick={()=>toggleProductionSort("client")}/></th><th><SortButton label="Fecha" active={productionSort.key==="scheduledDate"} direction={productionSort.direction} onClick={()=>toggleProductionSort("scheduledDate")}/></th><th><SortButton label="Vence material" active={productionSort.key==="materialDueDate"} direction={productionSort.direction} onClick={()=>toggleProductionSort("materialDueDate")}/></th><th><SortButton label="Responsable" active={productionSort.key==="producer"} direction={productionSort.direction} onClick={()=>toggleProductionSort("producer")}/></th><th>Material</th><th><SortButton label="Solicitudes" active={productionSort.key==="requests"} direction={productionSort.direction} onClick={()=>toggleProductionSort("requests")}/></th><th><SortButton label="Estado" active={productionSort.key==="status"} direction={productionSort.direction} onClick={()=>toggleProductionSort("status")}/></th><th>Brief</th></tr></thead><tbody>{filteredProductions.map(p=>{
+      <table className="table"><thead><tr><th><SortButton label="Producción" active={productionSort.key==="title"} direction={productionSort.direction} onClick={()=>toggleProductionSort("title")}/></th><th><SortButton label="Cliente" active={productionSort.key==="client"} direction={productionSort.direction} onClick={()=>toggleProductionSort("client")}/></th><th><SortButton label="Fecha" active={productionSort.key==="scheduledDate"} direction={productionSort.direction} onClick={()=>toggleProductionSort("scheduledDate")}/></th><th><SortButton label="Vence material" active={productionSort.key==="materialDueDate"} direction={productionSort.direction} onClick={()=>toggleProductionSort("materialDueDate")}/></th><th><SortButton label="Responsable" active={productionSort.key==="producer"} direction={productionSort.direction} onClick={()=>toggleProductionSort("producer")}/></th><th>Material</th><th><SortButton label="Solicitudes" active={productionSort.key==="requests"} direction={productionSort.direction} onClick={()=>toggleProductionSort("requests")}/></th><th><SortButton label="Estado" active={productionSort.key==="status"} direction={productionSort.direction} onClick={()=>toggleProductionSort("status")}/></th><th>Brief</th><th>Acciones</th></tr></thead><tbody>{filteredProductions.map(p=>{
         const hasMaterial = Boolean((p.materialLinks||"").trim()) || Boolean((p.materialFiles||[]).length) || Boolean(Object.values(p.materialLinksByRequest||{}).some(v=>String(v||"").trim()));
         const dueStatus = materialDueStatus(p);
-        return <tr key={p.id}><td><strong>{p.title}</strong><br/><span className="mini">{(p.locations||p.location)||"Sin locaciones"}</span></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.materialDueDate || "Sin fecha"}<br/><span className={`pill ${dueStatus.tone}`}>{dueStatus.label}</span></td><td>{p.producer||"Sin responsable"}</td><td>{hasMaterial?<span className="pill green">Con material</span>:<span className="pill orange">Sin material</span>}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar links</button> <button className="btn" onClick={()=>setBrief(p)}>Exportar brief</button></td></tr>
+        return <tr key={p.id}><td><strong>{p.title}</strong><br/><span className="mini">{(p.locations||p.location)||"Sin locaciones"}</span></td><td>{p.clientName}</td><td>{p.scheduledDate}</td><td>{p.materialDueDate || "Sin fecha"}<br/><span className={`pill ${dueStatus.tone}`}>{dueStatus.label}</span></td><td>{p.producer||"Sin responsable"}</td><td>{hasMaterial?<span className="pill green">Con material</span>:<span className="pill orange">Sin material</span>}</td><td>{p.requestIds.length}</td><td>{p.status}</td><td><button className="btn" onClick={()=>setEditing(p)}>Completar links</button> <button className="btn" onClick={()=>setBrief(p)}>Exportar brief</button></td><td><button className="btn red" onClick={()=>removeProduction(p)} disabled={!canEditProduction}>Eliminar</button></td></tr>
       })}</tbody></table>
       {!filteredProductions.length && <p className="mini">No hay producciones con esos filtros.</p>}
     </section>
@@ -875,8 +897,10 @@ export default function ProductionsPage(){
                 </div>}
               </div>
               <div className="production-order-controls">
+                <button className="btn mini-btn" type="button" onClick={()=>toggleExpandedProductionRequest(x.id)}>{expandedProductionRequestId===x.id?"Cerrar info":"Ver completo"}</button>
                 <button className="btn mini-btn red" type="button" onClick={()=>removeFromProductionOrder(x.id!)}>Quitar</button>
               </div>
+              {expandedProductionRequestId===x.id && <div className="request-expanded-detail production-order-expanded"><ProductionRequestInlineDetail item={x} typeLabel={requestTypeLabel(x)} internalDueDate={getInternalDueDate(x)} onPreview={setPreview}/></div>}
             </div>
           })}
           {!modalOrderedRequests.length && <p className="mini">No hay solicitudes incluidas.</p>}
@@ -955,6 +979,22 @@ function ReadOnlyFileGrid({files,onPreview,emptyText="Sin archivos."}:{files:Ref
     {(files||[]).map((file,index)=><button type="button" className="ref-thumb" onClick={()=>onPreview(file)} key={`${file.url || file.name}-${index}`}>
       {isImageFile(file)?<img src={file.url} alt={file.name || "Referencia"}/>:isVideoFile(file)?<video src={file.url} muted playsInline preload="metadata"/>:<div className="ref-thumb-file">{file.name || "Archivo"}</div>}
     </button>)}
+  </div>;
+}
+
+
+function ProductionRequestInlineDetail({item,typeLabel,internalDueDate,onPreview}:{item:ContentRequest;typeLabel:string;internalDueDate:string;onPreview:(file:ReferenceFile)=>void}){
+  const referenceLinks = splitLinks(item.referenceLinks);
+  return <div className="inline-request-detail-grid">
+    <div><span className="mini">Tipo</span><strong>{typeLabel} · {item.contentType}</strong></div>
+    <div><span className="mini">Publicación</span><strong>{item.publishDate||"Sin fecha"}</strong></div>
+    <div><span className="mini">Entrega interna</span><strong>{internalDueDate||"Sin fecha"}</strong></div>
+    <div><span className="mini">Plataformas</span><strong>{(item.platforms||[]).join(", ")||"Sin plataformas"}</strong></div>
+    <div className="inline-detail-full"><span className="mini">Idea visual</span><div className="detail-copy">{item.creativeIdea||"Sin idea visual"}</div></div>
+    <div className="inline-detail-full"><span className="mini">Notas de producción</span><div className="detail-copy strong-production-notes">{item.productionNotes||"Sin notas de producción"}</div></div>
+    <div className="inline-detail-full"><span className="mini">Copy / Mensaje / CTA</span><div className="detail-copy"><strong>Copy:</strong> {item.copyIn||"Sin copy"}{"\n"}<strong>Mensaje:</strong> {item.keyMessage||"Sin mensaje"}{"\n"}<strong>CTA:</strong> {item.cta||"Sin CTA"}</div></div>
+    {(item.referenceFiles||[]).length>0 && <div className="inline-detail-full"><span className="mini">Archivos de referencia</span><ReadOnlyFileGrid files={item.referenceFiles || []} onPreview={onPreview} emptyText="Sin archivos de referencia."/></div>}
+    {referenceLinks.length>0 && <div className="inline-detail-full"><span className="mini">Links de referencia</span><LinkList links={referenceLinks} emptyText="Sin links de referencia."/></div>}
   </div>;
 }
 

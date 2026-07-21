@@ -104,6 +104,12 @@ service cloud.firestore {
       allow delete: if canDeleteOperational();
     }
 
+    match /requestBatchSubmissions/{submissionId} {
+      allow read: if activeUser();
+      allow create, update: if canOperateRequests();
+      allow delete: if canDeleteOperational();
+    }
+
     match /contentRequests/{requestId} {
       allow read: if activeUser();
       allow create, update: if canOperateRequests();

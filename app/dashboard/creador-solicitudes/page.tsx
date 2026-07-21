@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import {
   useModulePermissions,
@@ -73,6 +73,8 @@ export default function CreatorPage() {
   const [manual, setManual] = useState<ContentRequest>(emptyRequest);
   const [preview, setPreview] = useState<ReferenceFile | null>(null);
   const [busy, setBusy] = useState(false);
+  const [publishingBatch, setPublishingBatch] = useState(false);
+  const publishingBatchRef = useRef(false);
   const referenceMaxBytes = 80 * 1024 * 1024;
   const [improvingKey, setImprovingKey] = useState<string>("");
   const [expandedItemIndex, setExpandedItemIndex] = useState<number | null>(
@@ -652,6 +654,8 @@ export default function CreatorPage() {
       await load();
       showFeedback(`Borrador guardado correctamente: ${name}. ${itemsForSave.length} solicitud(es) guardada(s).`);
     } finally {
+      publishingBatchRef.current = false;
+      setPublishingBatch(false);
       setBusy(false);
     }
   }
@@ -1208,6 +1212,22 @@ export default function CreatorPage() {
     setItems(next);
   }
 
+  function stableSubmissionKey(name: string, preparedItems: ContentRequest[]) {
+    const base = [
+      currentDraftId || "local-draft",
+      client?.id || "no-client",
+      name,
+      batchDueDate,
+      preparedItems.length,
+      preparedItems.map((item, index) => `${item.localDraftId || item.number || index + 1}:${item.topic || item.objective || item.contentType || "post"}`).join("|")
+    ].join("::");
+    let hash = 0;
+    for (let index = 0; index < base.length; index += 1) {
+      hash = ((hash << 5) - hash + base.charCodeAt(index)) | 0;
+    }
+    return `batch-submit-${Math.abs(hash)}-${base.length}`;
+  }
+
   function validateBatch(list: ContentRequest[] = items) {
     if (!list.length) {
       alert("No hay solicitudes en el lote");
@@ -1243,6 +1263,7 @@ export default function CreatorPage() {
   async function publishBatch() {
     if (!canCreateRequests)
       return permissionAlert("aprobar lotes y enviarlos a asignación");
+    if (publishingBatchRef.current || publishingBatch) return;
     if (busy) return alert("Espera a que termine la carga de referencias.");
     if (!client?.id) return alert("Selecciona cliente");
     const name = draftName || defaultBatchName(client.name);
@@ -1294,6 +1315,9 @@ export default function CreatorPage() {
         "La fecha no es viable con la carga o tiempos actuales. Elige una fecha viable o agrega justificación para forzarla.",
       );
     }
+    const submissionKey = stableSubmissionKey(name, preparedItems);
+    publishingBatchRef.current = true;
+    setPublishingBatch(true);
     setBusy(true);
     try {
       const summary = await saveRequestBatch(
@@ -1304,9 +1328,18 @@ export default function CreatorPage() {
           totalRequests: preparedItems.length,
           status: "sent_to_assignment",
           batchDueDate,
+          submissionKey,
+          submissionStatus: "in_progress",
+          submittedAt: new Date().toISOString(),
+          submittedBy: "Content"
         },
         preparedItems,
       );
+      if ((summary as any).duplicate) {
+        showFeedback("Este lote ya fue enviado anteriormente. No se duplicó.", "info");
+        await load();
+        return;
+      }
       if (summary.total !== preparedItems.length) {
         alert(
           `El lote no se marcó como completado porque se esperaba guardar ${preparedItems.length} solicitud(es) y el sistema reportó ${summary.total}.`,
@@ -1337,6 +1370,8 @@ export default function CreatorPage() {
           : "No se pudo enviar el lote.",
       );
     } finally {
+      publishingBatchRef.current = false;
+      setPublishingBatch(false);
       setBusy(false);
     }
   }
@@ -1460,11 +1495,13 @@ export default function CreatorPage() {
         <button
           className="btn dark"
           onClick={publishBatch}
-          disabled={busy || !canCreateRequests}
+          disabled={busy || publishingBatch || !canCreateRequests}
         >
-          {busy
-            ? "Cargando referencias..."
-            : "Aprobar lote y enviar a Asignación"}
+          {publishingBatch
+            ? "Enviando lote..."
+            : busy
+              ? "Cargando referencias..."
+              : "Aprobar lote y enviar a Asignación"}
         </button>
         <button
           className="btn red"

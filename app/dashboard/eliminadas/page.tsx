@@ -5,16 +5,22 @@ import { useModulePermissions, permissionAlert } from "@/components/useModulePer
 import {
   CleanupRetentionSettings,
   ContentRequest,
+  Production,
   defaultCleanupRetentionSettings,
   getCleanupRetentionSettings,
+  listProductions,
   listRequests,
+  permanentlyDeleteProduction,
   permanentlyDeleteRequest,
+  purgeDeletedProductionsOlderThan,
   purgeDeletedRequestsOlderThan,
+  updateProduction,
   updateRequest
 } from "@/lib/data";
 
 export default function DeletedPage(){
   const [items,setItems]=useState<ContentRequest[]>([]);
+  const [productions,setProductions]=useState<Production[]>([]);
   const [settings,setSettings]=useState<CleanupRetentionSettings>(defaultCleanupRetentionSettings);
   const [showAll,setShowAll]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -22,16 +28,15 @@ export default function DeletedPage(){
   const canDelete = permissions.canDelete || permissions.canConfigure || permissions.canEdit;
 
   async function load(){
-    const [loadedRequests,loadedSettings] = await Promise.all([listRequests(),getCleanupRetentionSettings()]);
+    const [loadedRequests,loadedProductions,loadedSettings] = await Promise.all([listRequests(),listProductions(),getCleanupRetentionSettings()]);
     setItems(loadedRequests.filter(x=>x.status==="eliminada"));
+    setProductions(loadedProductions.filter(x=>x.status==="eliminada"));
     setSettings(loadedSettings);
   }
   useEffect(()=>{load()},[]);
 
-  const recentItems = useMemo(()=>{
-    if(showAll)return items;
-    return items.slice(0, 50);
-  },[items,showAll]);
+  const recentItems = useMemo(()=>showAll?items:items.slice(0,50),[items,showAll]);
+  const recentProductions = useMemo(()=>showAll?productions:productions.slice(0,50),[productions,showAll]);
 
   async function restoreItem(item:ContentRequest){
     if(!canDelete)return permissionAlert("restaurar solicitudes eliminadas");
@@ -51,15 +56,36 @@ export default function DeletedPage(){
     await load();
   }
 
+  async function restoreProduction(item:Production){
+    if(!canDelete)return permissionAlert("restaurar producciones eliminadas");
+    if(!item.id)return;
+    const ok = confirm(`¿Restaurar la producción "${item.title}"? Volverá al calendario de producciones.`);
+    if(!ok)return;
+    await updateProduction(item.id,{status:"programada",deletedAt:"",deletedReason:""});
+    await load();
+  }
+
+  async function hardDeleteProduction(item:Production){
+    if(!canDelete)return permissionAlert("borrar definitivamente producciones eliminadas");
+    if(!item.id)return;
+    const ok = confirm(`¿Borrar definitivamente la producción "${item.title}"? Esta acción no se puede deshacer.`);
+    if(!ok)return;
+    await permanentlyDeleteProduction(item.id);
+    await load();
+  }
+
   async function purgeOld(){
-    if(!canDelete)return permissionAlert("borrar definitivamente solicitudes antiguas");
+    if(!canDelete)return permissionAlert("borrar definitivamente eliminadas antiguas");
     const days = Math.max(1,Number(settings.deletedRetentionDays||60));
-    const ok = confirm(`Se borrarán definitivamente solicitudes eliminadas con más de ${days} días. ¿Continuar?`);
+    const ok = confirm(`Se borrarán definitivamente solicitudes y producciones eliminadas con más de ${days} días. ¿Continuar?`);
     if(!ok)return;
     setBusy(true);
     try{
-      const count = await purgeDeletedRequestsOlderThan(days);
-      alert(`Limpieza terminada. Solicitudes borradas definitivamente: ${count}.`);
+      const [requestCount,productionCount] = await Promise.all([
+        purgeDeletedRequestsOlderThan(days),
+        purgeDeletedProductionsOlderThan(days)
+      ]);
+      alert(`Limpieza terminada. Solicitudes borradas definitivamente: ${requestCount}. Producciones borradas definitivamente: ${productionCount}.`);
       await load();
     }finally{setBusy(false)}
   }
@@ -68,17 +94,18 @@ export default function DeletedPage(){
     <section className="hero">
       <div>
         <p className="eyebrow">Rastreabilidad</p>
-        <h1>Solicitudes eliminadas</h1>
-        <p>Papelera operativa. Las solicitudes eliminadas se ocultan del flujo normal y pueden borrarse definitivamente después de la retención configurada.</p>
+        <h1>Eliminadas</h1>
+        <p>Papelera operativa. Las solicitudes y producciones eliminadas se ocultan del flujo normal y pueden borrarse definitivamente después de la retención configurada.</p>
       </div>
       <div className="config-actions">
         <button className="btn" onClick={()=>setShowAll(v=>!v)}>{showAll?"Mostrar recientes":"Ver todas"}</button>
         <button className="btn red" onClick={purgeOld} disabled={busy || !canDelete}>{busy?"Limpiando...":`Borrar +${settings.deletedRetentionDays||60} días`}</button>
       </div>
     </section>
+
     <section className="report-section">
-      <h3>Eliminadas</h3>
-      <p className="mini">Retención configurada: {settings.deletedRetentionDays||60} días. Mostrando {recentItems.length} de {items.length} eliminadas.</p>
+      <h3>Solicitudes eliminadas</h3>
+      <p className="mini">Retención configurada: {settings.deletedRetentionDays||60} días. Mostrando {recentItems.length} de {items.length} solicitudes eliminadas.</p>
       <table className="table">
         <thead><tr><th>Cliente</th><th>Lote</th><th>Tipo</th><th>Motivo</th><th>Fecha eliminación</th><th>Acciones</th></tr></thead>
         <tbody>{recentItems.map(item=><tr key={item.id}>
@@ -91,6 +118,23 @@ export default function DeletedPage(){
         </tr>)}</tbody>
       </table>
       {!items.length && <p className="mini">No hay solicitudes eliminadas.</p>}
+    </section>
+
+    <section className="report-section">
+      <h3>Producciones eliminadas</h3>
+      <p className="mini">Mostrando {recentProductions.length} de {productions.length} producciones eliminadas.</p>
+      <table className="table">
+        <thead><tr><th>Producción</th><th>Cliente</th><th>Fecha producción</th><th>Motivo</th><th>Fecha eliminación</th><th>Acciones</th></tr></thead>
+        <tbody>{recentProductions.map(item=><tr key={item.id}>
+          <td><strong>{item.title}</strong></td>
+          <td>{item.clientName}</td>
+          <td>{item.scheduledDate||"Sin fecha"}</td>
+          <td>{item.deletedReason||"Sin motivo"}</td>
+          <td>{formatDeletedAt(item.deletedAt)}</td>
+          <td><button className="btn" onClick={()=>restoreProduction(item)} disabled={!canDelete}>Restaurar</button><button className="btn red" onClick={()=>hardDeleteProduction(item)} disabled={!canDelete}>Borrar definitivo</button></td>
+        </tr>)}</tbody>
+      </table>
+      {!productions.length && <p className="mini">No hay producciones eliminadas.</p>}
     </section>
   </AppShell>
 }

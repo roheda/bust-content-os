@@ -29,6 +29,7 @@ import {
   listUniqueBrands,
   purgeDeletedRequestBatchesOlderThan,
   purgeDeletedRequestsOlderThan,
+  purgeDeletedProductionsOlderThan,
   restoreSystemBackup,
   saveBackupAutomationSettings,
   saveCleanupRetentionSettings,
@@ -287,14 +288,15 @@ export default function ConfiguracionPage(){
   async function runRetentionCleanup(){
     if(!canConfigure)return permissionAlert("borrar eliminados antiguos");
     const days = Math.max(1, Number(cleanupSettings.deletedRetentionDays || 60));
-    if(!confirm(`Se borrarán definitivamente solicitudes y lotes eliminados con más de ${days} días. Esta acción no se puede deshacer. ¿Continuar?`))return;
+    if(!confirm(`Se borrarán definitivamente solicitudes, lotes y producciones eliminadas con más de ${days} días. Esta acción no se puede deshacer. ¿Continuar?`))return;
     setCleanupBusy(true);
     try{
-      const [requestsDeleted,batchesDeleted] = await Promise.all([
+      const [requestsDeleted,batchesDeleted,productionsDeleted] = await Promise.all([
         purgeDeletedRequestsOlderThan(days),
-        purgeDeletedRequestBatchesOlderThan(days)
+        purgeDeletedRequestBatchesOlderThan(days),
+        purgeDeletedProductionsOlderThan(days)
       ]);
-      alert(`Limpieza terminada. Solicitudes borradas: ${requestsDeleted}. Lotes borrados: ${batchesDeleted}.`);
+      alert(`Limpieza terminada. Solicitudes borradas: ${requestsDeleted}. Lotes borrados: ${batchesDeleted}. Producciones borradas: ${productionsDeleted}.`);
     }finally{setCleanupBusy(false)}
   }
 

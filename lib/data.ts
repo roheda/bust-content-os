@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  runTransaction,
   onSnapshot,
   orderBy,
   query,
@@ -647,6 +648,11 @@ export type RequestBatch = {
   batchDueDate: string;
   deletedAt?: string;
   deletedReason?: string;
+  submissionKey?: string;
+  submissionStatus?: "in_progress" | "completed" | "failed" | string;
+  submittedAt?: string;
+  submittedBy?: string;
+  submittedLotId?: string;
 };
 
 export type Production = {
@@ -683,6 +689,8 @@ export type Production = {
   productionOrderMode?: "manual" | "ai" | string;
   productionOrderInstructions?: string;
   productionOrderGeneratedAt?: string;
+  deletedAt?: string;
+  deletedReason?: string;
   status: string;
 };
 
@@ -1432,28 +1440,19 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
 
   const productionCount = normalizedItems.filter((item) => item.requiresProduction).length;
   const assignmentCount = normalizedItems.length - productionCount;
+  const submissionKey = String(batch.submissionKey || "").trim();
 
-  const firestoreBatch = writeBatch(db);
-  const batchRef = doc(collection(db, "requestBatches"));
-  firestoreBatch.set(batchRef, {
-    ...batch,
-    totalRequests: normalizedItems.length,
-    status: batch.status || "sent_to_assignment",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  });
-
-  normalizedItems.forEach((item, index) => {
+  function buildRequestPayload(item: ContentRequest, index: number, batchId: string) {
     const hasCopy = Boolean((item.copyIn || item.copyOut || "").trim());
     const status = item.requiresProduction ? "pendiente_produccion" : "lista_asignacion";
     const plan = getOperationalPlan({ ...item, batchDueDate: batch.batchDueDate });
-    const requestRef = doc(collection(db, "contentRequests"));
     const { id: _id, ...requestPayload } = item;
-    firestoreBatch.set(requestRef, {
+    return {
       ...requestPayload,
       number: index + 1,
+      lotSequenceNumber: index + 1,
       total: normalizedItems.length,
-      batchId: batchRef.id,
+      batchId,
       batchName: batch.name,
       batchDueDate: batch.batchDueDate,
       clientDueDate: plan.clientDueDate || item.publishDate || batch.batchDueDate,
@@ -1468,7 +1467,92 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
       status,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
+    };
+  }
+
+  if (submissionKey) {
+    let duplicateResult: any = null;
+    let createdBatchId = "";
+    await runTransaction(db, async (transaction) => {
+      const submissionRef = doc(db, "requestBatchSubmissions", submissionKey);
+      const existingSubmission = await transaction.get(submissionRef);
+      if (existingSubmission.exists()) {
+        const existing = existingSubmission.data() as any;
+        if (existing.status === "completed" && existing.batchId) {
+          duplicateResult = {
+            batchId: existing.batchId,
+            total: Number(existing.totalRequests || normalizedItems.length),
+            assignmentCount: Number(existing.assignmentCount || assignmentCount),
+            productionCount: Number(existing.productionCount || productionCount),
+            omitted: [] as string[],
+            duplicate: true
+          };
+          return;
+        }
+        throw new Error("Este lote ya se está enviando o quedó bloqueado por un envío anterior. Espera unos segundos y vuelve a revisar antes de intentar duplicarlo.");
+      }
+
+      const batchRef = doc(collection(db, "requestBatches"));
+      createdBatchId = batchRef.id;
+      const submittedAt = new Date().toISOString();
+      transaction.set(batchRef, {
+        ...batch,
+        totalRequests: normalizedItems.length,
+        status: batch.status || "sent_to_assignment",
+        submissionKey,
+        submissionStatus: "completed",
+        submittedAt,
+        submittedLotId: batchRef.id,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      normalizedItems.forEach((item, index) => {
+        const requestRef = doc(collection(db, "contentRequests"));
+        transaction.set(requestRef, buildRequestPayload(item as ContentRequest, index, batchRef.id));
+      });
+
+      transaction.set(submissionRef, {
+        submissionKey,
+        status: "completed",
+        batchId: batchRef.id,
+        clientId: batch.clientId,
+        clientName: batch.clientName,
+        batchName: batch.name,
+        batchDueDate: batch.batchDueDate,
+        totalRequests: normalizedItems.length,
+        assignmentCount,
+        productionCount,
+        createdAt: serverTimestamp(),
+        completedAt: serverTimestamp(),
+        submittedAt
+      });
     });
+
+    if (duplicateResult) return duplicateResult;
+    return {
+      batchId: createdBatchId,
+      total: normalizedItems.length,
+      assignmentCount,
+      productionCount,
+      omitted: [] as string[],
+      duplicate: false
+    };
+  }
+
+  const firestoreBatch = writeBatch(db);
+  const batchRef = doc(collection(db, "requestBatches"));
+  firestoreBatch.set(batchRef, {
+    ...batch,
+    totalRequests: normalizedItems.length,
+    status: batch.status || "sent_to_assignment",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  normalizedItems.forEach((item, index) => {
+    const requestRef = doc(collection(db, "contentRequests"));
+    firestoreBatch.set(requestRef, buildRequestPayload(item as ContentRequest, index, batchRef.id));
   });
 
   await firestoreBatch.commit();
@@ -1478,10 +1562,10 @@ export async function saveRequestBatch(batch: RequestBatch, items: ContentReques
     total: normalizedItems.length,
     assignmentCount,
     productionCount,
-    omitted: [] as string[]
+    omitted: [] as string[],
+    duplicate: false
   };
 }
-
 
 export async function listRequestBatches() {
   const q = query(collection(db, "requestBatches"), orderBy("createdAt", "desc"));
@@ -1566,7 +1650,7 @@ async function collectBackupPayload(includeDeleted = true) {
   for (const collectionName of backupCollectionNames) {
     const snap = await getDocs(collection(db, collectionName));
     let docs = snap.docs.map((item) => ({ id: item.id, data: item.data() }));
-    if (!includeDeleted && ["contentRequests", "requestBatches"].includes(collectionName)) {
+    if (!includeDeleted && ["contentRequests", "requestBatches", "productions"].includes(collectionName)) {
       docs = docs.filter((item) => !["eliminada", "deleted", "archived"].includes(String(item.data?.status || "")));
     }
     collections[collectionName] = docs;
@@ -1746,6 +1830,27 @@ export async function updateProduction(id: string, data: Partial<Production>) {
     updatedAt: serverTimestamp()
   });
 }
+
+export async function deleteProduction(id: string, reason = "Eliminada desde Producciones") {
+  return updateDoc(doc(db, "productions", id), {
+    status: "eliminada",
+    deletedAt: new Date().toISOString(),
+    deletedReason: reason,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function permanentlyDeleteProduction(id: string) {
+  return deleteDoc(doc(db, "productions", id));
+}
+
+export async function purgeDeletedProductionsOlderThan(days: number) {
+  const productions = await listProductions();
+  const victims = productions.filter((item) => item.id && ["eliminada", "deleted", "archived"].includes(String(item.status || "")) && dateOlderThanDays(item.deletedAt, days));
+  await Promise.all(victims.map((item) => deleteDoc(doc(db, "productions", item.id!))));
+  return victims.length;
+}
+
 
 export async function listOperationalContentRules() {
   const snap = await getDocs(collection(db, "operationalContentRules"));
