@@ -535,6 +535,7 @@ export type ContentRequest = {
   clientId: string;
   clientName: string;
   number: number;
+  lotSequenceNumber?: number;
   total: number;
   contentType: string;
   objective: string;
@@ -678,6 +679,7 @@ export type Production = {
   productionOrderMoments?: Record<string, string>;
   productionOrderPriorities?: Record<string, string>;
   productionOrderImmediate?: Record<string, boolean>;
+  productionLotSequenceNumbers?: Record<string, number>;
   productionOrderMode?: "manual" | "ai" | string;
   productionOrderInstructions?: string;
   productionOrderGeneratedAt?: string;

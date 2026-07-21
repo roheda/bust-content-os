@@ -2677,3 +2677,11 @@ a[class*="bg-black"],
 .drag-handle{font-size:18px;line-height:1;color:var(--muted)}
 .production-order-actions .btn{white-space:nowrap}
 @media (max-width:900px){.production-order-item{cursor:default}.drag-handle{display:none}}
+
+/* v8.6.2 producción: número fijo del post por lote + orden operativo separado */
+.production-order-item{grid-template-columns:minmax(118px,150px) 1fr auto}
+.production-order-number{width:auto;min-height:48px;height:auto;padding:8px 10px;flex-direction:column;align-items:flex-start;justify-content:center;background:rgba(249,175,27,.08);border:1px solid rgba(249,175,27,.22);border-radius:14px}
+.production-order-number strong{font-size:13px;line-height:1.15}
+.production-order-number .mini{font-size:10px;line-height:1.15;color:var(--muted)}
+.production-order-number .drag-handle{position:absolute;transform:translateX(-22px)}
+@media (max-width:900px){.production-order-item{grid-template-columns:1fr}.production-order-number{align-items:flex-start}.production-order-number .drag-handle{position:static;transform:none}}

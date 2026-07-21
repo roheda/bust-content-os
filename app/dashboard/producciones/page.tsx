@@ -169,6 +169,17 @@ export default function ProductionsPage(){
     return /reel|video|tik|vertical|story/.test(text);
   }
   function requestTypeLabel(item:ContentRequest){return isVideoRequest(item) ? "Video" : "Estático / Foto";}
+  function getLotSequenceNumber(item?:ContentRequest|null, fallbackIndex?:number){
+    const raw = item?.lotSequenceNumber ?? item?.number ?? (typeof fallbackIndex === "number" ? fallbackIndex + 1 : undefined);
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : "--";
+  }
+  function lotSequenceLabel(item?:ContentRequest|null, fallbackIndex?:number){
+    return `Post #${getLotSequenceNumber(item,fallbackIndex)}`;
+  }
+  function productionOrderLabel(index:number){
+    return `Orden producción ${index + 1}`;
+  }
   function sortBy<T>(rows:T[], sort:{key:string;direction:"asc"|"desc"}, getter:(row:T,key:string)=>string|number){
     const direction = sort.direction === "asc" ? 1 : -1;
     return [...rows].sort((a,b)=>String(getter(a,sort.key)||"").localeCompare(String(getter(b,sort.key)||""),"es",{numeric:true})*direction);
@@ -359,8 +370,8 @@ export default function ProductionsPage(){
         const bb = b.item?.batchName || "";
         const batchCompare = ab.localeCompare(bb,"es",{numeric:true});
         if(batchCompare)return batchCompare;
-        const an = Number(a.item?.number || a.index);
-        const bn = Number(b.item?.number || b.index);
+        const an = Number(a.item?.lotSequenceNumber ?? a.item?.number ?? a.index);
+        const bn = Number(b.item?.lotSequenceNumber ?? b.item?.number ?? b.index);
         if(an !== bn)return an-bn;
       }
       return a.index-b.index;
@@ -443,16 +454,20 @@ export default function ProductionsPage(){
     const moments:Record<string,string> = {};
     const priorities:Record<string,string> = {};
     const immediate:Record<string,boolean> = {};
+    const lotSequenceNumbers:Record<string,number> = {};
     ids.forEach((id,index)=>{
       const suggestion = productionOrderReasons[id];
+      const request = requestById.get(id);
+      const sequence = Number(request?.lotSequenceNumber ?? request?.number ?? index + 1);
       order[id] = index + 1;
+      if(Number.isFinite(sequence))lotSequenceNumbers[id] = sequence;
       if(suggestion?.reason)reasons[id] = suggestion.reason;
       if(suggestion?.group)groups[id] = suggestion.group;
       if(suggestion?.moment)moments[id] = suggestion.moment;
       if(suggestion?.priority)priorities[id] = suggestion.priority;
       immediate[id] = Boolean(suggestion?.requiresImmediateCapture);
     });
-    return {order,reasons,groups,moments,priorities,immediate};
+    return {order,reasons,groups,moments,priorities,immediate,lotSequenceNumbers};
   }
 
   async function submit(){
@@ -468,6 +483,7 @@ export default function ProductionsPage(){
       productionOrderMoments: orderPayload.moments,
       productionOrderPriorities: orderPayload.priorities,
       productionOrderImmediate: orderPayload.immediate,
+      productionLotSequenceNumbers: orderPayload.lotSequenceNumbers,
       productionOrderMode,
       productionOrderInstructions,
       productionOrderGeneratedAt: new Date().toISOString()
@@ -476,6 +492,7 @@ export default function ProductionsPage(){
     await Promise.all(form.requestIds.map((id,index)=>updateRequest(id,{
       productionId:ref.id,
       productionName:form.title,
+      lotSequenceNumber:orderPayload.lotSequenceNumbers[id] || requestById.get(id)?.number || index+1,
       productionOrder:index+1,
       productionOrderReason:orderPayload.reasons[id] || "",
       productionOrderGroup:orderPayload.groups[id] || "",
@@ -664,7 +681,7 @@ export default function ProductionsPage(){
                 {group.items.map(item=><div key={item.id} className="assignment-request-card">
                   <div className="assignment-request-select">
                     <input type="checkbox" checked={selected.includes(item.id!)} disabled={!canCreateProduction} onChange={()=>toggle(item.id!)}/>
-                    <span className="mini">#{item.number || "--"} de {item.total || "--"}</span>
+                    <span className="mini">{lotSequenceLabel(item)} de {item.total || "--"}</span>
                   </div>
                   <div className="assignment-request-info">
                     <strong>{item.clientName}</strong>
@@ -694,7 +711,7 @@ export default function ProductionsPage(){
       </div>
       <aside className="card">
         <h3>Seleccionadas</h3>
-        {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{requestTypeLabel(x)} · {x.contentType}</strong><span className="mini text-clamp-2">{x.creativeIdea}</span></div>)}
+        {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{lotSequenceLabel(x)} · {requestTypeLabel(x)} · {x.contentType}</strong><span className="mini text-clamp-2">{x.creativeIdea}</span></div>)}
         {!selectedRequests.length && <p className="mini">Selecciona solicitudes para crear una producción.</p>}
       </aside>
     </section>
@@ -809,7 +826,7 @@ export default function ProductionsPage(){
         <div className="production-order-head">
           <div>
             <h3>Orden de producción</h3>
-            <p className="mini">Acomoda manualmente o deja que la IA sugiera el orden según platillos, temperatura, video/foto, ambiente, preparación y mesa completa.</p>
+            <p className="mini">Acomoda el orden de producción sin cambiar el número interno del post dentro del lote. El equipo puede seguir hablando de “Post #10” aunque sea el primero en grabarse.</p>
           </div>
           <span className={productionOrderMode === "ai" ? "pill green" : "pill blue"}>{productionOrderMode === "ai" ? "Orden sugerido por IA" : "Orden manual"}</span>
         </div>
@@ -841,10 +858,11 @@ export default function ProductionsPage(){
               onDrop={event=>{event.preventDefault(); const sourceId = event.dataTransfer.getData("text/plain") || dragProductionRequestId || ""; if(x.id)moveProductionRequestByDrag(sourceId,x.id); setDragProductionRequestId(null);}}
               onDragEnd={()=>setDragProductionRequestId(null)}
             >
-              <div className="production-order-number"><span className="drag-handle">☰</span><strong>#{index+1}</strong></div>
+              <div className="production-order-number"><span className="drag-handle">☰</span><strong>{lotSequenceLabel(x,index)}</strong><span className="mini">{productionOrderLabel(index)}</span></div>
               <div className="production-order-body">
                 <div className="production-order-title">
                   <strong>{x.contentType} · {x.objective}</strong>
+                  <span className="pill">Núm. lote fijo: {lotSequenceLabel(x,index)}</span>
                   <span className={isVideoRequest(x)?"pill orange":"pill blue"}>{requestTypeLabel(x)}</span>
                   {suggestion?.requiresImmediateCapture && <span className="pill red">Captura inmediata</span>}
                 </div>
@@ -1021,9 +1039,9 @@ function ProductionBrief({production,requests}:{production:Production;requests:C
           return <article className="brief-request-card" key={item.id||index}>
             <div className="brief-request-head">
               <div>
-                <p className="eyebrow">Orden de producción #{orderNumber}</p>
+                <p className="eyebrow">{lotSequenceLabel(item,index)} · Orden de producción #{orderNumber}</p>
                 <h3 className="brief-request-title">{item.contentType} · {item.objective}</h3>
-                <p className="mini">Publica: {item.publishDate||"Sin fecha"} · Área: {item.suggestedArea||"Sin área"}</p>
+                <p className="mini">Número interno fijo del lote: {lotSequenceLabel(item,index)} · Publica: {item.publishDate||"Sin fecha"} · Área: {item.suggestedArea||"Sin área"}</p>
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
                 {immediate && <span className="pill red">Captura inmediata</span>}
