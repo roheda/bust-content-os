@@ -84,6 +84,12 @@ function toDisplayName(value = "") {
     .join(" ");
 }
 
+
+function requestTopicLabel(item?: ContentRequest | null) {
+  const topic = (item?.topic || "").trim();
+  return topic || "Sin tema/publicación";
+}
+
 function getAssignableUserArea(user: PlatformUser) {
   const nameKey = normalizePersonKey(user.name);
   const organizationArea = organizationAreaByName.get(nameKey);
@@ -1015,6 +1021,7 @@ export default function AssignmentPage() {
                             <div className="assignment-request-info">
                               <strong>{item.clientName}</strong>
                               <span>{item.contentType} · {item.objective}</span>
+                              <span className="mini text-clamp-2"><strong>Tema/Publicación:</strong> {requestTopicLabel(item)}</span>
                               <span className="mini text-clamp-2">{item.creativeIdea}</span>
                               <span className="mini">Publica: {item.publishDate || "Sin fecha"}</span>
                               {item.rejectionNote && (
@@ -1330,6 +1337,10 @@ function RequestDetail({
             />
           </div>
           <div className="field">
+            <label>Tema/Publicación</label>
+            <input value={requestTopicLabel(item)} disabled />
+          </div>
+          <div className="field">
             <label>Día programado sugerido</label>
             <input
               value={item.plannedWorkDate || "Se calcula al asignar"}
@@ -1345,6 +1356,11 @@ function RequestDetail({
             <input value={item.priority || "Media"} disabled />
           </div>
         </div>
+      </div>
+
+      <div className="detail-section">
+        <h4>Tema/Publicación</h4>
+        <div className="detail-copy">{requestTopicLabel(item)}</div>
       </div>
 
       <div className="detail-section">

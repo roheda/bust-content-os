@@ -719,6 +719,7 @@ export default function ProductionsPage(){
                   <button type="button" className="assignment-request-info request-open-zone" onClick={()=>toggleExpandedProductionRequest(item.id)}>
                     <strong>{item.clientName}</strong>
                     <span>{item.contentType} · {item.objective}</span>
+                    <span className="mini text-clamp-2"><strong>Tema/Publicación:</strong> {requestTopicLabel(item)}</span>
                     <span className="mini text-clamp-2">{item.creativeIdea}</span>
                     <span className="mini text-clamp-2"><strong>Notas producción:</strong> {item.productionNotes || "Sin notas de producción"}</span>
                     <span className="mini">{expanded?"Ocultar información completa":"Clic para abrir información completa del post"}</span>
@@ -747,7 +748,7 @@ export default function ProductionsPage(){
       </div>
       <aside className="card">
         <h3>Seleccionadas</h3>
-        {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{lotSequenceLabel(x)} · {requestTypeLabel(x)} · {x.contentType}</strong><span className="mini text-clamp-2">{x.creativeIdea}</span></div>)}
+        {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{lotSequenceLabel(x)} · {requestTypeLabel(x)} · {x.contentType}</strong><span className="mini text-clamp-2"><strong>Tema/Publicación:</strong> {requestTopicLabel(x)}</span><span className="mini text-clamp-2">{x.creativeIdea}</span></div>)}
         {!selectedRequests.length && <p className="mini">Selecciona solicitudes para crear una producción.</p>}
       </aside>
     </section>
@@ -812,7 +813,7 @@ export default function ProductionsPage(){
           const req=requests.find(x=>x.id===id);
           const link=(editing.materialLinksByRequest||{})[id]||"";
           return <tr key={id}>
-            <td><strong>{req?.contentType||"Solicitud"} · {req?.objective||""}</strong></td>
+            <td><strong>{req?.contentType||"Solicitud"} · {req?.objective||""}</strong><span className="mini text-clamp-2"><strong>Tema/Publicación:</strong> {req ? requestTopicLabel(req) : "Sin tema/publicación"}</span></td>
             <td><span className="mini text-clamp-2">{req?.creativeIdea||id}</span></td>
             <td>{req?.publishDate||"Sin fecha"}</td>
             <td><input value={link} onChange={e=>setPostMaterialLink(id,e.target.value)} onBlur={persistEditingMaterial} placeholder="Link exacto del material para esta pieza"/></td>
@@ -898,6 +899,7 @@ export default function ProductionsPage(){
               <div className="production-order-body">
                 <div className="production-order-title">
                   <strong>{x.contentType} · {x.objective}</strong>
+                  <span className="pill">Tema/Publicación: {requestTopicLabel(x)}</span>
                   <span className="pill">Núm. lote fijo: {lotSequenceLabel(x,index)}</span>
                   <span className={isVideoRequest(x)?"pill orange":"pill blue"}>{requestTypeLabel(x)}</span>
                   {suggestion?.requiresImmediateCapture && <span className="pill red">Captura inmediata</span>}
@@ -932,6 +934,12 @@ function SortButton({label,active,direction,onClick}:{label:string;active:boolea
   return <button type="button" className={active?"sort-button active":"sort-button"} onClick={onClick}>{label} {active ? (direction==="asc"?"↑":"↓") : "↕"}</button>;
 }
 
+
+
+function requestTopicLabel(item?:ContentRequest|null){
+  const topic = (item?.topic || "").trim();
+  return topic || "Sin tema/publicación";
+}
 
 function getLotSequenceNumberLabel(item?:ContentRequest|null, fallbackIndex?:number){
   const raw = item?.lotSequenceNumber ?? item?.number ?? (typeof fallbackIndex === "number" ? fallbackIndex + 1 : undefined);
@@ -1001,6 +1009,7 @@ function ProductionRequestInlineDetail({item,typeLabel,internalDueDate,onPreview
   const referenceLinks = splitLinks(item.referenceLinks);
   return <div className="inline-request-detail-grid">
     <div><span className="mini">Tipo</span><strong>{typeLabel} · {item.contentType}</strong></div>
+    <div><span className="mini">Tema/Publicación</span><strong>{requestTopicLabel(item)}</strong></div>
     <div><span className="mini">Publicación</span><strong>{item.publishDate||"Sin fecha"}</strong></div>
     <div><span className="mini">Entrega interna</span><strong>{internalDueDate||"Sin fecha"}</strong></div>
     <div><span className="mini">Plataformas</span><strong>{(item.platforms||[]).join(", ")||"Sin plataformas"}</strong></div>
@@ -1022,9 +1031,9 @@ function ProductionRequestDetail({item,onPreview,typeLabel,internalDueDate}:{ite
   const visibleMaterialFiles = mergeFiles([...materialFiles, ...productionMaterialFiles]);
 
   return <div className="production-request-detail">
-    <div className="detail-copy"><strong>Lote:</strong> {item.batchName||"Sin lote"}{"\n"}<strong>Entrega interna:</strong> {internalDueDate||"Sin fecha"}{"\n"}<strong>Publicación:</strong> {item.publishDate||"Sin fecha"}{"\n"}<strong>Tipo:</strong> {typeLabel}{"\n"}<strong>Producción:</strong> {item.productionName||"Sin producción asignada"}{"\n"}<strong>Material entregado:</strong> {item.materialDeliveredAt ? new Date(item.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}</div>
+    <div className="detail-copy"><strong>Lote:</strong> {item.batchName||"Sin lote"}{"\n"}<strong>Entrega interna:</strong> {internalDueDate||"Sin fecha"}{"\n"}<strong>Publicación:</strong> {item.publishDate||"Sin fecha"}{"\n"}<strong>Tipo:</strong> {typeLabel}{"\n"}<strong>Tema/Publicación:</strong> {requestTopicLabel(item)}{"\n"}<strong>Producción:</strong> {item.productionName||"Sin producción asignada"}{"\n"}<strong>Material entregado:</strong> {item.materialDeliveredAt ? new Date(item.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}</div>
 
-    <div className="detail-section"><h4>Solicitud inicial</h4><div className="detail-copy"><strong>{item.contentType} · {item.objective}</strong>{"\n"}{item.creativeIdea || "Sin idea creativa"}</div></div>
+    <div className="detail-section"><h4>Solicitud inicial</h4><div className="detail-copy"><strong>{item.contentType} · {item.objective}</strong>{"\n"}<strong>Tema/Publicación:</strong> {requestTopicLabel(item)}{"\n"}{item.creativeIdea || "Sin idea creativa"}</div></div>
 
     <div className="detail-section"><h4>Copy / Mensaje / CTA</h4><div className="detail-copy"><strong>Copy In:</strong> {item.copyIn||"Sin copy"}{"\n"}<strong>Mensaje:</strong> {item.keyMessage||"Sin mensaje"}{"\n"}<strong>CTA:</strong> {item.cta||"Sin CTA"}</div></div>
 
@@ -1107,6 +1116,7 @@ function ProductionBrief({production,requests}:{production:Production;requests:C
                 <p className="eyebrow">{lotSequenceLabel(item,index)} · Orden de producción #{orderNumber}</p>
                 <h3 className="brief-request-title">{item.contentType} · {item.objective}</h3>
                 <p className="mini">Número interno fijo del lote: {lotSequenceLabel(item,index)} · Publica: {item.publishDate||"Sin fecha"} · Área: {item.suggestedArea||"Sin área"}</p>
+                <p className="mini"><strong>Tema/Publicación:</strong> {requestTopicLabel(item)}</p>
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
                 {immediate && <span className="pill red">Captura inmediata</span>}
