@@ -1596,8 +1596,8 @@ a[class*="bg-black"],
 .copyout-inline-editor{display:grid;grid-template-columns:minmax(260px,1fr) auto auto;gap:10px;align-items:start}
 .copyout-inline-editor textarea{min-height:52px;resize:vertical;border-radius:18px}
 .production-material-inline{scroll-margin-top:24px}
-.material-links-table{min-width:1100px;table-layout:fixed}
-.material-links-table th:nth-child(1){width:22%}.material-links-table th:nth-child(2){width:28%}.material-links-table th:nth-child(3){width:12%}.material-links-table th:nth-child(4){width:26%}.material-links-table th:nth-child(5){width:12%}
+.material-links-table{min-width:1500px;table-layout:fixed}
+.material-links-table th:nth-child(1){width:22%}.material-links-table th:nth-child(2){width:10%}.material-links-table th:nth-child(3){width:9%}.material-links-table th:nth-child(4){width:17%}.material-links-table th:nth-child(5){width:17%}.material-links-table th:nth-child(6){width:17%}.material-links-table th:nth-child(7){width:12%}.material-links-table th:nth-child(8){width:12%}
 .material-links-table input{width:100%;border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:#fff}
 .preview-modal{z-index:9999!important}
 .preview-box{z-index:10000!important}
@@ -2773,3 +2773,6 @@ a[class*="bg-black"],
     background:#fff!important;
   }
 }
+
+.request-topic-title{display:block;font-size:16px;font-weight:950;line-height:1.2;color:#111827;margin-bottom:4px}
+.assignment-request-info .request-topic-title{font-size:17px}

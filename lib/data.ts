@@ -567,6 +567,8 @@ export type ContentRequest = {
   materialLinks: string;
   materialFiles: ReferenceFile[];
   productionSpecificMaterialLink?: string;
+  productionPhotoMaterialLink?: string;
+  productionVideoMaterialLink?: string;
   productionGeneralMaterialLinks?: string;
   productionMaterialFiles?: ReferenceFile[];
   materialDeliveredAt?: string;
@@ -676,6 +678,8 @@ export type Production = {
   notes: string;
   materialLinks?: string;
   materialLinksByRequest?: Record<string, string>;
+  materialPhotoLinksByRequest?: Record<string, string>;
+  materialVideoLinksByRequest?: Record<string, string>;
   materialFiles?: ReferenceFile[];
   materialDueDate?: string;
   materialDeliveredAt?: string;
@@ -1225,8 +1229,10 @@ export function hasMaterial(item: Partial<ContentRequest>) {
 export function hasProductionDeliveredMaterial(item: Partial<ContentRequest>) {
   const productionFiles = (item.productionMaterialFiles || []).length;
   const specific = (item.productionSpecificMaterialLink || "").trim().length;
+  const photo = (item.productionPhotoMaterialLink || "").trim().length;
+  const video = (item.productionVideoMaterialLink || "").trim().length;
   const general = (item.productionGeneralMaterialLinks || "").trim().length;
-  return Boolean(item.materialDeliveredAt || specific || general || productionFiles);
+  return Boolean(item.materialDeliveredAt || specific || photo || video || general || productionFiles);
 }
 
 export function canAssignRequest(item: Partial<ContentRequest>) {

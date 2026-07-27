@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { auth } from "@/lib/firebase";
@@ -88,6 +88,16 @@ function toDisplayName(value = "") {
 function requestTopicLabel(item?: ContentRequest | null) {
   const topic = (item?.topic || "").trim();
   return topic || "Sin tema/publicación";
+}
+
+function getLotSequenceNumberLabel(item?: ContentRequest | null, fallbackIndex?: number) {
+  const raw = item?.lotSequenceNumber ?? item?.number ?? (typeof fallbackIndex === "number" ? fallbackIndex + 1 : undefined);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : "--";
+}
+
+function lotSequenceLabel(item?: ContentRequest | null, fallbackIndex?: number) {
+  return `Post #${getLotSequenceNumberLabel(item, fallbackIndex)}`;
 }
 
 function getAssignableUserArea(user: PlatformUser) {
@@ -207,6 +217,10 @@ export default function AssignmentPage() {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [bulkAssignee, setBulkAssignee] = useState("");
   const [collapsedBatchIds, setCollapsedBatchIds] = useState<string[]>([]);
+  const [assigningIds, setAssigningIds] = useState<string[]>([]);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
+  const assigningLockRef = useRef<Set<string>>(new Set());
+  const bulkAssigningRef = useRef(false);
   const [sort, setSort] = useState<{ key: string; direction: "asc" | "desc" }>({
     key: "batch",
     direction: "asc",
@@ -397,6 +411,13 @@ export default function AssignmentPage() {
       }
       map.get(id)!.items.push(item);
     });
+    Array.from(map.values()).forEach((group) => {
+      group.items.sort((a, b) => {
+        const aNumber = Number(getLotSequenceNumberLabel(a, 999999));
+        const bNumber = Number(getLotSequenceNumberLabel(b, 999999));
+        return aNumber - bNumber;
+      });
+    });
     return Array.from(map.values()).sort((a, b) =>
       a.name.localeCompare(b.name, "es", { numeric: true }),
     );
@@ -562,68 +583,87 @@ export default function AssignmentPage() {
   async function assign(item: ContentRequest) {
     if (!canAssignAction) return permissionAlert("asignar solicitudes");
     if (!item.id) return;
+    if (assigningLockRef.current.has(item.id)) return;
+    assigningLockRef.current.add(item.id);
     if (!canAssignRequest(item)) {
+      assigningLockRef.current.delete(item.id);
       alert(getAssignBlockReason(item));
       return;
     }
-    const targetArea = item.assignedArea || item.suggestedArea || "Diseño";
-    const assignee = getTeamOptionsForArea(targetArea).includes(
-      item.assignedTo || "",
-    )
-      ? item.assignedTo || ""
-      : getTeamOptionsForArea(targetArea)[0] || "";
-    const payload = buildAssignmentPayload(item, assignee, targetArea);
-    await update(item.id, {
-      ...payload,
-      comments: [
-        ...(item.comments || []),
-        assignmentLog(
-          item,
-          `Solicitud asignada a ${assignee || "Sin responsable"}. Área: ${targetArea}. Prioridad: ${payload.priority || item.priority || "Media"}.`,
-          "Asignación",
-        ),
-      ],
-    });
+    setAssigningIds((current) => Array.from(new Set([...current, item.id!])));
+    try {
+      const targetArea = item.assignedArea || item.suggestedArea || "Diseño";
+      const assignee = getTeamOptionsForArea(targetArea).includes(
+        item.assignedTo || "",
+      )
+        ? item.assignedTo || ""
+        : getTeamOptionsForArea(targetArea)[0] || "";
+      const payload = buildAssignmentPayload(item, assignee, targetArea);
+      await update(item.id, {
+        ...payload,
+        comments: [
+          ...(item.comments || []),
+          assignmentLog(
+            item,
+            `Solicitud asignada a ${assignee || "Sin responsable"}. Área: ${targetArea}. Prioridad: ${payload.priority || item.priority || "Media"}.`,
+            "Asignación",
+          ),
+        ],
+      });
+    } finally {
+      assigningLockRef.current.delete(item.id!);
+      setAssigningIds((current) => current.filter((id) => id !== item.id));
+    }
   }
 
   async function assignFromDetail(item: ContentRequest) {
     if (!canAssignAction) return permissionAlert("asignar solicitudes desde detalle");
     if (!item.id) return;
+    if (assigningLockRef.current.has(item.id)) return;
+    assigningLockRef.current.add(item.id);
     if (!canAssignRequest(item)) {
+      assigningLockRef.current.delete(item.id);
       alert(getAssignBlockReason(item));
       return;
     }
-    const targetArea =
-      detailDraft.assignedArea ||
-      item.assignedArea ||
-      item.suggestedArea ||
-      "Diseño";
-    const validAssignees = getTeamOptionsForArea(targetArea);
-    const assignee = validAssignees.includes(detailDraft.assignedTo || "")
-      ? detailDraft.assignedTo || ""
-      : "";
-    const payload = buildAssignmentPayload(item, assignee, targetArea);
-    await updateRequest(item.id, {
-      ...payload,
-      priority: detailDraft.priority || "Media",
-      internalNotes: detailDraft.internalNotes || "",
-      comments: [
-        ...(item.comments || []),
-        assignmentLog(
-          item,
-          `Solicitud asignada desde detalle a ${assignee || "Sin responsable"}. Área: ${targetArea}. Prioridad: ${detailDraft.priority || "Media"}.`,
-          "Asignación",
-        ),
-      ],
-    });
-    setEditing(null);
-    setDetailDraft({});
-    await load();
-    alert("Solicitud asignada");
+    setAssigningIds((current) => Array.from(new Set([...current, item.id!])));
+    try {
+      const targetArea =
+        detailDraft.assignedArea ||
+        item.assignedArea ||
+        item.suggestedArea ||
+        "Diseño";
+      const validAssignees = getTeamOptionsForArea(targetArea);
+      const assignee = validAssignees.includes(detailDraft.assignedTo || "")
+        ? detailDraft.assignedTo || ""
+        : "";
+      const payload = buildAssignmentPayload(item, assignee, targetArea);
+      await updateRequest(item.id, {
+        ...payload,
+        priority: detailDraft.priority || "Media",
+        internalNotes: detailDraft.internalNotes || "",
+        comments: [
+          ...(item.comments || []),
+          assignmentLog(
+            item,
+            `Solicitud asignada desde detalle a ${assignee || "Sin responsable"}. Área: ${targetArea}. Prioridad: ${detailDraft.priority || "Media"}.`,
+            "Asignación",
+          ),
+        ],
+      });
+      setEditing(null);
+      setDetailDraft({});
+      await load();
+      alert("Solicitud asignada");
+    } finally {
+      assigningLockRef.current.delete(item.id!);
+      setAssigningIds((current) => current.filter((id) => id !== item.id));
+    }
   }
 
   async function assignSelected() {
     if (!canAssignAction) return permissionAlert("asignar solicitudes en bloque");
+    if (bulkAssigningRef.current) return;
     if (!selected.length) return alert("Selecciona al menos una solicitud.");
     if (!bulkAssignee) return alert("Selecciona una persona para asignar.");
     const selectedItems = visibleBaseItems.filter((item) =>
@@ -653,33 +693,42 @@ export default function AssignmentPage() {
       );
       return;
     }
-    await Promise.all(
-      assignable.map((item) => {
-        const areaValue =
-          item.assignedArea ||
-          item.suggestedArea ||
-          areasInSelection[0] ||
-          "Diseño";
-        const payload = buildAssignmentPayload(item, bulkAssignee, areaValue);
-        return updateRequest(item.id!, {
-          ...payload,
-          comments: [
-            ...(item.comments || []),
-            assignmentLog(
-              item,
-              `Asignación en bloque a ${bulkAssignee}. Área: ${areaValue}. Prioridad: ${payload.priority || item.priority || "Media"}.`,
-              "Asignación",
-            ),
-          ],
-        });
-      }),
-    );
-    setSelected(blocked.map((item) => item.id!).filter(Boolean));
-    setBulkAssignee("");
-    await load();
-    alert(
-      `${assignable.length} solicitud(es) asignadas. ${blocked.length ? `${blocked.length} quedaron pendientes porque falta producción/material.` : "Todas quedaron asignadas."}`,
-    );
+    bulkAssigningRef.current = true;
+    setBulkAssigning(true);
+    setAssigningIds((current) => Array.from(new Set([...current, ...assignable.map((item) => item.id!).filter(Boolean)])));
+    try {
+      await Promise.all(
+        assignable.map((item) => {
+          const areaValue =
+            item.assignedArea ||
+            item.suggestedArea ||
+            areasInSelection[0] ||
+            "Diseño";
+          const payload = buildAssignmentPayload(item, bulkAssignee, areaValue);
+          return updateRequest(item.id!, {
+            ...payload,
+            comments: [
+              ...(item.comments || []),
+              assignmentLog(
+                item,
+                `Asignación en bloque a ${bulkAssignee}. Área: ${areaValue}. Prioridad: ${payload.priority || item.priority || "Media"}.`,
+                "Asignación",
+              ),
+            ],
+          });
+        }),
+      );
+      setSelected(blocked.map((item) => item.id!).filter(Boolean));
+      setBulkAssignee("");
+      await load();
+      alert(
+        `${assignable.length} solicitud(es) asignadas. ${blocked.length ? `${blocked.length} quedaron pendientes porque falta producción/material.` : "Todas quedaron asignadas."}`,
+      );
+    } finally {
+      bulkAssigningRef.current = false;
+      setBulkAssigning(false);
+      setAssigningIds((current) => current.filter((id) => !assignable.some((item) => item.id === id)));
+    }
   }
 
   async function rejectRequests(ids: string[], note: string) {
@@ -887,7 +936,7 @@ export default function AssignmentPage() {
             className="assignment-person-select assignment-bulk-select"
             value={bulkAssignee}
             onChange={(e) => setBulkAssignee(e.target.value)}
-            disabled={!bulkArea || !canAssignAction}
+            disabled={!bulkArea || !canAssignAction || bulkAssigning}
             title={
               bulkArea
                 ? `Solo aparecen personas de ${bulkArea}`
@@ -906,9 +955,9 @@ export default function AssignmentPage() {
           <button
             className="btn blue"
             onClick={assignSelected}
-            disabled={!bulkArea || !canAssignAction}
+            disabled={!bulkArea || !canAssignAction || bulkAssigning}
           >
-            Asignar seleccionadas
+            {bulkAssigning ? "Asignando..." : "Asignar seleccionadas"}
           </button>
           {canEditAssignment && (
             <button className="btn" onClick={() => setRejectModal(true)}>
@@ -1016,12 +1065,12 @@ export default function AssignmentPage() {
                                 }
                                 onChange={() => toggle(item.id!)}
                               />
-                              <span className="mini">#{item.number || "--"} de {item.total || "--"}</span>
+                              <span className="mini">{lotSequenceLabel(item)} de {item.total || "--"}</span>
                             </div>
                             <div className="assignment-request-info">
-                              <strong>{item.clientName}</strong>
-                              <span>{item.contentType} · {item.objective}</span>
-                              <span className="mini text-clamp-2"><strong>Tema/Publicación:</strong> {requestTopicLabel(item)}</span>
+                              <strong className="request-topic-title">{requestTopicLabel(item)}</strong>
+                              <span className="mini">{lotSequenceLabel(item)} · {item.contentType} · {item.suggestedArea || item.assignedArea || "Sin área"}</span>
+                              <span className="mini text-clamp-2"><strong>Objetivo:</strong> {item.objective || "Sin objetivo"}</span>
                               <span className="mini text-clamp-2">{item.creativeIdea}</span>
                               <span className="mini">Publica: {item.publishDate || "Sin fecha"}</span>
                               {item.rejectionNote && (
@@ -1051,7 +1100,7 @@ export default function AssignmentPage() {
                               <select
                                 className="assignment-area-select"
                                 value={item.assignedArea || item.suggestedArea || "Diseño"}
-                                disabled={!canAssignAction}
+                                disabled={!canAssignAction || assigningIds.includes(item.id || "")}
                                 onChange={(e) =>
                                   item.id &&
                                   update(item.id, {
@@ -1070,7 +1119,7 @@ export default function AssignmentPage() {
                                 onChange={(e) =>
                                   item.id && update(item.id, { assignedTo: e.target.value })
                                 }
-                                disabled={!canAssignAction}
+                                disabled={!canAssignAction || assigningIds.includes(item.id || "")}
                                 title={`Solo aparecen personas de ${rowArea}`}
                               >
                                 <option value="">Sin asignar</option>
@@ -1081,7 +1130,7 @@ export default function AssignmentPage() {
                               <select
                                 className="assignment-priority-select"
                                 value={item.priority || "Media"}
-                                disabled={!canAssignAction}
+                                disabled={!canAssignAction || assigningIds.includes(item.id || "")}
                                 onChange={(e) =>
                                   item.id && update(item.id, { priority: e.target.value })
                                 }
@@ -1094,11 +1143,11 @@ export default function AssignmentPage() {
                             <div className="assignment-request-actions">
                               <button
                                 className="btn blue"
-                                disabled={!assignable || !canUseBulkActions}
+                                disabled={!assignable || !canUseBulkActions || assigningIds.includes(item.id || "")}
                                 title={assignable ? "Asignar" : getAssignBlockReason(item)}
                                 onClick={() => assign(item)}
                               >
-                                Asignar
+                                {assigningIds.includes(item.id || "") ? "Asignando..." : "Asignar"}
                               </button>
                               <button
                                 className="btn"
@@ -1132,9 +1181,9 @@ export default function AssignmentPage() {
           >
             <div className="assignment-detail-drawer-header">
               <div>
-                <p className="eyebrow">Detalle operativo</p>
-                <h3>{editing.clientName}</h3>
-                <span>{editing.batchName || "Sin lote"}</span>
+                <p className="eyebrow">Detalle operativo · {lotSequenceLabel(editing)}</p>
+                <h3>{requestTopicLabel(editing)}</h3>
+                <span>{editing.batchName || "Sin lote"} · {editing.clientName}</span>
               </div>
               <button className="btn" onClick={() => setEditing(null)}>
                 Cerrar
@@ -1151,6 +1200,7 @@ export default function AssignmentPage() {
               onPreview={setPreview}
               canAssignAction={canAssignAction}
               canRejectAction={canEditAssignment}
+              isAssigning={assigningIds.includes(editing.id || "")}
             />
           </aside>
         </div>
@@ -1263,6 +1313,7 @@ function RequestDetail({
   onPreview,
   canAssignAction,
   canRejectAction,
+  isAssigning,
 }: {
   item: ContentRequest;
   draft: Partial<ContentRequest>;
@@ -1274,6 +1325,7 @@ function RequestDetail({
   onPreview: (file: ReferenceFile) => void;
   canAssignAction: boolean;
   canRejectAction: boolean;
+  isAssigning: boolean;
 }) {
   const referenceLinks = splitLinks(item.referenceLinks);
   const materialLinks = splitLinks(item.materialLinks);
@@ -1290,9 +1342,9 @@ function RequestDetail({
     <div className="assignment-detail-scroll">
       <div className="detail-hero">
         <div>
-          <p className="eyebrow">Ficha de solicitud</p>
-          <h2 className="detail-title">{item.clientName}</h2>
-          <p className="mini">{item.batchName || "Sin lote"}</p>
+          <p className="eyebrow">Ficha de solicitud · {lotSequenceLabel(item)}</p>
+          <h2 className="detail-title">{requestTopicLabel(item)}</h2>
+          <p className="mini">{item.batchName || "Sin lote"} · {item.clientName}</p>
         </div>
 
         <div className="detail-meta">
@@ -1398,7 +1450,7 @@ function RequestDetail({
 
       <div className="detail-section">
         <h4>Material disponible</h4>
-        {(item.materialDeliveredAt || item.productionSpecificMaterialLink || item.productionGeneralMaterialLinks) && (
+        {(item.materialDeliveredAt || item.productionSpecificMaterialLink || item.productionPhotoMaterialLink || item.productionVideoMaterialLink || item.productionGeneralMaterialLinks) && (
           <div className="detail-copy">
             <strong>Material entregado por producción:</strong> {item.materialDeliveredAt ? new Date(item.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}
             {"\n"}
@@ -1505,8 +1557,8 @@ function RequestDetail({
           </div>
         </div>
         <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
-          <button className="btn blue" onClick={() => onAssign(item)} disabled={!canAssignAction}>
-            Asignar solicitud
+          <button className="btn blue" onClick={() => onAssign(item)} disabled={!canAssignAction || isAssigning}>
+            {isAssigning ? "Asignando..." : "Asignar solicitud"}
           </button>
           <button className="btn" onClick={onClose}>
             Cerrar detalle

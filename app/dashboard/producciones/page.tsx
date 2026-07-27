@@ -36,6 +36,8 @@ const empty: Production = {
   notes: "",
   materialLinks: "",
   materialLinksByRequest: {},
+  materialPhotoLinksByRequest: {},
+  materialVideoLinksByRequest: {},
   materialFiles: [],
   materialDueDate: "",
   materialDeliveredAt: "",
@@ -183,7 +185,23 @@ export default function ProductionsPage(){
     const text = `${item.contentType} ${item.visualFormat || ""} ${item.feedPlacement || ""}`.toLowerCase();
     return /reel|video|tik|vertical|story/.test(text);
   }
-  function requestTypeLabel(item:ContentRequest){return isVideoRequest(item) ? "Video" : "Estático / Foto";}
+  function getProductionTracks(item?:ContentRequest|null){
+    if(!item)return {needsPhoto:false,needsVideo:false,isMixed:false};
+    const contentType = `${item.contentType || ""}`.toLowerCase();
+    const text = `${item.contentType || ""} ${item.visualFormat || ""} ${item.feedPlacement || ""} ${item.topic || ""} ${item.creativeIdea || ""} ${item.productionNotes || ""}`.toLowerCase();
+    const mentionsPhoto = /foto|fotograf|imagen|im[aá]genes|png|carrusel|slide|est[aá]tico|dise[nñ]o|mesa armada|detalle|close up|close-up/.test(text);
+    const mentionsVideo = /video|reel|tik|broll|b-roll|grabar|grabaci[oó]n|toma|tomas|vertical|transici[oó]n|stop motion|c[aá]mara/.test(text);
+    const typePhoto = /foto|post|carrusel|dise[nñ]o|story/.test(contentType);
+    const typeVideo = isVideoRequest(item);
+    const needsVideo = typeVideo || mentionsVideo;
+    const needsPhoto = typePhoto || mentionsPhoto || !needsVideo;
+    return {needsPhoto,needsVideo,isMixed:needsPhoto && needsVideo};
+  }
+  function requestTypeLabel(item:ContentRequest){
+    const tracks = getProductionTracks(item);
+    if(tracks.isMixed)return "Mixto";
+    return tracks.needsVideo ? "Video" : "Estático / Foto";
+  }
   function getLotSequenceNumber(item?:ContentRequest|null, fallbackIndex?:number){
     const raw = item?.lotSequenceNumber ?? item?.number ?? (typeof fallbackIndex === "number" ? fallbackIndex + 1 : undefined);
     const parsed = Number(raw);
@@ -247,7 +265,7 @@ export default function ProductionsPage(){
       const text = `${x.title} ${x.clientName} ${x.location} ${x.locations||""} ${x.producer} ${x.team} ${x.notes} ${x.materialDueDate||""}`.toLowerCase();
       const batchIds = new Set((x.requestIds || []).map(id=>requestById.get(id)?.batchId || "sin-lote"));
       const hasGeneralMaterial = Boolean((x.materialLinks||"").trim()) || Boolean((x.materialFiles||[]).length);
-      const hasAnyPostMaterial = Boolean(Object.values(x.materialLinksByRequest||{}).some(v=>String(v||"").trim()));
+      const hasAnyPostMaterial = Boolean(Object.values(x.materialLinksByRequest||{}).some(v=>String(v||"").trim())) || Boolean(Object.values(x.materialPhotoLinksByRequest||{}).some(v=>String(v||"").trim())) || Boolean(Object.values(x.materialVideoLinksByRequest||{}).some(v=>String(v||"").trim()));
       const hasMaterial = hasGeneralMaterial || hasAnyPostMaterial;
       return (prodClientFilter==="all" || x.clientId===prodClientFilter) &&
         (prodBatchFilter==="all" || batchIds.has(prodBatchFilter)) &&
@@ -281,6 +299,9 @@ export default function ProductionsPage(){
         });
       }
       map.get(id)!.items.push(item);
+    });
+    Array.from(map.values()).forEach(group=>{
+      group.items.sort((a,b)=>Number(getLotSequenceNumber(a,999999))-Number(getLotSequenceNumber(b,999999)));
     });
     return Array.from(map.values()).sort((a,b)=>a.name.localeCompare(b.name,"es",{numeric:true}));
   },[productionRequests]);
@@ -550,6 +571,37 @@ export default function ProductionsPage(){
     });
   }
 
+  function setPostTrackMaterialLink(requestId:string, track:"photo"|"video", value:string){
+    if(!canEditProduction)return;
+    if(!editing)return;
+    const key = track === "photo" ? "materialPhotoLinksByRequest" : "materialVideoLinksByRequest";
+    setEditing({
+      ...editing,
+      [key]:{
+        ...((editing as any)[key] || {}),
+        [requestId]: value
+      }
+    });
+  }
+
+  function getPostMaterialStatus(req:ContentRequest|undefined, production:Production){
+    if(!req)return {missing:false,label:"Sin solicitud",tone:"gray"};
+    const tracks = getProductionTracks(req);
+    const finalLink = ((production.materialLinksByRequest||{})[req.id||""] || "").trim();
+    const photoLink = ((production.materialPhotoLinksByRequest||{})[req.id||""] || "").trim();
+    const videoLink = ((production.materialVideoLinksByRequest||{})[req.id||""] || "").trim();
+    const generalLink = (production.materialLinks || "").trim();
+    const hasBase = Boolean(finalLink || generalLink || (production.materialFiles || []).length);
+    const missingPhoto = tracks.needsPhoto && !hasBase && !photoLink;
+    const missingVideo = tracks.needsVideo && !hasBase && !videoLink;
+    const missing = missingPhoto || missingVideo;
+    const parts = [];
+    if(tracks.needsPhoto)parts.push(missingPhoto ? "falta foto" : "foto lista");
+    if(tracks.needsVideo)parts.push(missingVideo ? "falta video" : "video listo");
+    if(!parts.length)parts.push(hasBase ? "material listo" : "falta link");
+    return {missing,label:parts.join(" · "),tone:missing ? "orange" : "green"};
+  }
+
   async function uploadProductionMaterial(files:FileList|null){
     if(!canEditProduction)return permissionAlert("subir material de producción");
     if(!editing||!files)return;
@@ -593,10 +645,12 @@ export default function ProductionsPage(){
       await load();
       return;
     }
-    if(!(editing.materialLinks||"").trim())return alert("Agrega el link general de material de la producción.");
-    const missingLinks = (editing.requestIds||[]).filter(id => !((editing.materialLinksByRequest||{})[id] || "").trim());
+    const missingLinks = (editing.requestIds||[]).filter(id => {
+      const req = requests.find(x=>x.id===id);
+      return getPostMaterialStatus(req,editing).missing;
+    });
     if(missingLinks.length){
-      alert("Falta link específico de material en una o más publicaciones.");
+      alert("Falta material específico en una o más publicaciones. Revisa los campos Foto/Diseño y Video/Audiovisual según corresponda.");
       return;
     }
     const nextStatus = "material_entregado";
@@ -605,14 +659,16 @@ export default function ProductionsPage(){
     await Promise.all((editing.requestIds||[]).map(id=>{
       const req = requests.find(x=>x.id===id);
       const individualLink = ((editing.materialLinksByRequest||{})[id] || "").trim();
+      const photoLink = ((editing.materialPhotoLinksByRequest||{})[id] || "").trim();
+      const videoLink = ((editing.materialVideoLinksByRequest||{})[id] || "").trim();
       const generalLinks = (editing.materialLinks || "").trim();
-      const mergedLinks = mergeLinks([individualLink, generalLinks, req?.materialLinks || ""]);
+      const mergedLinks = mergeLinks([individualLink, photoLink, videoLink, generalLinks, req?.materialLinks || ""]);
       const mergedFiles = mergeFiles([...(req?.materialFiles || []), ...(editing.materialFiles || [])]);
       const comments = [...(req?.comments||[]), {
         id:`${Date.now()}-${id}`,
         author:"Sistema",
         target:"Asignación",
-        body:`Material de producción entregado. Link específico: ${individualLink || "Sin link específico"}. Link general: ${generalLinks || "Sin link general"}. Esta solicitud ya puede asignarse.`,
+        body:`Material de producción entregado. Link final: ${individualLink || "Sin link final"}. Foto/Diseño: ${photoLink || "Sin link"}. Video/Audiovisual: ${videoLink || "Sin link"}. Link general: ${generalLinks || "Sin link general"}. Esta solicitud ya puede asignarse.`,
         mentions:["@asignacion"],
         status:"open" as const,
         createdAt:deliveredAt
@@ -622,6 +678,8 @@ export default function ProductionsPage(){
         materialLinks:mergedLinks,
         materialFiles:mergedFiles,
         productionSpecificMaterialLink:individualLink,
+        productionPhotoMaterialLink:photoLink,
+        productionVideoMaterialLink:videoLink,
         productionGeneralMaterialLinks:generalLinks,
         productionMaterialFiles:editing.materialFiles || [],
         materialDeliveredAt:deliveredAt,
@@ -682,8 +740,9 @@ export default function ProductionsPage(){
             const collapsed = collapsedProductionBatchIds.includes(group.id);
             const groupIds = group.items.map(item=>item.id).filter(Boolean) as string[];
             const allSelected = groupIds.length > 0 && groupIds.every(id=>selected.includes(id));
-            const videoCount = group.items.filter(isVideoRequest).length;
-            const staticCount = group.items.length - videoCount;
+            const mixedCount = group.items.filter(item=>getProductionTracks(item).isMixed).length;
+            const videoCount = group.items.filter(item=>getProductionTracks(item).needsVideo && !getProductionTracks(item).isMixed).length;
+            const staticCount = group.items.filter(item=>getProductionTracks(item).needsPhoto && !getProductionTracks(item).isMixed).length;
             const selectedCount = group.items.filter(item=>item.id && selected.includes(item.id)).length;
             return <div className="assignment-lot-block" key={group.id}>
               <div className="assignment-lot-header">
@@ -705,6 +764,7 @@ export default function ProductionsPage(){
                   <span className="pill">{group.items.length} solicitudes</span>
                   <span className="pill orange">{videoCount} video</span>
                   <span className="pill blue">{staticCount} estático/foto</span>
+                  {mixedCount > 0 && <span className="pill purple">{mixedCount} mixto</span>}
                   {selectedCount > 0 && <span className="pill green">{selectedCount} seleccionadas</span>}
                 </div>
               </div>
@@ -717,9 +777,9 @@ export default function ProductionsPage(){
                     <span className="mini">{lotSequenceLabel(item)} de {item.total || "--"}</span>
                   </div>
                   <button type="button" className="assignment-request-info request-open-zone" onClick={()=>toggleExpandedProductionRequest(item.id)}>
-                    <strong>{item.clientName}</strong>
-                    <span>{item.contentType} · {item.objective}</span>
-                    <span className="mini text-clamp-2"><strong>Tema/Publicación:</strong> {requestTopicLabel(item)}</span>
+                    <strong className="request-topic-title">{requestTopicLabel(item)}</strong>
+                    <span className="mini">{lotSequenceLabel(item)} · {item.contentType} · {requestTypeLabel(item)}</span>
+                    <span className="mini text-clamp-2"><strong>Objetivo:</strong> {item.objective || "Sin objetivo"}</span>
                     <span className="mini text-clamp-2">{item.creativeIdea}</span>
                     <span className="mini text-clamp-2"><strong>Notas producción:</strong> {item.productionNotes || "Sin notas de producción"}</span>
                     <span className="mini">{expanded?"Ocultar información completa":"Clic para abrir información completa del post"}</span>
@@ -748,7 +808,7 @@ export default function ProductionsPage(){
       </div>
       <aside className="card">
         <h3>Seleccionadas</h3>
-        {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{lotSequenceLabel(x)} · {requestTypeLabel(x)} · {x.contentType}</strong><span className="mini text-clamp-2"><strong>Tema/Publicación:</strong> {requestTopicLabel(x)}</span><span className="mini text-clamp-2">{x.creativeIdea}</span></div>)}
+        {selectedRequests.map(x=><div className="draft-item" key={x.id}><strong>{lotSequenceLabel(x)} · {requestTopicLabel(x)}</strong><span className="mini">{requestTypeLabel(x)} · {x.contentType}</span><span className="mini text-clamp-2">{x.creativeIdea}</span></div>)}
         {!selectedRequests.length && <p className="mini">Selecciona solicitudes para crear una producción.</p>}
       </aside>
     </section>
@@ -808,21 +868,30 @@ export default function ProductionsPage(){
       </div>
 
       <h3>Links por solicitud / post</h3>
-      <div className="table-wrap"><table className="table material-links-table"><thead><tr><th>Publicación</th><th>Idea</th><th>Fecha</th><th>Link específico *</th><th>Acciones</th></tr></thead><tbody>
+      <p className="mini">Ahora cada post puede tener material separado de Fotografía/Diseño y Video/Audiovisual para que ambos equipos puedan avanzar sin esperarse.</p>
+      <div className="table-wrap"><table className="table material-links-table"><thead><tr><th>Post / Tema</th><th>Tipo</th><th>Fecha</th><th>Foto / Diseño</th><th>Video / Audiovisual</th><th>Link final opcional</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
         {(editing.requestIds||[]).map(id=>{
           const req=requests.find(x=>x.id===id);
           const link=(editing.materialLinksByRequest||{})[id]||"";
+          const photoLink=(editing.materialPhotoLinksByRequest||{})[id]||"";
+          const videoLink=(editing.materialVideoLinksByRequest||{})[id]||"";
+          const tracks = getProductionTracks(req);
+          const materialStatus = getPostMaterialStatus(req,editing);
           return <tr key={id}>
-            <td><strong>{req?.contentType||"Solicitud"} · {req?.objective||""}</strong><span className="mini text-clamp-2"><strong>Tema/Publicación:</strong> {req ? requestTopicLabel(req) : "Sin tema/publicación"}</span></td>
-            <td><span className="mini text-clamp-2">{req?.creativeIdea||id}</span></td>
+            <td><strong className="request-topic-title">{req ? `${lotSequenceLabel(req)} · ${requestTopicLabel(req)}` : id}</strong><span className="mini text-clamp-2">{req?.creativeIdea||"Sin idea"}</span></td>
+            <td><span className={tracks.isMixed?"pill purple":tracks.needsVideo?"pill orange":"pill blue"}>{req ? requestTypeLabel(req) : "Solicitud"}</span></td>
             <td>{req?.publishDate||"Sin fecha"}</td>
-            <td><input value={link} onChange={e=>setPostMaterialLink(id,e.target.value)} onBlur={persistEditingMaterial} placeholder="Link exacto del material para esta pieza"/></td>
-            <td><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{req && <button type="button" className="btn" onClick={()=>setPendingDetail(req)}>Ver solicitud</button>}{link ? <a className="btn" href={link} target="_blank">Abrir link</a> : <span className="mini">Sin link</span>}</div></td>
+            <td><input value={photoLink} onChange={e=>setPostTrackMaterialLink(id,"photo",e.target.value)} onBlur={persistEditingMaterial} placeholder={tracks.needsPhoto?"Link de fotos, PNGs o recursos":"Opcional si aplica"}/></td>
+            <td><input value={videoLink} onChange={e=>setPostTrackMaterialLink(id,"video",e.target.value)} onBlur={persistEditingMaterial} placeholder={tracks.needsVideo?"Link de video, b-roll o edición":"Opcional si aplica"}/></td>
+            <td><input value={link} onChange={e=>setPostMaterialLink(id,e.target.value)} onBlur={persistEditingMaterial} placeholder="Link final o carpeta específica"/></td>
+            <td><span className={`pill ${materialStatus.tone}`}>{materialStatus.label}</span></td>
+            <td><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{req && <button type="button" className="btn" onClick={()=>setPendingDetail(req)}>Ver solicitud</button>}{photoLink ? <a className="btn" href={photoLink} target="_blank">Foto</a> : null}{videoLink ? <a className="btn" href={videoLink} target="_blank">Video</a> : null}{link ? <a className="btn" href={link} target="_blank">Final</a> : null}{!photoLink && !videoLink && !link ? <span className="mini">Sin link</span> : null}</div></td>
           </tr>
         })}
       </tbody></table></div>
 
       <div style={{display:"flex",gap:12,marginTop:16,flexWrap:"wrap"}}>
+        <button className="btn" onClick={()=>saveProductionMaterial(false)} disabled={!canEditProduction}>Guardar avances</button>
         <button className="btn blue" onClick={()=>saveProductionMaterial(true)} disabled={!canEditProduction}>Marcar como material entregado</button>
         <button className="btn red" onClick={()=>setEditing(null)}>Cerrar</button>
       </div>
@@ -898,8 +967,8 @@ export default function ProductionsPage(){
               <div className="production-order-number"><span className="drag-handle">☰</span><strong>{lotSequenceLabel(x,index)}</strong><span className="mini">{productionOrderLabel(index)}</span></div>
               <div className="production-order-body">
                 <div className="production-order-title">
-                  <strong>{x.contentType} · {x.objective}</strong>
-                  <span className="pill">Tema/Publicación: {requestTopicLabel(x)}</span>
+                  <strong>{requestTopicLabel(x)}</strong>
+                  <span className="pill">{x.contentType} · {x.objective || "Sin objetivo"}</span>
                   <span className="pill">Núm. lote fijo: {lotSequenceLabel(x,index)}</span>
                   <span className={isVideoRequest(x)?"pill orange":"pill blue"}>{requestTypeLabel(x)}</span>
                   {suggestion?.requiresImmediateCapture && <span className="pill red">Captura inmediata</span>}
@@ -1025,6 +1094,8 @@ function ProductionRequestDetail({item,onPreview,typeLabel,internalDueDate}:{ite
   const referenceLinks = splitLinks(item.referenceLinks || "");
   const materialLinks = splitLinks(item.materialLinks || "");
   const specificMaterialLinks = splitLinks(item.productionSpecificMaterialLink || "");
+  const photoMaterialLinks = splitLinks(item.productionPhotoMaterialLink || "");
+  const videoMaterialLinks = splitLinks(item.productionVideoMaterialLink || "");
   const generalMaterialLinks = splitLinks(item.productionGeneralMaterialLinks || "");
   const productionMaterialFiles = item.productionMaterialFiles || [];
   const materialFiles = item.materialFiles || [];
@@ -1102,8 +1173,10 @@ function ProductionBrief({production,requests}:{production:Production;requests:C
       <div style={{display:"grid",gap:16}}>
         {included.map((item,index)=>{
           const referenceLinks = splitLinks(item.referenceLinks);
-          const materialLink = (production.materialLinksByRequest||{})[item.id||""] || item.materialLinks || production.materialLinks || "";
-          const materialLinks = splitLinks(materialLink);
+          const materialLink = (production.materialLinksByRequest||{})[item.id||""] || item.materialLinks || "";
+          const photoMaterialLink = (production.materialPhotoLinksByRequest||{})[item.id||""] || item.productionPhotoMaterialLink || "";
+          const videoMaterialLink = (production.materialVideoLinksByRequest||{})[item.id||""] || item.productionVideoMaterialLink || "";
+          const materialLinks = splitLinks(mergeLinks([materialLink, photoMaterialLink, videoMaterialLink, production.materialLinks || ""]));
           const refs = item.referenceFiles || [];
           const orderNumber = production.productionOrder?.[item.id||""] || item.productionOrder || index+1;
           const orderReason = production.productionOrderReasons?.[item.id||""] || item.productionOrderReason || "";
@@ -1114,9 +1187,9 @@ function ProductionBrief({production,requests}:{production:Production;requests:C
             <div className="brief-request-head">
               <div>
                 <p className="eyebrow">{lotSequenceLabel(item,index)} · Orden de producción #{orderNumber}</p>
-                <h3 className="brief-request-title">{item.contentType} · {item.objective}</h3>
-                <p className="mini">Número interno fijo del lote: {lotSequenceLabel(item,index)} · Publica: {item.publishDate||"Sin fecha"} · Área: {item.suggestedArea||"Sin área"}</p>
-                <p className="mini"><strong>Tema/Publicación:</strong> {requestTopicLabel(item)}</p>
+                <h3 className="brief-request-title">{requestTopicLabel(item)}</h3>
+                <p className="mini">Número interno fijo del lote: {lotSequenceLabel(item,index)} · {item.contentType} · {item.objective || "Sin objetivo"}</p>
+                <p className="mini">Publica: {item.publishDate||"Sin fecha"} · Área: {item.suggestedArea||"Sin área"}</p>
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
                 {immediate && <span className="pill red">Captura inmediata</span>}
