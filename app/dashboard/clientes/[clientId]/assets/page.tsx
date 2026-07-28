@@ -3,7 +3,6 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
-import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { Brand, ClientAsset, deleteClientAsset, listBrands, listClientAssets, updateClientAsset, uploadClientAsset } from "@/lib/data";
 
 type PendingAsset = {
@@ -19,7 +18,6 @@ type PendingAsset = {
 
 const assetTypes = [
   { id: "logo", label: "Logo" },
-  { id: "font", label: "Tipografía / fuente" },
   { id: "reference", label: "Referencia visual" },
   { id: "product", label: "Producto / servicio" },
   { id: "element", label: "Elemento gráfico" },
@@ -30,10 +28,6 @@ const categories = ["Principal", "Secundario", "Campaña", "Temporada", "Product
 
 function safePreview(file: File) {
   return file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
-}
-function isFontFile(file: File) {
-  const name = file.name.toLowerCase();
-  return (file.type || "").includes("font") || /\.(otf|ttf|woff2?|eot)$/i.test(name);
 }
 function splitTags(value: string) {
   return value.split(",").map((tag) => tag.trim()).filter(Boolean);
@@ -51,9 +45,6 @@ export default function ClientAssetsPage(){
   const [isUploading,setIsUploading] = useState(false);
   const [message,setMessage] = useState("");
   const [filter,setFilter] = useState("all");
-  const [editingAsset,setEditingAsset] = useState<ClientAsset|null>(null);
-  const permissions = useModulePermissions("clientes");
-  const canEditAssets = permissions.canEdit || permissions.canCreate || permissions.canDelete;
 
   async function load(){
     const brands = await listBrands();
@@ -67,19 +58,16 @@ export default function ClientAssetsPage(){
   function handleFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
-    const next = files.map((file)=>{
-      const isFont = isFontFile(file);
-      return {
-        id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2,7)}`,
-        file,
-        preview: safePreview(file),
-        name: file.name.replace(/\.[^/.]+$/,"").replace(/[-_]+/g," "),
-        type: isFont ? "font" : "reference",
-        category: isFont ? "Tipografía" : "",
-        tags: isFont ? "tipografia, fuente, bust-it-now" : "",
-        notes: isFont ? "Fuente disponible para el editor de texto editable de BUST It Now." : ""
-      };
-    });
+    const next = files.map((file)=>({
+      id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2,7)}`,
+      file,
+      preview: safePreview(file),
+      name: file.name.replace(/\.[^/.]+$/,"").replace(/[-_]+/g," "),
+      type: "reference",
+      category: "",
+      tags: "",
+      notes: ""
+    }));
     setPending((current)=>[...current,...next]);
     event.target.value = "";
   }
@@ -101,7 +89,6 @@ export default function ClientAssetsPage(){
   }
 
   async function uploadAll(){
-    if(!canEditAssets)return permissionAlert("subir assets de clientes");
     if(!client)return alert("No encontramos el cliente.");
     if(!pending.length)return alert("Selecciona archivos para subir.");
     setIsUploading(true);
@@ -126,35 +113,15 @@ export default function ClientAssetsPage(){
   }
 
   async function toggleFeatured(asset: ClientAsset){
-    if(!canEditAssets)return permissionAlert("editar assets de clientes");
     if(!asset.id)return;
     await updateClientAsset(asset.id,{isFeatured:!asset.isFeatured});
-    setMessage(asset.isFeatured ? "Asset quitado de destacados." : "Asset marcado como destacado.");
-    await load();
-  }
-
-  async function saveAssetEdit(){
-    if(!canEditAssets)return permissionAlert("editar assets de clientes");
-    if(!editingAsset?.id)return;
-    await updateClientAsset(editingAsset.id,{
-      name: editingAsset.name,
-      type: editingAsset.type,
-      category: editingAsset.category || "",
-      tags: editingAsset.tags || [],
-      notes: editingAsset.notes || "",
-      isFeatured: Boolean(editingAsset.isFeatured)
-    });
-    setEditingAsset(null);
-    setMessage("Asset actualizado correctamente.");
     await load();
   }
 
   async function removeAsset(asset: ClientAsset){
-    if(!canEditAssets)return permissionAlert("eliminar assets de clientes");
     if(!asset.id)return;
     if(!confirm(`¿Eliminar "${asset.name}"?`))return;
-    await deleteClientAsset(asset.id, asset.storagePath);
-    setMessage("Asset eliminado correctamente.");
+    await deleteClientAsset(asset.id);
     await load();
   }
 
@@ -175,7 +142,7 @@ export default function ClientAssetsPage(){
           <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Assets</p><strong className="mt-2 block text-3xl">{assets.length}</strong></div>
           <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Destacados</p><strong className="mt-2 block text-3xl">{featuredCount}</strong></div>
           <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Pendientes</p><strong className="mt-2 block text-3xl">{pending.length}</strong></div>
-          <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Tipografías</p><strong className="mt-2 block text-3xl">{assets.filter(a=>a.type==="font").length}</strong></div>
+          <div className="rounded-[2rem] border border-zinc-200 bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Logos</p><strong className="mt-2 block text-3xl">{assets.filter(a=>a.type==="logo").length}</strong></div>
         </section>
 
         <section className="rounded-[2rem] border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
@@ -187,7 +154,7 @@ export default function ClientAssetsPage(){
             </div>
             <label className="inline-flex h-12 cursor-pointer items-center justify-center rounded-2xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800">
               Seleccionar archivos
-              <input type="file" multiple accept="image/*,.otf,.ttf,.woff,.woff2,.eot" className="hidden" onChange={handleFiles}/>
+              <input type="file" multiple className="hidden" onChange={handleFiles}/>
             </label>
           </div>
 
@@ -198,7 +165,7 @@ export default function ClientAssetsPage(){
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {pending.map((item)=>(
                 <article key={item.id} className="rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
-                  {item.preview ? <img src={item.preview} alt={item.name} className="h-40 w-full rounded-2xl object-cover"/> : <div className="flex h-40 flex-col items-center justify-center rounded-2xl bg-zinc-200 text-sm font-semibold text-zinc-600"><span className="text-4xl">Aa</span><span>{item.type === "font" ? "Fuente" : "Archivo"}</span></div>}
+                  {item.preview ? <img src={item.preview} alt={item.name} className="h-40 w-full rounded-2xl object-cover"/> : <div className="flex h-40 items-center justify-center rounded-2xl bg-zinc-200 text-sm font-semibold text-zinc-600">Archivo</div>}
                   <div className="mt-4 space-y-3">
                     <input value={item.name} onChange={(e)=>updatePending(item.id,{name:e.target.value})} className="h-11 w-full rounded-2xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-950" placeholder="Nombre"/>
                     <div className="grid grid-cols-2 gap-3">
@@ -232,7 +199,7 @@ export default function ClientAssetsPage(){
           {filteredAssets.length===0 ? <div className="mt-5 rounded-3xl border border-dashed border-zinc-300 bg-zinc-50 px-5 py-8 text-center text-sm text-zinc-600">No hay assets en esta vista.</div> : <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {filteredAssets.map((asset)=>(
               <article key={asset.id} className={`rounded-3xl border p-4 transition ${asset.isFeatured ? "border-amber-300 bg-amber-50" : "border-zinc-200 bg-zinc-50"}`}>
-                {isImage(asset) ? <img src={asset.fileUrl} alt={asset.name} className="h-40 w-full rounded-2xl object-cover"/> : <div className="flex h-40 flex-col items-center justify-center rounded-2xl bg-zinc-200 text-sm font-semibold text-zinc-600"><span className="text-5xl">Aa</span><span>{asset.type === "font" ? "Tipografía" : "Archivo"}</span></div>}
+                {isImage(asset) ? <img src={asset.fileUrl} alt={asset.name} className="h-40 w-full rounded-2xl object-cover"/> : <div className="flex h-40 items-center justify-center rounded-2xl bg-zinc-200 text-sm font-semibold text-zinc-600">Archivo</div>}
                 <div className="mt-4">
                   <div className="flex items-start justify-between gap-3">
                     <strong className="text-sm text-zinc-950">{asset.name}</strong>
@@ -241,10 +208,9 @@ export default function ClientAssetsPage(){
                   <p className="mt-1 text-xs text-zinc-500">{asset.type} · {asset.category || "Sin categoría"}</p>
                   <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-600">{asset.notes || "Sin notas"}</p>
                   <div className="mt-3 flex flex-wrap gap-1.5">{asset.tags?.map((tag)=><span key={tag} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-zinc-600">{tag}</span>)}</div>
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    <button type="button" onClick={()=>toggleFeatured(asset)} disabled={!canEditAssets} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:opacity-50">{asset.isFeatured ? "Quitar" : "Destacar"}</button>
-                    <button type="button" onClick={()=>setEditingAsset(asset)} disabled={!canEditAssets} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:opacity-50">Editar</button>
-                    <button type="button" onClick={()=>removeAsset(asset)} disabled={!canEditAssets} className="rounded-2xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50">Eliminar</button>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button type="button" onClick={()=>toggleFeatured(asset)} className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100">{asset.isFeatured ? "Quitar" : "Destacar"}</button>
+                    <button type="button" onClick={()=>removeAsset(asset)} className="rounded-2xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50">Eliminar</button>
                   </div>
                 </div>
               </article>
@@ -252,23 +218,6 @@ export default function ClientAssetsPage(){
           </div>}
         </section>
       </div>
-      {editingAsset ? <div className="modal-backdrop">
-        <div className="modal-card" style={{width:"min(720px,94vw)"}}>
-          <h3>Editar asset</h3>
-          <div className="grid two-col">
-            <div className="field"><label>Nombre</label><input value={editingAsset.name || ""} onChange={(e)=>setEditingAsset({...editingAsset,name:e.target.value})}/></div>
-            <div className="field"><label>Tipo</label><select value={editingAsset.type || "reference"} onChange={(e)=>setEditingAsset({...editingAsset,type:e.target.value})}>{assetTypes.map((type)=><option key={type.id} value={type.id}>{type.label}</option>)}</select></div>
-            <div className="field"><label>Categoría</label><input list="asset-categories" value={editingAsset.category || ""} onChange={(e)=>setEditingAsset({...editingAsset,category:e.target.value})}/></div>
-            <div className="field"><label>Tags</label><input value={(editingAsset.tags || []).join(", ")} onChange={(e)=>setEditingAsset({...editingAsset,tags:splitTags(e.target.value)})} placeholder="Separados por coma"/></div>
-            <div className="field full"><label>Notas</label><textarea value={editingAsset.notes || ""} onChange={(e)=>setEditingAsset({...editingAsset,notes:e.target.value})}/></div>
-            <label className="check-row full"><input type="checkbox" checked={Boolean(editingAsset.isFeatured)} onChange={(e)=>setEditingAsset({...editingAsset,isFeatured:e.target.checked})}/> Destacado</label>
-          </div>
-          <div className="modal-actions">
-            <button className="btn" type="button" onClick={()=>setEditingAsset(null)}>Cancelar</button>
-            <button className="btn blue" type="button" onClick={saveAssetEdit}>Guardar cambios</button>
-          </div>
-        </div>
-      </div> : null}
     </main>
   </AppShell>;
 }

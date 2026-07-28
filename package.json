@@ -1,12 +1,11 @@
 {
   "name": "bust-content-os",
-  "version": "2.4.4-respaldos-automaticos",
+  "version": "2.2.0-logo-overlay-xy",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "firebase:deploy:rules": "npx firebase-tools deploy --only firestore:rules,storage"
+    "start": "next start"
   },
   "dependencies": {
     "firebase": "^12.13.0",
@@ -14,8 +13,7 @@
     "openai": "^6.38.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "sharp": "^0.34.5",
-    "firebase-admin": "^13.6.0"
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

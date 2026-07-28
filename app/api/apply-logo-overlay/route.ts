@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { requireApiPermission } from "@/lib/api-auth";
 import sharp from "sharp";
 
 export const maxDuration = 120;
@@ -96,8 +95,6 @@ async function applyLogoOverlayToImage({
 
 export async function POST(request: Request) {
   try {
-    const authCheck = await requireApiPermission(request, "generador", "generate");
-    if (!authCheck.ok) return authCheck.response;
     const body = await request.json();
     const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl : "";
     const imageBase64 = typeof body.imageBase64 === "string" ? body.imageBase64 : "";
