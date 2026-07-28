@@ -2789,9 +2789,9 @@ function buildPlanningSummary(
       : latestClientDue;
   const productionDueLabel = hasExpiredProduction
     ? "Ya no viable"
-    : validProductionDueDates[0] || "";
+    : validProductionDates[0] || "";
   const riskReason = hasExpiredProduction
-    ? "la fecha máxima de producción ya pasã; debe usarse material disponible o mover la publicación"
+    ? "la fecha máxima de producción ya pasó; debe usarse material disponible o mover la publicación"
     : requestedTooSoon
       ? `la primera fecha viable por tiempos configurados es ${minimumViableDate}`
       : overload
