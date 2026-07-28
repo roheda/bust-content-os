@@ -1,0 +1,208 @@
+warning: in the working copy of 'components/AppShell.tsx', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/components/AppShell.tsx b/components/AppShell.tsx[m
+[1mindex a65c30e..7675f7c 100644[m
+[1m--- a/components/AppShell.tsx[m
+[1m+++ b/components/AppShell.tsx[m
+[36m@@ -50,6 +50,7 @@[m [mexport default function AppShell({[m
+   const [accessError,setAccessError]=useState("");[m
+   const [sidebarCollapsed,setSidebarCollapsed]=useState(false);[m
+   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);[m
+[32m+[m[32m  const [pendingModalDismiss,setPendingModalDismiss]=useState<HTMLButtonElement | null>(null);[m
+ [m
+   useEffect(()=>{[m
+     let mounted=true;[m
+[36m@@ -126,6 +127,158 @@[m [mexport default function AppShell({[m
+     setMobileMenuOpen(false);[m
+   },[pathname]);[m
+ [m
+[32m+[m[32m  useEffect(()=>{[m
+[32m+[m[32m    if(typeof window === "undefined") return;[m
+[32m+[m
+[32m+[m[32m    const initialModalValues = new WeakMap<HTMLElement,string>();[m
+[32m+[m
+[32m+[m[32m    function isModal(element: Element | null): element is HTMLElement {[m
+[32m+[m[32m      return Boolean([m
+[32m+[m[32m        element instanceof HTMLElement &&[m
+[32m+[m[32m        (element.classList.contains("modal-backdrop") || element.classList.contains("preview-modal"))[m
+[32m+[m[32m      );[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function editableState(modal: HTMLElement) {[m
+[32m+[m[32m      const controls = Array.from([m
+[32m+[m[32m        modal.querySelectorAll<HTMLElement>("input, textarea, select, [contenteditable='true']")[m
+[32m+[m[32m      ).filter((element)=>{[m
+[32m+[m[32m        if(element.closest("[data-app-unsaved-confirm='true']")) return false;[m
+[32m+[m[32m        if(element instanceof HTMLInputElement){[m
+[32m+[m[32m          const type=(element.type || "text").toLowerCase();[m
+[32m+[m[32m          if(["button","submit","reset","hidden"].includes(type)) return false;[m
+[32m+[m[32m          return !element.disabled && !element.readOnly;[m
+[32m+[m[32m        }[m
+[32m+[m[32m        if(element instanceof HTMLTextAreaElement) return !element.disabled && !element.readOnly;[m
+[32m+[m[32m        if(element instanceof HTMLSelectElement) return !element.disabled;[m
+[32m+[m[32m        return element.getAttribute("contenteditable") === "true";[m
+[32m+[m[32m      });[m
+[32m+[m
+[32m+[m[32m      return JSON.stringify(controls.map((element,index)=>{[m
+[32m+[m[32m        if(element instanceof HTMLInputElement){[m
+[32m+[m[32m          const type=(element.type || "text").toLowerCase();[m
+[32m+[m[32m          if(type === "checkbox" || type === "radio") return [index,element.name,type,element.checked];[m
+[32m+[m[32m          if(type === "file") return [index,element.name,type,Array.from(element.files || []).map(file=>`${file.name}:${file.size}:${file.lastModified}`)];[m
+[32m+[m[32m          return [index,element.name,type,element.value];[m
+[32m+[m[32m        }[m
+[32m+[m[32m        if(element instanceof HTMLTextAreaElement) return [index,element.name,"textarea",element.value];[m
+[32m+[m[32m        if(element instanceof HTMLSelectElement) return [index,element.name,"select",Array.from(element.selectedOptions).map(option=>option.value)];[m
+[32m+[m[32m        return [index,"","contenteditable",element.textContent || ""];[m
+[32m+[m[32m      }));[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function captureInitialState(modal: HTMLElement) {[m
+[32m+[m[32m      if(modal.dataset.appUnsavedConfirm === "true" || initialModalValues.has(modal)) return;[m
+[32m+[m[32m      initialModalValues.set(modal,editableState(modal));[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function modalHasUnsavedChanges(modal: HTMLElement) {[m
+[32m+[m[32m      if(modal.classList.contains("preview-modal")) return false;[m
+[32m+[m[32m      captureInitialState(modal);[m
+[32m+[m[32m      return initialModalValues.get(modal) !== editableState(modal);[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function dismissButton(modal: HTMLElement): HTMLButtonElement | null {[m
+[32m+[m[32m      const explicit=modal.querySelector<HTMLButtonElement>("[data-modal-dismiss]");[m
+[32m+[m[32m      if(explicit) return explicit;[m
+[32m+[m[32m      const buttons=Array.from(modal.querySelectorAll<HTMLButtonElement>("button"));[m
+[32m+[m[32m      return buttons.find((button)=>{[m
+[32m+[m[32m        const label=(button.getAttribute("aria-label") || button.textContent || "").trim().toLowerCase();[m
+[32m+[m[32m        return label === "cerrar" || label.startsWith("cerrar ") || label === "cancelar" || label.startsWith("cancelar ") || label === "×" || label === "x";[m
+[32m+[m[32m      }) || null;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function topVisibleModal() {[m
+[32m+[m[32m      const modals=Array.from(document.querySelectorAll<HTMLElement>(".modal-backdrop, .preview-modal"))[m
+[32m+[m[32m        .filter((modal)=>{[m
+[32m+[m[32m          if(modal.dataset.appUnsavedConfirm === "true") return false;[m
+[32m+[m[32m          const style=window.getComputedStyle(modal);[m
+[32m+[m[32m          return style.display !== "none" && style.visibility !== "hidden" && modal.getClientRects().length>0;[m
+[32m+[m[32m        });[m
+[32m+[m[32m      return modals[modals.length-1] || null;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function requestDismiss(modal: HTMLElement) {[m
+[32m+[m[32m      const button=dismissButton(modal);[m
+[32m+[m[32m      if(!button) return;[m
+[32m+[m[32m      if(modalHasUnsavedChanges(modal)){[m
+[32m+[m[32m        setPendingModalDismiss(button);[m
+[32m+[m[32m        return;[m
+[32m+[m[32m      }[m
+[32m+[m[32m      button.click();[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function handleDocumentClick(event: MouseEvent) {[m
+[32m+[m[32m      const target=event.target;[m
+[32m+[m[32m      if(!(target instanceof HTMLElement)) return;[m
+[32m+[m
+[32m+[m[32m      const confirmBackdrop=target.closest<HTMLElement>("[data-app-unsaved-confirm='true']");[m
+[32m+[m[32m      if(confirmBackdrop){[m
+[32m+[m[32m        if(target === confirmBackdrop) setPendingModalDismiss(null);[m
+[32m+[m[32m        return;[m
+[32m+[m[32m      }[m
+[32m+[m
+[32m+[m[32m      const clickedButton=target.closest<HTMLButtonElement>("button");[m
+[32m+[m[32m      if(clickedButton){[m
+[32m+[m[32m        const modal=clickedButton.closest<HTMLElement>(".modal-backdrop, .preview-modal");[m
+[32m+[m[32m        if(modal && isModal(modal) && dismissButton(modal) === clickedButton){[m
+[32m+[m[32m          if(clickedButton.dataset.appDismissBypass === "true"){[m
+[32m+[m[32m            delete clickedButton.dataset.appDismissBypass;[m
+[32m+[m[32m            return;[m
+[32m+[m[32m          }[m
+[32m+[m[32m          if(modalHasUnsavedChanges(modal)){[m
+[32m+[m[32m            event.preventDefault();[m
+[32m+[m[32m            event.stopPropagation();[m
+[32m+[m[32m            setPendingModalDismiss(clickedButton);[m
+[32m+[m[32m          }[m
+[32m+[m[32m          return;[m
+[32m+[m[32m        }[m
+[32m+[m[32m      }[m
+[32m+[m
+[32m+[m[32m      if(isModal(target)) requestDismiss(target);[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function handleEscape(event: KeyboardEvent) {[m
+[32m+[m[32m      if(event.key !== "Escape") return;[m
+[32m+[m[32m      const confirm=document.querySelector<HTMLElement>("[data-app-unsaved-confirm='true']");[m
+[32m+[m[32m      if(confirm){[m
+[32m+[m[32m        event.preventDefault();[m
+[32m+[m[32m        event.stopPropagation();[m
+[32m+[m[32m        setPendingModalDismiss(null);[m
+[32m+[m[32m        return;[m
+[32m+[m[32m      }[m
+[32m+[m[32m      const modal=topVisibleModal();[m
+[32m+[m[32m      if(!modal) return;[m
+[32m+[m[32m      event.preventDefault();[m
+[32m+[m[32m      event.stopPropagation();[m
+[32m+[m[32m      requestDismiss(modal);[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function scheduleCapture(element: Element) {[m
+[32m+[m[32m      const candidates: HTMLElement[]=[];[m
+[32m+[m[32m      if(isModal(element)) candidates.push(element);[m
+[32m+[m[32m      element.querySelectorAll?.<HTMLElement>(".modal-backdrop, .preview-modal").forEach(modal=>candidates.push(modal));[m
+[32m+[m[32m      if(!candidates.length) return;[m
+[32m+[m[32m      window.requestAnimationFrame(()=>candidates.forEach(captureInitialState));[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    document.querySelectorAll<HTMLElement>(".modal-backdrop, .preview-modal").forEach(captureInitialState);[m
+[32m+[m[32m    const observer=new MutationObserver((mutations)=>{[m
+[32m+[m[32m      mutations.forEach((mutation)=>mutation.addedNodes.forEach((node)=>{[m
+[32m+[m[32m        if(node instanceof Element) scheduleCapture(node);[m
+[32m+[m[32m      }));[m
+[32m+[m[32m    });[m
+[32m+[m[32m    observer.observe(document.body,{childList:true,subtree:true});[m
+[32m+[m[32m    document.addEventListener("click",handleDocumentClick,true);[m
+[32m+[m[32m    document.addEventListener("keydown",handleEscape,true);[m
+[32m+[m
+[32m+[m[32m    return ()=>{[m
+[32m+[m[32m      observer.disconnect();[m
+[32m+[m[32m      document.removeEventListener("click",handleDocumentClick,true);[m
+[32m+[m[32m      document.removeEventListener("keydown",handleEscape,true);[m
+[32m+[m[32m    };[m
+[32m+[m[32m  },[]);[m
+[32m+[m
+   function chooseUser(id:string){[m
+     const found = users.find(u=>u.id===id) || null;[m
+     setActiveUser(found);[m
+[36m@@ -142,6 +295,14 @@[m [mexport default function AppShell({[m
+     setSidebarCollapsed((current)=>!current);[m
+   }[m
+ [m
+[32m+[m[32m  function confirmPendingModalDismiss(){[m
+[32m+[m[32m    const button=pendingModalDismiss;[m
+[32m+[m[32m    setPendingModalDismiss(null);[m
+[32m+[m[32m    if(!button) return;[m
+[32m+[m[32m    button.dataset.appDismissBypass="true";[m
+[32m+[m[32m    window.setTimeout(()=>button.click(),0);[m
+[32m+[m[32m  }[m
+[32m+[m
+   const currentModuleKey = useMemo(()=>moduleKeyForPath(pathname),[pathname]);[m
+   const currentModule = useMemo(()=>platformModules.find((module)=>module.key===currentModuleKey),[currentModuleKey]);[m
+   const canViewCurrentModule = useMemo(()=>canUser(activeUser,currentModuleKey,"view"),[activeUser,currentModuleKey]);[m
+[36m@@ -230,5 +391,20 @@[m [mexport default function AppShell({[m
+     </main>[m
+     <PendingMentionsWidget activeUser={activeUser}/>[m
+     <FeedbackWidget/>[m
+[32m+[m[32m    {pendingModalDismiss && <div[m
+[32m+[m[32m      className="modal-backdrop"[m
+[32m+[m[32m      data-app-unsaved-confirm="true"[m
+[32m+[m[32m      onClick={(event)=>{if(event.target===event.currentTarget)setPendingModalDismiss(null);}}[m
+[32m+[m[32m    >[m
+[32m+[m[32m      <div className="modal-card" style={{width:"min(480px,92vw)"}}>[m
+[32m+[m[32m        <p className="eyebrow">Cambios sin guardar</p>[m
+[32m+[m[32m        <h2 style={{marginTop:0}}>¿Cerrar sin guardar?</h2>[m
+[32m+[m[32m        <p>Tienes cambios que todavía no se han guardado. Si cierras ahora, se perderán.</p>[m
+[32m+[m[32m        <div style={{display:"flex",gap:12,justifyContent:"flex-end",flexWrap:"wrap"}}>[m
+[32m+[m[32m          <button className="btn" type="button" onClick={()=>setPendingModalDismiss(null)}>Seguir editando</button>[m
+[32m+[m[32m          <button className="btn red" type="button" onClick={confirmPendingModalDismiss}>Cerrar sin guardar</button>[m
+[32m+[m[32m        </div>[m
+[32m+[m[32m      </div>[m
+[32m+[m[32m    </div>}[m
+   </div>;[m
+ }[m

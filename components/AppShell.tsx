@@ -50,6 +50,7 @@ export default function AppShell({
   const [accessError,setAccessError]=useState("");
   const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
+  const [pendingModalDismiss,setPendingModalDismiss]=useState<HTMLButtonElement | null>(null);
 
   useEffect(()=>{
     let mounted=true;
@@ -126,6 +127,158 @@ export default function AppShell({
     setMobileMenuOpen(false);
   },[pathname]);
 
+  useEffect(()=>{
+    if(typeof window === "undefined") return;
+
+    const initialModalValues = new WeakMap<HTMLElement,string>();
+
+    function isModal(element: Element | null): element is HTMLElement {
+      return Boolean(
+        element instanceof HTMLElement &&
+        (element.classList.contains("modal-backdrop") || element.classList.contains("preview-modal"))
+      );
+    }
+
+    function editableState(modal: HTMLElement) {
+      const controls = Array.from(
+        modal.querySelectorAll<HTMLElement>("input, textarea, select, [contenteditable='true']")
+      ).filter((element)=>{
+        if(element.closest("[data-app-unsaved-confirm='true']")) return false;
+        if(element instanceof HTMLInputElement){
+          const type=(element.type || "text").toLowerCase();
+          if(["button","submit","reset","hidden"].includes(type)) return false;
+          return !element.disabled && !element.readOnly;
+        }
+        if(element instanceof HTMLTextAreaElement) return !element.disabled && !element.readOnly;
+        if(element instanceof HTMLSelectElement) return !element.disabled;
+        return element.getAttribute("contenteditable") === "true";
+      });
+
+      return JSON.stringify(controls.map((element,index)=>{
+        if(element instanceof HTMLInputElement){
+          const type=(element.type || "text").toLowerCase();
+          if(type === "checkbox" || type === "radio") return [index,element.name,type,element.checked];
+          if(type === "file") return [index,element.name,type,Array.from(element.files || []).map(file=>`${file.name}:${file.size}:${file.lastModified}`)];
+          return [index,element.name,type,element.value];
+        }
+        if(element instanceof HTMLTextAreaElement) return [index,element.name,"textarea",element.value];
+        if(element instanceof HTMLSelectElement) return [index,element.name,"select",Array.from(element.selectedOptions).map(option=>option.value)];
+        return [index,"","contenteditable",element.textContent || ""];
+      }));
+    }
+
+    function captureInitialState(modal: HTMLElement) {
+      if(modal.dataset.appUnsavedConfirm === "true" || initialModalValues.has(modal)) return;
+      initialModalValues.set(modal,editableState(modal));
+    }
+
+    function modalHasUnsavedChanges(modal: HTMLElement) {
+      if(modal.classList.contains("preview-modal")) return false;
+      captureInitialState(modal);
+      return initialModalValues.get(modal) !== editableState(modal);
+    }
+
+    function dismissButton(modal: HTMLElement): HTMLButtonElement | null {
+      const explicit=modal.querySelector<HTMLButtonElement>("[data-modal-dismiss]");
+      if(explicit) return explicit;
+      const buttons=Array.from(modal.querySelectorAll<HTMLButtonElement>("button"));
+      return buttons.find((button)=>{
+        const label=(button.getAttribute("aria-label") || button.textContent || "").trim().toLowerCase();
+        return label === "cerrar" || label.startsWith("cerrar ") || label === "cancelar" || label.startsWith("cancelar ") || label === "×" || label === "x";
+      }) || null;
+    }
+
+    function topVisibleModal() {
+      const modals=Array.from(document.querySelectorAll<HTMLElement>(".modal-backdrop, .preview-modal"))
+        .filter((modal)=>{
+          if(modal.dataset.appUnsavedConfirm === "true") return false;
+          const style=window.getComputedStyle(modal);
+          return style.display !== "none" && style.visibility !== "hidden" && modal.getClientRects().length>0;
+        });
+      return modals[modals.length-1] || null;
+    }
+
+    function requestDismiss(modal: HTMLElement) {
+      const button=dismissButton(modal);
+      if(!button) return;
+      if(modalHasUnsavedChanges(modal)){
+        setPendingModalDismiss(button);
+        return;
+      }
+      button.click();
+    }
+
+    function handleDocumentClick(event: MouseEvent) {
+      const target=event.target;
+      if(!(target instanceof HTMLElement)) return;
+
+      const confirmBackdrop=target.closest<HTMLElement>("[data-app-unsaved-confirm='true']");
+      if(confirmBackdrop){
+        if(target === confirmBackdrop) setPendingModalDismiss(null);
+        return;
+      }
+
+      const clickedButton=target.closest<HTMLButtonElement>("button");
+      if(clickedButton){
+        const modal=clickedButton.closest<HTMLElement>(".modal-backdrop, .preview-modal");
+        if(modal && isModal(modal) && dismissButton(modal) === clickedButton){
+          if(clickedButton.dataset.appDismissBypass === "true"){
+            delete clickedButton.dataset.appDismissBypass;
+            return;
+          }
+          if(modalHasUnsavedChanges(modal)){
+            event.preventDefault();
+            event.stopPropagation();
+            setPendingModalDismiss(clickedButton);
+          }
+          return;
+        }
+      }
+
+      if(isModal(target)) requestDismiss(target);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if(event.key !== "Escape") return;
+      const confirm=document.querySelector<HTMLElement>("[data-app-unsaved-confirm='true']");
+      if(confirm){
+        event.preventDefault();
+        event.stopPropagation();
+        setPendingModalDismiss(null);
+        return;
+      }
+      const modal=topVisibleModal();
+      if(!modal) return;
+      event.preventDefault();
+      event.stopPropagation();
+      requestDismiss(modal);
+    }
+
+    function scheduleCapture(element: Element) {
+      const candidates: HTMLElement[]=[];
+      if(isModal(element)) candidates.push(element);
+      element.querySelectorAll?.<HTMLElement>(".modal-backdrop, .preview-modal").forEach(modal=>candidates.push(modal));
+      if(!candidates.length) return;
+      window.requestAnimationFrame(()=>candidates.forEach(captureInitialState));
+    }
+
+    document.querySelectorAll<HTMLElement>(".modal-backdrop, .preview-modal").forEach(captureInitialState);
+    const observer=new MutationObserver((mutations)=>{
+      mutations.forEach((mutation)=>mutation.addedNodes.forEach((node)=>{
+        if(node instanceof Element) scheduleCapture(node);
+      }));
+    });
+    observer.observe(document.body,{childList:true,subtree:true});
+    document.addEventListener("click",handleDocumentClick,true);
+    document.addEventListener("keydown",handleEscape,true);
+
+    return ()=>{
+      observer.disconnect();
+      document.removeEventListener("click",handleDocumentClick,true);
+      document.removeEventListener("keydown",handleEscape,true);
+    };
+  },[]);
+
   function chooseUser(id:string){
     const found = users.find(u=>u.id===id) || null;
     setActiveUser(found);
@@ -140,6 +293,14 @@ export default function AppShell({
 
   function toggleSidebar(){
     setSidebarCollapsed((current)=>!current);
+  }
+
+  function confirmPendingModalDismiss(){
+    const button=pendingModalDismiss;
+    setPendingModalDismiss(null);
+    if(!button) return;
+    button.dataset.appDismissBypass="true";
+    window.setTimeout(()=>button.click(),0);
   }
 
   const currentModuleKey = useMemo(()=>moduleKeyForPath(pathname),[pathname]);
@@ -230,5 +391,20 @@ export default function AppShell({
     </main>
     <PendingMentionsWidget activeUser={activeUser}/>
     <FeedbackWidget/>
+    {pendingModalDismiss && <div
+      className="modal-backdrop"
+      data-app-unsaved-confirm="true"
+      onClick={(event)=>{if(event.target===event.currentTarget)setPendingModalDismiss(null);}}
+    >
+      <div className="modal-card" style={{width:"min(480px,92vw)"}}>
+        <p className="eyebrow">Cambios sin guardar</p>
+        <h2 style={{marginTop:0}}>¿Cerrar sin guardar?</h2>
+        <p>Tienes cambios que todavía no se han guardado. Si cierras ahora, se perderán.</p>
+        <div style={{display:"flex",gap:12,justifyContent:"flex-end",flexWrap:"wrap"}}>
+          <button className="btn" type="button" onClick={()=>setPendingModalDismiss(null)}>Seguir editando</button>
+          <button className="btn red" type="button" onClick={confirmPendingModalDismiss}>Cerrar sin guardar</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
