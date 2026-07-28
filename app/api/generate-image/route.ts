@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiPermission } from "@/lib/api-auth";
 
 export const maxDuration = 300;
 
@@ -235,6 +236,8 @@ async function generateWithGemini({
 
 export async function POST(request: Request) {
   try {
+    const authCheck = await requireApiPermission(request, "generador", "generate");
+    if (!authCheck.ok) return authCheck.response;
     const body = await request.json();
     const prompt = typeof body.prompt === "string" ? body.prompt : "";
     const format = typeof body.format === "string" ? body.format : "square-post";

@@ -1,7 +1,21 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { Brand, ContentRequest, Production, listUniqueBrands, listProductions, listRequests } from "@/lib/data";
+import {
+  Brand,
+  ClientOperationalOverride,
+  ContentRequest,
+  OperationalContentRule,
+  Production,
+  calculateClientBillingBalance,
+  estimateRequestCost,
+  listClientOperationalOverrides,
+  listGeneratedImageRecords,
+  listOperationalContentRules,
+  listUniqueBrands,
+  listProductions,
+  listRequests
+} from "@/lib/data";
 
 type PersonMetric = {
   name: string;
@@ -10,6 +24,9 @@ type PersonMetric = {
   finished: number;
   inApproval: number;
   rejected: number;
+  revisions: number;
+  revisionCost: number;
+  revisionHours: number;
   avgDaysToApproval: number;
 };
 
@@ -17,17 +34,31 @@ export default function ReportsPage(){
   const [requests,setRequests]=useState<ContentRequest[]>([]);
   const [brands,setBrands]=useState<Brand[]>([]);
   const [productions,setProductions]=useState<Production[]>([]);
+  const [generatedRecords,setGeneratedRecords]=useState<any[]>([]);
+  const [costRules,setCostRules]=useState<OperationalContentRule[]>([]);
+  const [clientOverrides,setClientOverrides]=useState<ClientOperationalOverride[]>([]);
   const [clientFilter,setClientFilter]=useState("all");
   const [areaFilter,setAreaFilter]=useState("all");
   const [personFilter,setPersonFilter]=useState("all");
   const [from,setFrom]=useState("");
   const [to,setTo]=useState("");
+  const [billingMonth,setBillingMonth]=useState(new Date().toISOString().slice(0,7));
 
   async function load(){
-    const [reqs,cls,prods] = await Promise.all([listRequests(),listUniqueBrands(),listProductions()]);
+    const [reqs,cls,prods,generated,rules,overrides] = await Promise.all([
+      listRequests(),
+      listUniqueBrands(),
+      listProductions(),
+      listGeneratedImageRecords(),
+      listOperationalContentRules(),
+      listClientOperationalOverrides()
+    ]);
     setRequests(reqs);
     setBrands(cls);
     setProductions(prods);
+    setGeneratedRecords(generated);
+    setCostRules(rules);
+    setClientOverrides(overrides);
   }
 
   useEffect(()=>{load()},[]);
@@ -56,8 +87,26 @@ export default function ReportsPage(){
   }),[productions,clientFilter,personFilter,from,to]);
 
   const totals = useMemo(()=>calculateTotals(filtered, filteredProductions),[filtered,filteredProductions]);
-  const byPerson = useMemo(()=>calculatePeople(filtered),[filtered]);
+  const financials = useMemo(()=>calculateFinancials(filtered, costRules, clientOverrides),[filtered,costRules,clientOverrides]);
+  const byPerson = useMemo(()=>calculatePeople(filtered, costRules, clientOverrides),[filtered,costRules,clientOverrides]);
+  const revisionRows = useMemo(()=>buildRevisionRows(filtered, costRules, clientOverrides),[filtered,costRules,clientOverrides]);
   const byClient = useMemo(()=>countBy(filtered,x=>x.clientName||"Sin cliente"),[filtered]);
+  const byClientCost = useMemo(()=>costBy(filtered, costRules, clientOverrides, x=>x.clientName||"Sin cliente"),[filtered,costRules,clientOverrides]);
+  const byContentCost = useMemo(()=>costBy(filtered, costRules, clientOverrides, x=>x.contentType||"Sin tipo"),[filtered,costRules,clientOverrides]);
+  const billingBalances = useMemo(()=>brands
+    .filter(client=>clientFilter==="all" || client.id===clientFilter)
+    .map(client=>calculateClientBillingBalance({client, month: billingMonth, requests, productions, generatedImages: generatedRecords, rules: costRules, overrides: clientOverrides}))
+    .filter(row=>row.monthlyRetainer || row.finalizedContents || row.productions || row.aiGenerations || row.revisionCount || row.estimatedInvoiceTotal)
+    .sort((a,b)=>b.estimatedInvoiceTotal-a.estimatedInvoiceTotal),[brands,clientFilter,billingMonth,requests,productions,generatedRecords,costRules,clientOverrides]);
+  const billingTotals = useMemo(()=>billingBalances.reduce((acc,row)=>({
+    retainer: acc.retainer + row.monthlyRetainer,
+    invoice: acc.invoice + row.estimatedInvoiceTotal,
+    extras: acc.extras + row.extraContentCharge + row.extraProductionCharge + row.extraAiCharge,
+    contents: acc.contents + row.finalizedContents,
+    ai: acc.ai + row.aiGenerations,
+    revisions: acc.revisions + row.revisionCount,
+    revisionCost: acc.revisionCost + row.revisionCost
+  }),{retainer:0,invoice:0,extras:0,contents:0,ai:0,revisions:0,revisionCost:0}),[billingBalances]);
   const byArea = useMemo(()=>countBy(filtered,x=>x.assignedArea||x.suggestedArea||"Sin área"),[filtered]);
   const byStatus = useMemo(()=>countBy(filtered,x=>statusLabel(x.status||"sin_estado")),[filtered]);
   const rejectionReasons = useMemo(()=>countBy(filtered.filter(x=>x.approvalStatus==="rechazada"),x=>x.approvalRejectionReason||"Sin motivo"),[filtered]);
@@ -74,28 +123,77 @@ export default function ReportsPage(){
   }
 
   function exportReport(){
-    const headers = ["Cliente","Lote","Tipo","Área","Responsable","Estado","Fecha operativa","Fecha publicación","Vencida","Approval","Motivo rechazo","Link final","Copy Out"];
-    const rows = filtered.map(x=>[
-      x.clientName||"",
-      x.batchName||"",
-      x.contentType||"",
-      x.assignedArea||x.suggestedArea||"",
-      x.assignedTo||"",
-      statusLabel(x.status||""),
-      getTaskDate(x),
-      x.publishDate||"",
-      isOverdue(x) ? "Sí" : "No",
-      x.approvalStatus||"",
-      x.approvalRejectionReason||"",
-      x.finalPostLink||"",
-      x.copyOut||""
-    ]);
+    const headers = ["Cliente","Lote","Tipo","Área","Responsable","Estado","Fecha operativa","Fecha publicación","Vencida","Costo base","Costo producción","Cambios","Costo rebotes","Costo total","Horas base","Horas rebote","Horas edición total","Días mínimos","Approval","Motivo rechazo","Link final","Copy Out"];
+    const rows = filtered.map(x=>{
+      const cost = estimateRequestCost(x,costRules,clientOverrides);
+      return [
+        x.clientName||"",
+        x.batchName||"",
+        x.contentType||"",
+        x.assignedArea||x.suggestedArea||"",
+        x.assignedTo||"",
+        statusLabel(x.status||""),
+        getTaskDate(x),
+        x.publishDate||"",
+        isOverdue(x) ? "Sí" : "No",
+        cost.baseCost,
+        cost.productionCost,
+        cost.revisionCount,
+        cost.revisionCost,
+        cost.totalCost,
+        cost.baseEditingHours,
+        cost.revisionHours,
+        cost.editingHours,
+        cost.deliveryDays,
+        x.approvalStatus||"",
+        x.approvalRejectionReason||"",
+        x.finalPostLink||"",
+        x.copyOut||""
+      ];
+    });
     const csv = [headers,...rows].map(row=>row.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob = new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href=url;
     a.download=`reporte-direccion-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportBillingBalance(){
+    const headers = ["Cliente","Mes","Iguala mensual","Contenidos finalizados","Contenidos incluidos","Contenidos extra","Cargo extra contenidos","Producciones","Producciones incluidas","Producciones extra","Cargo extra producciones","Bolsa producción incluida","Costo producción consumido","Rebotes","Costo rebotes","Horas rebotes","Excedente bolsa producción","Generaciones IA","IA incluida","IA extra","Cargo extra IA","Cobro bajo demanda","Total estimado factura"];
+    const rows = billingBalances.map(row=>[
+      row.clientName,
+      row.month,
+      row.monthlyRetainer,
+      row.finalizedContents,
+      row.includedFinalizedContents,
+      row.billableExtraContents,
+      row.extraContentCharge,
+      row.productions,
+      row.includedProductions,
+      row.billableExtraProductions,
+      row.extraProductionCharge,
+      row.includedProductionBudget,
+      row.productionCostConsumed,
+      row.revisionCount,
+      row.revisionCost,
+      row.revisionHours,
+      row.billableProductionBudgetOverage,
+      row.aiGenerations,
+      row.includedAiGenerations,
+      row.billableExtraAiGenerations,
+      row.extraAiCharge,
+      row.onDemandEnabled ? "Sí" : "No",
+      row.estimatedInvoiceTotal
+    ]);
+    const csv = [headers,...rows].map(row=>row.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url;
+    a.download=`balance-facturacion-${billingMonth}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -107,7 +205,7 @@ export default function ReportsPage(){
         <h1>Reportes</h1>
         <p>Radar operativo para entender carga, velocidad, cuellos de botella, calidad, cumplimiento y rendimiento del equipo.</p>
       </div>
-      <button className="btn blue" onClick={exportReport}>Exportar reporte CSV</button>
+      <div className="config-actions"><button className="btn" onClick={exportBillingBalance}>Balance facturación CSV</button><button className="btn blue" onClick={exportReport}>Exportar reporte CSV</button></div>
     </section>
 
     <div className="report-filters">
@@ -128,6 +226,7 @@ export default function ReportsPage(){
       </select>
       <input type="date" value={from} onChange={e=>setFrom(e.target.value)}/>
       <input type="date" value={to} onChange={e=>setTo(e.target.value)}/>
+      <input type="month" value={billingMonth} onChange={e=>setBillingMonth(e.target.value)} title="Mes para balance de facturación"/>
       <button className="btn" onClick={clearFilters}>Limpiar</button>
       <button className="btn" onClick={load}>Actualizar</button>
     </div>
@@ -139,10 +238,42 @@ export default function ReportsPage(){
       <Metric title="Finalizadas" value={totals.finished} helper={`${totals.finishedRate}% de avance final`} tone={totals.finishedRate>70?"good":totals.finishedRate>35?"mid":"bad"}/>
       <Metric title="En aprobación" value={totals.inApproval} helper="Esperando revisión final"/>
       <Metric title="Rebotadas" value={totals.rejected} helper={`${totals.rejectionRate}% de rechazo`} tone={totals.rejectionRate>20?"bad":totals.rejectionRate>8?"mid":"good"}/>
+      <Metric title="Cambios registrados" value={financials.revisionCount} helper={`${money(financials.revisionCost)} costo extra`} tone={financials.revisionCount>0?"mid":"good"}/>
       <Metric title="Sin asignar" value={totals.unassigned} helper="Riesgo de quedarse sin dueño" tone={totals.unassigned>0?"mid":"good"}/>
       <Metric title="Producciones" value={filteredProductions.length} helper={`${totals.productionsWithoutMaterial} sin material`} tone={totals.productionsWithoutMaterial>0?"mid":"good"}/>
+      <Metric title="Costo interno" value={money(financials.totalCost)} helper={`${money(financials.avgCost)} promedio por pieza`} tone={financials.totalCost>0?"mid":undefined}/>
+      <Metric title="Costo producción" value={money(financials.productionCost)} helper="Solo piezas que requieren producción"/>
+      <Metric title="Horas edición" value={`${financials.editingHours} h`} helper={`${financials.revisionHours} h por rebotes`} tone={financials.riskCount>0?"mid":"good"}/>
+      <Metric title="Días prom. entrega" value={`${financials.avgDeliveryDays}`} helper="Según configuración operativa"/>
+      <Metric title="Facturación estimada" value={money(billingTotals.invoice)} helper={`${money(billingTotals.extras)} bajo demanda`}/>
+      <Metric title="Generaciones IA" value={billingTotals.ai} helper={`Mes ${billingMonth}`}/>
     </section>
 
+
+    <section className="report-section">
+      <div className="flex" style={{justifyContent:"space-between",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+        <div>
+          <h3>Balance para facturación</h3>
+          <p className="mini">Compara lo incluido por cliente contra lo consumido en el mes seleccionado. Usa contenidos finalizados, producciones y generaciones IA de BUST It Now.</p>
+        </div>
+        <button className="btn" onClick={exportBillingBalance}>Exportar balance CSV</button>
+      </div>
+      <div className="table-wrap" style={{marginTop:16}}>
+        <table className="table config-table">
+          <thead><tr><th>Cliente</th><th>Contenidos</th><th>Producciones</th><th>Rebotes</th><th>Generaciones IA</th><th>Extras</th><th>Total facturación</th></tr></thead>
+          <tbody>{billingBalances.map(row=><tr key={`${row.clientId}-${row.month}`}>
+            <td><strong>{row.clientName}</strong><br/><span className="mini">{row.month} · Iguala {money(row.monthlyRetainer)} · Bajo demanda {row.onDemandEnabled?"activo":"inactivo"}</span></td>
+            <td>{row.finalizedContents}/{row.includedFinalizedContents}<br/><span className="mini">Extra: {row.billableExtraContents}</span></td>
+            <td>{row.productions}/{row.includedProductions}<br/><span className="mini">Bolsa: {money(row.productionCostConsumed)}/{money(row.includedProductionBudget)}</span></td>
+            <td>{row.revisionCount}<br/><span className="mini">{money(row.revisionCost)} · {row.revisionHours} h</span></td>
+            <td>{row.aiGenerations}/{row.includedAiGenerations}<br/><span className="mini">Extra: {row.billableExtraAiGenerations}</span></td>
+            <td>{money(row.extraContentCharge + row.extraProductionCharge + row.extraAiCharge)}</td>
+            <td><strong>{money(row.estimatedInvoiceTotal)}</strong></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      {!billingBalances.length && <p className="mini" style={{marginTop:12}}>No hay consumo o configuración comercial para el mes seleccionado.</p>}
+    </section>
     <section className="report-section">
       <h3>Embudo operativo</h3>
       <div className="funnel">
@@ -168,6 +299,17 @@ export default function ReportsPage(){
 
     <section className="grid two-col">
       <div className="report-section">
+        <h3>Costeo por cliente</h3>
+        <MoneyBarList data={byClientCost} empty="Sin costos configurados"/>
+      </div>
+      <div className="report-section">
+        <h3>Costeo por tipo de contenido</h3>
+        <MoneyBarList data={byContentCost} empty="Sin costos configurados"/>
+      </div>
+    </section>
+
+    <section className="grid two-col">
+      <div className="report-section">
         <h3>Estado de tareas</h3>
         <BarList data={byStatus}/>
       </div>
@@ -175,6 +317,26 @@ export default function ReportsPage(){
         <h3>Motivos de no aprobación</h3>
         <BarList data={rejectionReasons} empty="Sin rechazos en el filtro"/>
       </div>
+    </section>
+
+
+    <section className="report-section">
+      <h3>Rebotes por editor / responsable</h3>
+      <p className="mini">Cada devolución registrada cuenta como un cambio. El costo y tiempo extra se calculan con el porcentaje configurado por tipo de contenido o cliente.</p>
+      <div className="table-wrap" style={{marginTop:12}}>
+        <table className="table config-table">
+          <thead><tr><th>Persona</th><th>Área</th><th>Rebotes</th><th>Costo extra</th><th>Horas extra</th><th>Último motivo</th></tr></thead>
+          <tbody>{revisionRows.map(row=><tr key={`${row.person}-${row.area}`}>
+            <td><strong>{row.person}</strong></td>
+            <td>{row.area}</td>
+            <td>{row.count}</td>
+            <td>{money(row.cost)}</td>
+            <td>{row.hours} h</td>
+            <td><span className="mini">{row.lastReason}</span></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      {!revisionRows.length && <p className="mini" style={{marginTop:12}}>Sin rebotes registrados en el filtro.</p>}
     </section>
 
     <section className="report-section">
@@ -188,6 +350,8 @@ export default function ReportsPage(){
             <SmallStat label="Finalizadas" value={person.finished}/>
             <SmallStat label="Aprobación" value={person.inApproval}/>
             <SmallStat label="Rebotadas" value={person.rejected}/>
+            <SmallStat label="Cambios" value={person.revisions}/>
+            <SmallStat label="Costo rebote" value={money(person.revisionCost)}/>
             <SmallStat label="Días prom." value={person.avgDaysToApproval || "-"}/>
           </div>
         </div>)}
@@ -229,12 +393,14 @@ export default function ReportsPage(){
         <Insight title="Dónde poner atención" items={[
           totals.overdue>0 ? `${totals.overdue} tareas vencidas requieren seguimiento.` : "No hay tareas vencidas relevantes.",
           totals.unassigned>0 ? `${totals.unassigned} tareas están sin responsable.` : "La carga tiene responsable asignado.",
-          totals.productionsWithoutMaterial>0 ? `${totals.productionsWithoutMaterial} producciones siguen sin material entregado.` : "Producciones sin bloqueo de material."
+          totals.productionsWithoutMaterial>0 ? `${totals.productionsWithoutMaterial} producciones siguen sin material entregado.` : "Producciones sin bloqueo de material.",
+          financials.riskCount>0 ? `${financials.riskCount} piezas tienen fecha de publicación demasiado cercana para su tiempo configurado.` : "Las fechas cumplen los tiempos mínimos configurados."
         ]}/>
         <Insight title="Calidad y aprobación" items={[
           totals.rejected>0 ? `${totals.rejected} piezas han sido rebotadas.` : "Sin piezas rebotadas en el filtro.",
           totals.copyOutPending>0 ? `${totals.copyOutPending} piezas aprobadas siguen pendientes de Copy Out.` : "Sin cuello de botella en Copy Out.",
-          `${totals.finished} piezas están finalizadas y listas como historial.`
+          `${totals.finished} piezas están finalizadas y listas como historial.`,
+          `Costo interno estimado del filtro: ${money(financials.totalCost)}.`
         ]}/>
       </div>
     </section>
@@ -257,8 +423,9 @@ function statusLabel(status:string){
     asignada:"Asignada",
     en_revision:"En revisión",
     rebotada:"Rebotada",
-    pendiente_aprobacion:"En aprobación",
-    aprobada_pendiente_copyout:"Aprobada sin Copy Out",
+    pendiente_aprobacion:"Aprobación Content",
+    pendiente_aprobacion_kam:"Aprobación KAM",
+    aprobada_pendiente_copyout:"En Contenidos",
     finalizada:"Finalizada",
     material_listo:"Material listo",
     lista_asignacion:"Lista asignación",
@@ -275,7 +442,7 @@ function calculateTotals(items:ContentRequest[], productions:Production[]){
   const finished = items.filter(x=>x.status==="finalizada").length;
   const assigned = items.filter(x=>x.status==="asignada").length;
   const inReview = items.filter(x=>x.status==="en_revision" || x.status==="rebotada").length;
-  const inApproval = items.filter(x=>x.status==="pendiente_aprobacion").length;
+  const inApproval = items.filter(x=>["pendiente_aprobacion","pendiente_aprobacion_kam"].includes(x.status||"")).length;
   const rejected = items.filter(x=>x.approvalStatus==="rechazada" || x.status==="rebotada").length;
   const copyOutPending = items.filter(x=>x.status==="aprobada_pendiente_copyout").length;
   const unassigned = items.filter(x=>!x.assignedTo && ["lista_asignacion","material_listo","asignada"].includes(x.status||"")).length;
@@ -302,10 +469,10 @@ function calculateTotals(items:ContentRequest[], productions:Production[]){
   };
 }
 
-function calculatePeople(items:ContentRequest[]):PersonMetric[]{
+function calculatePeople(items:ContentRequest[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[]):PersonMetric[]{
   const grouped:Record<string,ContentRequest[]> = {};
   items.forEach(item=>{
-    const key = item.assignedTo || "Sin asignar";
+    const key = item.assignedTo || item.lastRevisionPerson || "Sin asignar";
     grouped[key] = grouped[key] || [];
     grouped[key].push(item);
   });
@@ -315,17 +482,27 @@ function calculatePeople(items:ContentRequest[]):PersonMetric[]{
       .filter(x=>x.status==="finalizada" && x.comments?.length)
       .map(x=>estimateDaysToApproval(x))
       .filter(x=>x>=0);
+    const revisionTotals = list.reduce((acc,item)=>{
+      const cost = estimateRequestCost(item,rules,overrides);
+      acc.count += cost.revisionCount;
+      acc.cost += cost.revisionCost;
+      acc.hours += cost.revisionHours;
+      return acc;
+    },{count:0,cost:0,hours:0});
 
     return {
       name,
       assigned: list.length,
       overdue: list.filter(isOverdue).length,
       finished: list.filter(x=>x.status==="finalizada").length,
-      inApproval: list.filter(x=>x.status==="pendiente_aprobacion").length,
+      inApproval: list.filter(x=>["pendiente_aprobacion","pendiente_aprobacion_kam"].includes(x.status||"")).length,
       rejected: list.filter(x=>x.status==="rebotada" || x.approvalStatus==="rechazada").length,
+      revisions: revisionTotals.count,
+      revisionCost: revisionTotals.cost,
+      revisionHours: revisionTotals.hours,
       avgDaysToApproval: approvalDurations.length ? Math.round(approvalDurations.reduce((a,b)=>a+b,0)/approvalDurations.length) : 0
     };
-  }).sort((a,b)=>b.assigned-a.assigned);
+  }).sort((a,b)=>b.revisions-a.revisions || b.assigned-a.assigned);
 }
 
 function estimateDaysToApproval(item:ContentRequest){
@@ -350,12 +527,42 @@ function countBy(items:ContentRequest[], fn:(item:ContentRequest)=>string){
 function buildBottlenecks(items:ContentRequest[]){
   return [
     {label:"Tareas vencidas",count:items.filter(isOverdue).length},
-    {label:"Pendientes de aprobación",count:items.filter(x=>x.status==="pendiente_aprobacion").length},
-    {label:"Aprobadas sin Copy Out",count:items.filter(x=>x.status==="aprobada_pendiente_copyout").length},
+    {label:"Pendientes de aprobación",count:items.filter(x=>["pendiente_aprobacion","pendiente_aprobacion_kam"].includes(x.status||"")).length},
+    {label:"En Contenidos",count:items.filter(x=>x.status==="aprobada_pendiente_copyout").length},
     {label:"Rebotadas",count:items.filter(x=>x.status==="rebotada" || x.approvalStatus==="rechazada").length},
     {label:"Sin responsable",count:items.filter(x=>!x.assignedTo).length},
-    {label:"Sin link final",count:items.filter(x=>["pendiente_aprobacion","aprobada_pendiente_copyout","finalizada"].includes(x.status||"") && !x.finalPostLink).length}
+    {label:"Sin link final",count:items.filter(x=>["pendiente_aprobacion","pendiente_aprobacion_kam","aprobada_pendiente_copyout","finalizada"].includes(x.status||"") && !x.finalPostLink).length}
   ];
+}
+
+
+function buildRevisionRows(items:ContentRequest[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[]){
+  const map:Record<string,{person:string;area:string;count:number;cost:number;hours:number;lastReason:string;lastAt:string}> = {};
+  items.forEach(item=>{
+    const estimate = estimateRequestCost(item,rules,overrides);
+    const count = estimate.revisionCount;
+    if(!count)return;
+    const events = item.revisionHistory?.length ? item.revisionHistory : [{
+      person: item.lastRevisionPerson || item.assignedTo || "Sin responsable",
+      area: item.lastRevisionArea || item.assignedArea || item.suggestedArea || "Sin área",
+      reason: item.lastRevisionReason || item.approvalRejectionReason || item.rejectionNote || "Sin motivo",
+      at: item.lastRevisionAt || item.rejectedAt || ""
+    }];
+    events.forEach((event:any)=>{
+      const person = event.person || "Sin responsable";
+      const area = event.area || "Sin área";
+      const key = `${person}__${area}`;
+      map[key] = map[key] || {person,area,count:0,cost:0,hours:0,lastReason:"",lastAt:""};
+      map[key].count += 1;
+      map[key].cost += count ? estimate.revisionCost / count : 0;
+      map[key].hours += count ? estimate.revisionHours / count : 0;
+      if(!map[key].lastAt || String(event.at || "") >= map[key].lastAt){
+        map[key].lastAt = event.at || "";
+        map[key].lastReason = event.reason || "Sin motivo";
+      }
+    });
+  });
+  return Object.values(map).map(row=>({...row,cost:Math.round(row.cost),hours:Math.round(row.hours*10)/10})).sort((a,b)=>b.count-a.count || b.cost-a.cost).slice(0,20);
 }
 
 function operationHealth(totals:ReturnType<typeof calculateTotals>){
@@ -410,4 +617,50 @@ function Insight({title,items}:{title:string;items:string[]}){
     <h4>{title}</h4>
     {items.map((item,index)=><p key={index} style={{margin:"8px 0"}}>• {item}</p>)}
   </div>;
+}
+
+function calculateFinancials(items:ContentRequest[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[]){
+  const costs = items.map(item=>({item,...estimateRequestCost(item,rules,overrides)}));
+  const totalCost = costs.reduce((sum,row)=>sum+row.totalCost,0);
+  const productionCost = costs.reduce((sum,row)=>sum+row.productionCost,0);
+  const revisionCount = costs.reduce((sum,row)=>sum+row.revisionCount,0);
+  const revisionCost = costs.reduce((sum,row)=>sum+row.revisionCost,0);
+  const revisionHours = Math.round(costs.reduce((sum,row)=>sum+row.revisionHours,0)*10)/10;
+  const editingHours = Math.round(costs.reduce((sum,row)=>sum+row.editingHours,0)*10)/10;
+  const avgCost = items.length ? Math.round(totalCost/items.length) : 0;
+  const avgDeliveryDays = items.length ? Math.round(costs.reduce((sum,row)=>sum+row.deliveryDays,0)/items.length) : 0;
+  const today = new Date(new Date().toISOString().slice(0,10)+"T00:00:00").getTime();
+  const riskCount = costs.filter(row=>{
+    if(!row.item.publishDate)return false;
+    const publish = new Date(row.item.publishDate+"T00:00:00").getTime();
+    if(!publish)return false;
+    const diff = Math.ceil((publish-today)/(1000*60*60*24));
+    return diff < row.deliveryDays;
+  }).length;
+  return {totalCost,productionCost,revisionCount,revisionCost,revisionHours,editingHours,avgCost,avgDeliveryDays,riskCount};
+}
+
+function costBy(items:ContentRequest[], rules:OperationalContentRule[], overrides:ClientOperationalOverride[], fn:(item:ContentRequest)=>string){
+  const map:Record<string,number> = {};
+  items.forEach(item=>{
+    const key = fn(item) || "Sin dato";
+    map[key] = (map[key]||0) + estimateRequestCost(item,rules,overrides).totalCost;
+  });
+  return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,12);
+}
+
+function MoneyBarList({data,empty="Sin datos"}:{data:{label:string;value:number}[];empty?:string}){
+  const max = Math.max(...data.map(x=>x.value),1);
+  if(!data.length)return <p className="mini">{empty}</p>;
+  return <div className="bar-list">
+    {data.map(row=><div className="bar-row" key={row.label}>
+      <div className="bar-label">{row.label}</div>
+      <div className="bar-track"><div className="bar-fill" style={{width:`${Math.max(5,(row.value/max)*100)}%`}}/></div>
+      <div className="bar-value">{money(row.value)}</div>
+    </div>)}
+  </div>;
+}
+
+function money(value:number){
+  return new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(Number(value||0));
 }
