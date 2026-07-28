@@ -688,8 +688,11 @@ export default function TasksPage() {
               <div>
                 <p className="eyebrow">Tarea asignada</p>
                 <h2 style={{ margin: "0 0 4px" }}>
-                  {selected.clientName} · {selected.contentType}
+                  {taskTitleLine(selected)}
                 </h2>
+                <p className="mini">
+                  {taskSubtitleLine(selected)}
+                </p>
                 <p className="mini">
                   Trabajar: {getTaskDate(selected) || "Sin fecha"} · Límite
                   interno:{" "}
@@ -818,13 +821,14 @@ export default function TasksPage() {
                         onClick={() => setContextPost(item)}
                       >
                         <strong>
-                          {item.number}. {item.contentType} · {item.objective}
+                          {taskNumberLabel(item)} · {requestTopicLabel(item)}
                         </strong>
                         <p className="mini">
                           Publica: {item.publishDate || "Sin fecha"} ·
                           Responsable: {item.assignedTo || "Sin asignar"} ·
                           Estado: {statusLabel(item.status || "")}
                         </p>
+                        <p className="mini">{item.contentType} · {item.objective}</p>
                         <p className="mini">{item.creativeIdea}</p>
                       </button>
                     ))}
@@ -836,31 +840,7 @@ export default function TasksPage() {
                   </div>
                 </div>
 
-                <div className="detail-section">
-                  <h4>Material / referencias</h4>
-                  {(selected.materialDeliveredAt || selected.productionSpecificMaterialLink || selected.productionGeneralMaterialLinks) && (
-                    <div className="detail-copy">
-                      <strong>Material entregado por producción:</strong> {selected.materialDeliveredAt ? new Date(selected.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}
-                      {"\n"}
-                      <strong>Producción:</strong> {selected.productionName || "Sin producción ligada"}
-                      {"\n"}
-                      <strong>Link específico:</strong> {selected.productionSpecificMaterialLink || "Sin link específico"}
-                      {"\n"}
-                      <strong>Link general:</strong> {selected.productionGeneralMaterialLinks || "Sin link general"}
-                    </div>
-                  )}
-                  <FilePreviewGrid
-                    files={[
-                      ...(selected.referenceFiles || []),
-                      ...(selected.materialFiles || []),
-                      ...(selected.productionMaterialFiles || []),
-                    ]}
-                    onPreview={setPreview}
-                  />
-                  <LinkList
-                    value={`${selected.referenceLinks || ""}\n${selected.materialLinks || ""}\n${selected.productionSpecificMaterialLink || ""}\n${selected.productionGeneralMaterialLinks || ""}`}
-                  />
-                </div>
+                <TaskMaterialSection item={selected} onPreview={setPreview} />
               </div>
 
               <aside>
@@ -983,8 +963,11 @@ export default function TasksPage() {
               <div>
                 <p className="eyebrow">Post del lote / solo lectura</p>
                 <h2 style={{ margin: "0 0 4px" }}>
-                  {contextPost.clientName} · {contextPost.contentType}
+                  {taskTitleLine(contextPost)}
                 </h2>
+                <p className="mini">
+                  {taskSubtitleLine(contextPost)}
+                </p>
                 <p className="mini">
                   Responsable: {contextPost.assignedTo || "Sin asignar"} ·
                   Publica: {contextPost.publishDate || "Sin fecha"} · Estado:{" "}
@@ -1023,31 +1006,7 @@ export default function TasksPage() {
                 <strong>Copy Out:</strong> {contextPost.copyOut || "Pendiente"}
               </div>
             </div>
-            <div className="detail-section">
-              <h4>Material / referencias</h4>
-              {(contextPost.materialDeliveredAt || contextPost.productionSpecificMaterialLink || contextPost.productionGeneralMaterialLinks) && (
-                <div className="detail-copy">
-                  <strong>Material entregado por producción:</strong> {contextPost.materialDeliveredAt ? new Date(contextPost.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}
-                  {"\n"}
-                  <strong>Producción:</strong> {contextPost.productionName || "Sin producción ligada"}
-                  {"\n"}
-                  <strong>Link específico:</strong> {contextPost.productionSpecificMaterialLink || "Sin link específico"}
-                  {"\n"}
-                  <strong>Link general:</strong> {contextPost.productionGeneralMaterialLinks || "Sin link general"}
-                </div>
-              )}
-              <FilePreviewGrid
-                files={[
-                  ...(contextPost.referenceFiles || []),
-                  ...(contextPost.materialFiles || []),
-                  ...(contextPost.productionMaterialFiles || []),
-                ]}
-                onPreview={setPreview}
-              />
-              <LinkList
-                value={`${contextPost.referenceLinks || ""}\n${contextPost.materialLinks || ""}\n${contextPost.productionSpecificMaterialLink || ""}\n${contextPost.productionGeneralMaterialLinks || ""}\n${contextPost.finalPostLink || ""}`}
-              />
-            </div>
+            <TaskMaterialSection item={contextPost} onPreview={setPreview} />
           </div>
         </div>
       )}
@@ -1085,7 +1044,7 @@ function buildTaskTimeline(
   events.push({
     title: "Solicitud creada",
     date: createdAt,
-    body: `Cliente: ${item.clientName || "Sin cliente"}. Lote: ${item.batchName || "Sin lote"}. Tipo: ${item.contentType || "Sin tipo"}. Publicación: ${item.publishDate || "Sin fecha"}.`,
+    body: `Cliente: ${item.clientName || "Sin cliente"}. Tema/Publicación: ${requestTopicLabel(item)}. Lote: ${item.batchName || "Sin lote"}. Tipo: ${item.contentType || "Sin tipo"}. Publicación: ${item.publishDate || "Sin fecha"}.`,
   });
 
   if (item.batchName || item.batchId) {
@@ -1340,6 +1299,25 @@ function CapacityLoadPanel({
   );
 }
 
+function requestTopicLabel(item?: ContentRequest | null) {
+  const topic = (item?.topic || "").trim();
+  return topic || "Sin tema/publicación";
+}
+
+function taskNumberLabel(item?: ContentRequest | null) {
+  const raw = item?.lotSequenceNumber ?? item?.number;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? `Post #${parsed}` : "Post #--";
+}
+
+function taskTitleLine(item: ContentRequest) {
+  return `${item.clientName || "Sin cliente"} · ${requestTopicLabel(item)}`;
+}
+
+function taskSubtitleLine(item: ContentRequest) {
+  return `${taskNumberLabel(item)} · ${item.contentType || "Sin tipo"} · ${item.assignedTo || "Sin asignar"}`;
+}
+
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
     asignada: "Asignada",
@@ -1526,12 +1504,11 @@ function DailyTaskCard({
       onClick={() => onOpen(task)}
     >
       <div>
-        <strong>
-          {task.clientName} · {task.contentType}
+        <strong className="request-topic-title">
+          {taskTitleLine(task)}
         </strong>
         <span>
-          {task.assignedTo || "Sin responsable"} ·{" "}
-          {task.assignedArea || task.suggestedArea || "Sin área"}
+          {taskSubtitleLine(task)} · {task.assignedArea || task.suggestedArea || "Sin área"}
         </span>
       </div>
       <div className="daily-task-dates">
@@ -1657,9 +1634,9 @@ function TaskChip({
       className={`task-chip ${overdue ? "overdue" : ""} ${done ? "done" : ""} ${carried ? "carried" : ""}`}
       onClick={() => onOpen(task)}
     >
-      <strong>{task.clientName}</strong>
+      <strong>{taskTitleLine(task)}</strong>
       <span>
-        {task.contentType} · {task.assignedTo || "Sin asignar"}
+        {taskSubtitleLine(task)}
       </span>
       <span className="mini-status">
         {carried
@@ -1695,11 +1672,11 @@ function ListView({
             key={task.id}
             onClick={() => onOpen(task)}
           >
-            <strong>
-              {task.clientName} · {task.contentType}
+            <strong className="request-topic-title">
+              {taskTitleLine(task)}
             </strong>
             <span className="mini">
-              Trabajar: {getTaskDate(task) || "Sin fecha"} · Interna:{" "}
+              {taskSubtitleLine(task)} · Trabajar: {getTaskDate(task) || "Sin fecha"} · Interna:{" "}
               {task.internalDueDate || task.dueDate || "Sin fecha"} ·
               Responsable: {task.assignedTo || "Sin asignar"} · Estado:{" "}
               {isOverdue(task) ? "VENCIDA" : statusLabel(task.status || "")}
@@ -1807,7 +1784,7 @@ function EfficiencyView({
               <span className="efficiency-rank">{index + 1}</span>
               <div>
                 <strong>
-                  {task.clientName} · {task.contentType}
+                  {taskTitleLine(task)}
                 </strong>
                 <p>{reason}</p>
                 <span className="mini text-clamp-1">
@@ -1854,10 +1831,10 @@ function EfficiencyView({
               {risks.map((task) => (
                 <tr key={task.id}>
                   <td>
-                    <strong>{task.clientName}</strong>
+                    <strong>{taskTitleLine(task)}</strong>
                     <br />
                     <span className="mini text-clamp-1">
-                      {task.contentType} · {task.objective}
+                      {taskSubtitleLine(task)} · {task.objective}
                     </span>
                   </td>
                   <td>{task.assignedTo || "Sin asignar"}</td>
@@ -1919,23 +1896,77 @@ function efficiencyReason(task: ContentRequest) {
 }
 
 function splitLinks(value: string) {
-  return (value || "")
+  const links = (value || "")
     .split(/\s|,|\n/)
     .map((x) => x.trim())
     .filter((x) => x.startsWith("http://") || x.startsWith("https://"));
+  return Array.from(new Set(links));
 }
 
-function LinkList({ value }: { value: string }) {
+function LinkList({ value, emptyLabel = "Sin links." }: { value: string; emptyLabel?: string }) {
   const links = splitLinks(value);
-  if (!links.length) return <p className="mini">Sin links.</p>;
+  if (!links.length) return <p className="mini">{emptyLabel}</p>;
   return (
     <div className="link-list">
-      {links.map((link, index) => (
-        <a className="link-card" href={link} target="_blank" key={index}>
+      {links.map((link) => (
+        <a className="link-card" href={link} target="_blank" key={link}>
           <span>{link}</span>
           <small>Abrir →</small>
         </a>
       ))}
+    </div>
+  );
+}
+
+function TaskMaterialSection({
+  item,
+  onPreview,
+}: {
+  item: ContentRequest;
+  onPreview: (file: ReferenceFile) => void;
+}) {
+  const materialTrabajo = [
+    item.productionSpecificMaterialLink || "",
+    item.productionPhotoMaterialLink || "",
+    item.productionVideoMaterialLink || "",
+    item.materialLinks || "",
+  ].join("\n");
+  const archivosBase = [...(item.referenceFiles || []), ...(item.materialFiles || [])];
+  const archivosProduccion = item.productionMaterialFiles || [];
+  return (
+    <div className="detail-section">
+      <h4>Material para trabajar esta tarea</h4>
+      {(item.materialDeliveredAt || item.productionName) && (
+        <div className="detail-copy">
+          <strong>Producción:</strong> {item.productionName || "Sin producción ligada"}
+          {"\n"}
+          <strong>Material entregado:</strong> {item.materialDeliveredAt ? new Date(item.materialDeliveredAt).toLocaleString("es-MX") : "Pendiente"}
+        </div>
+      )}
+      <LinkList value={materialTrabajo} emptyLabel="Sin link específico para esta tarea." />
+
+      <h4>Referencias visuales</h4>
+      <LinkList value={item.referenceLinks || ""} emptyLabel="Sin links de referencia." />
+
+      <h4>Imágenes / archivos de la solicitud</h4>
+      <FilePreviewGrid files={archivosBase} onPreview={onPreview} />
+
+      {!!archivosProduccion.length && (
+        <>
+          <h4>Archivos entregados por producción</h4>
+          <FilePreviewGrid files={archivosProduccion} onPreview={onPreview} />
+        </>
+      )}
+
+      {!!splitLinks(item.productionGeneralMaterialLinks || "").length && (
+        <>
+          <h4>Material general de producción</h4>
+          <p className="mini">
+            Links generales del rodaje. Pueden aplicar a varias tareas; el material específico de esta tarea está arriba.
+          </p>
+          <LinkList value={item.productionGeneralMaterialLinks || ""} />
+        </>
+      )}
     </div>
   );
 }
