@@ -128,6 +128,128 @@ export default function AppShell({
   },[pathname]);
 
   useEffect(()=>{
+    if(typeof window === "undefined" || loading) return;
+
+    const targets = [
+      { selector: ".pending-fab", storageKey: "bust-pending-fab-position" },
+      { selector: ".feedback-fab", storageKey: "bust-feedback-fab-position" },
+    ];
+    const cleanups: Array<()=>void> = [];
+
+    targets.forEach(({selector,storageKey})=>{
+      const button=document.querySelector<HTMLElement>(selector);
+      if(!button) return;
+
+      button.style.touchAction="none";
+      button.style.cursor="grab";
+      button.style.userSelect="none";
+      button.title="Arrastra para mover";
+
+      function clamp(left:number,top:number){
+        if(!button) return {left,top};
+        const rect=button.getBoundingClientRect();
+        return {
+          left:Math.min(Math.max(8,left),Math.max(8,window.innerWidth-rect.width-8)),
+          top:Math.min(Math.max(8,top),Math.max(8,window.innerHeight-rect.height-8)),
+        };
+      }
+
+      function place(left:number,top:number){
+        if(!button) return {left,top};
+        const next=clamp(left,top);
+        button.style.left=`${next.left}px`;
+        button.style.top=`${next.top}px`;
+        button.style.right="auto";
+        button.style.bottom="auto";
+        return next;
+      }
+
+      try{
+        const saved=JSON.parse(window.localStorage.getItem(storageKey) || "null");
+        if(saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)){
+          place(saved.left,saved.top);
+        }
+      }catch{}
+
+      let pointerId:number|null=null;
+      let startX=0;
+      let startY=0;
+      let startLeft=0;
+      let startTop=0;
+      let dragged=false;
+      let suppressClick=false;
+
+      function onPointerDown(event:PointerEvent){
+        if(!button || event.button!==0) return;
+        const rect=button.getBoundingClientRect();
+        pointerId=event.pointerId;
+        startX=event.clientX;
+        startY=event.clientY;
+        startLeft=rect.left;
+        startTop=rect.top;
+        dragged=false;
+        button.style.cursor="grabbing";
+        try{button.setPointerCapture(event.pointerId);}catch{}
+      }
+
+      function onPointerMove(event:PointerEvent){
+        if(!button || pointerId!==event.pointerId) return;
+        const dx=event.clientX-startX;
+        const dy=event.clientY-startY;
+        if(!dragged && Math.hypot(dx,dy)<5) return;
+        dragged=true;
+        event.preventDefault();
+        place(startLeft+dx,startTop+dy);
+      }
+
+      function finishPointer(event:PointerEvent){
+        if(!button || pointerId!==event.pointerId) return;
+        try{button.releasePointerCapture(event.pointerId);}catch{}
+        pointerId=null;
+        button.style.cursor="grab";
+        if(!dragged) return;
+        const rect=button.getBoundingClientRect();
+        const next=place(rect.left,rect.top);
+        try{window.localStorage.setItem(storageKey,JSON.stringify(next));}catch{}
+        suppressClick=true;
+        window.setTimeout(()=>{suppressClick=false;},0);
+      }
+
+      function onClick(event:MouseEvent){
+        if(!suppressClick) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      }
+
+      function onResize(){
+        if(!button) return;
+        const rect=button.getBoundingClientRect();
+        const next=place(rect.left,rect.top);
+        try{window.localStorage.setItem(storageKey,JSON.stringify(next));}catch{}
+      }
+
+      button.addEventListener("pointerdown",onPointerDown);
+      button.addEventListener("pointermove",onPointerMove);
+      button.addEventListener("pointerup",finishPointer);
+      button.addEventListener("pointercancel",finishPointer);
+      button.addEventListener("click",onClick,true);
+      window.addEventListener("resize",onResize);
+
+      cleanups.push(()=>{
+        button.removeEventListener("pointerdown",onPointerDown);
+        button.removeEventListener("pointermove",onPointerMove);
+        button.removeEventListener("pointerup",finishPointer);
+        button.removeEventListener("pointercancel",finishPointer);
+        button.removeEventListener("click",onClick,true);
+        window.removeEventListener("resize",onResize);
+      });
+    });
+
+    return ()=>cleanups.forEach((cleanup)=>cleanup());
+  },[loading]);
+
+  useEffect(()=>{
     if(typeof window === "undefined") return;
 
     const initialModalValues = new WeakMap<HTMLElement,string>();

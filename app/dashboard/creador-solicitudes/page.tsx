@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import {
   useModulePermissions,
@@ -48,10 +49,55 @@ import {
   updatePlannerDraft,
   suggestOperationalDueDate,
   uploadReferenceFiles,
-  validateCreatorItem,
 } from "@/lib/data";
 
+const creatorAreas = Array.from(new Set([...areas, "Fotografía"]));
+
+function normalizeCreatorText(value = "") {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function isPhotographyOnly(item: Partial<ContentRequest>) {
+  const area = normalizeCreatorText(item.suggestedArea || "");
+  const type = normalizeCreatorText(item.contentType || "");
+  return area.includes("fotograf") || type === "foto";
+}
+
+function validateCreatorItemForCreator(
+  item: ContentRequest,
+  options: { strict?: boolean } = {},
+) {
+  const strict = options.strict !== false;
+  if (!item.clientId || !item.clientName) return "Falta cliente.";
+  if (!item.contentType) return "Falta tipo de contenido.";
+  if (!item.objective) return "Falta objetivo.";
+  if (!item.suggestedArea) return "Falta área sugerida.";
+  if (!item.publishDate) return "Falta fecha de publicación.";
+
+  if (!strict) return "";
+
+  if (!item.platforms?.length) return "Falta plataforma.";
+  if (!item.visualFormat && !item.feedPlacement) return "Falta formato visual.";
+  if (!item.topic.trim()) return "Falta tema.";
+  if (!item.creativeIdea.trim()) return "Falta idea creativa.";
+  if (!item.keyMessage.trim()) return "Falta mensaje clave.";
+  if (!isPhotographyOnly(item) && !item.copyIn.trim()) return "Falta Copy In.";
+  if (!item.cta.trim()) return "Falta CTA.";
+  if (item.requiresProduction && !item.productionNotes.trim())
+    return "Faltan notas para producción.";
+
+  if (!item.requiresProduction && !hasMaterial(item)) {
+    return "Si no requiere producción, debes marcar material disponible y agregar un link de material.";
+  }
+
+  return "";
+}
+
 export default function CreatorPage() {
+  const router = useRouter();
   const [brands, setBrands] = useState<Brand[]>([]);
   const [requests, setRequests] = useState<ContentRequest[]>([]);
   const [drafts, setDrafts] = useState<PlannerDraft[]>([]);
@@ -84,6 +130,12 @@ export default function CreatorPage() {
   const [addPanelCollapsed, setAddPanelCollapsed] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "info"; message: string } | null>(null);
   const [localRecovery, setLocalRecovery] = useState<any | null>(null);
+  const [autosaveAt, setAutosaveAt] = useState("");
+  const [leaveWarning, setLeaveWarning] = useState<{ href: string } | null>(null);
+  const savedSnapshotRef = useRef("");
+  const dirtyRef = useRef(false);
+  const bypassNavigationRef = useRef(false);
+  const latestAutosavePayloadRef = useRef<any | null>(null);
   const autosaveKey = "bust-content-os:creator-autosave:v82";
 
   const [aiCount, setAiCount] = useState(5);
@@ -104,6 +156,73 @@ export default function CreatorPage() {
     permissions.canGenerate || permissions.canCreate || permissions.canEdit;
   const canDeleteDrafts = permissions.canDelete || permissions.canEdit;
 
+  function hasMeaningfulCreatorWork() {
+    return Boolean(
+      items.length ||
+        batchDueDate ||
+        startDate ||
+        manual.creativeIdea?.trim() ||
+        manual.copyIn?.trim() ||
+        manual.topic?.trim(),
+    );
+  }
+
+  function currentCreatorSnapshot() {
+    return JSON.stringify({
+      clientId,
+      draftName,
+      batchDueDate,
+      items,
+      manual,
+      creatorMode,
+      aiCount,
+      startDate,
+      interval,
+      types,
+      goals,
+      themes,
+      must,
+      manualCount,
+    });
+  }
+
+  function currentAutosavePayload() {
+    return {
+      savedAt: new Date().toISOString(),
+      clientId,
+      draftName,
+      batchDueDate,
+      items,
+      manual,
+      creatorMode,
+      aiCount,
+      startDate,
+      interval,
+      types,
+      goals,
+      themes,
+      must,
+      manualCount,
+    };
+  }
+
+  function persistLocalAutosaveNow(updateStatus = true) {
+    if (typeof window === "undefined") return false;
+    const payload = {
+      ...(latestAutosavePayloadRef.current || currentAutosavePayload()),
+      savedAt: new Date().toISOString(),
+    };
+    try {
+      window.localStorage.setItem(autosaveKey, JSON.stringify(payload));
+      latestAutosavePayloadRef.current = payload;
+      if (updateStatus) setAutosaveAt(payload.savedAt);
+      return true;
+    } catch (error) {
+      console.warn("No se pudo guardar autosave del creador", error);
+      return false;
+    }
+  }
+
   async function load() {
     const [
       loadedBrands,
@@ -123,7 +242,7 @@ export default function CreatorPage() {
       listClientOperationalOverrides(),
       listTeamDailyCapacities(),
       getCleanupRetentionSettings(),
-    ]);
+  ]);
     setBrands(loadedBrands);
     setRequests(loadedRequests);
     setDrafts(loadedDrafts);
@@ -136,7 +255,7 @@ export default function CreatorPage() {
       setClientId(loadedBrands[0].id);
       if (!draftName)
         setDraftName(
-          `${loadedBrands[0].name} · Creado ${new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" })}`,
+        `${loadedBrands[0].name} · Creado ${new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" })}`,
         );
     }
   }
@@ -151,30 +270,120 @@ export default function CreatorPage() {
       const saved = window.localStorage.getItem(autosaveKey);
       if (!saved) return;
       const parsed = JSON.parse(saved);
-      const hasWork = Boolean((parsed.items || []).length || parsed.draftName || parsed.startDate || parsed.batchDueDate);
-      if (hasWork) setLocalRecovery(parsed);
+      const hasWork = Boolean(
+        (parsed.items || []).length ||
+          parsed.batchDueDate ||
+          parsed.startDate ||
+          parsed.manual?.creativeIdea?.trim() ||
+          parsed.manual?.copyIn?.trim() ||
+          parsed.manual?.topic?.trim(),
+      );
+      if (hasWork) {
+        setLocalRecovery(parsed);
+        setAutosaveAt(parsed.savedAt || "");
+      }
     } catch (error) {
       console.warn("No se pudo recuperar autosave del creador", error);
     }
   }, []);
 
   useEffect(() => {
+    const snapshot = currentCreatorSnapshot();
+    latestAutosavePayloadRef.current = currentAutosavePayload();
+
+    dirtyRef.current =
+      hasMeaningfulCreatorWork() && snapshot !== savedSnapshotRef.current;
+  }, [
+    clientId,
+    draftName,
+    batchDueDate,
+    items,
+    manual,
+    creatorMode,
+    aiCount,
+    startDate,
+    interval,
+    types,
+    goals,
+    themes,
+    must,
+    manualCount,
+  ]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
-    const hasWork = Boolean(items.length || draftName.trim() || batchDueDate || startDate || manual.creativeIdea?.trim() || manual.copyIn?.trim() || manual.topic?.trim());
-    if (!hasWork) return;
+    if (localRecovery) return;
+    if (!hasMeaningfulCreatorWork()) return;
+    if (currentCreatorSnapshot() === savedSnapshotRef.current) return;
+
     const timer = window.setTimeout(() => {
-      try {
-        window.localStorage.setItem(autosaveKey, JSON.stringify({
-          savedAt: new Date().toISOString(),
-          clientId, draftName, batchDueDate, items, manual, creatorMode,
-          aiCount, startDate, interval, types, goals, themes, must, manualCount
-        }));
-      } catch (error) {
-        console.warn("No se pudo guardar autosave del creador", error);
-      }
+      persistLocalAutosaveNow(true);
     }, 700);
+
     return () => window.clearTimeout(timer);
-  }, [clientId, draftName, batchDueDate, items, manual, creatorMode, aiCount, startDate, interval, types, goals, themes, must, manualCount]);
+  }, [
+    clientId,
+    draftName,
+    batchDueDate,
+    items,
+    manual,
+    creatorMode,
+    aiCount,
+    startDate,
+    interval,
+    types,
+    goals,
+    themes,
+    must,
+    manualCount,
+    localRecovery,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!dirtyRef.current) return;
+      persistLocalAutosaveNow(false);
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    function interceptNavigation(event: MouseEvent) {
+      if (bypassNavigationRef.current || !dirtyRef.current) return;
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const anchor = target.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor || anchor.target === "_blank") return;
+
+      const href = anchor.getAttribute("href") || "";
+      if (!href || href.startsWith("#")) return;
+
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (
+        url.pathname === window.location.pathname &&
+        url.search === window.location.search
+      )
+        return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      persistLocalAutosaveNow(true);
+      setLeaveWarning({ href: `${url.pathname}${url.search}${url.hash}` });
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("click", interceptNavigation, true);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("click", interceptNavigation, true);
+    };
+  }, []);
 
   useEffect(() => {
     if (!items.length) setAddPanelCollapsed(false);
@@ -265,12 +474,17 @@ export default function CreatorPage() {
   }
 
   function clearLocalAutosave() {
-    if (typeof window !== "undefined") window.localStorage.removeItem(autosaveKey);
+    if (typeof window !== "undefined")
+      window.localStorage.removeItem(autosaveKey);
+    latestAutosavePayloadRef.current = null;
+    setAutosaveAt("");
     setLocalRecovery(null);
   }
 
   function restoreLocalAutosave() {
     if (!localRecovery) return;
+    const recoveredAt =
+      localRecovery.savedAt || new Date().toISOString();
     setClientId(localRecovery.clientId || clientId);
     setDraftName(localRecovery.draftName || "");
     setBatchDueDate(localRecovery.batchDueDate || "");
@@ -282,12 +496,18 @@ export default function CreatorPage() {
     setInterval(Number(localRecovery.interval || 2));
     setTypes(localRecovery.types || "Reel,Carrusel,Post");
     setGoals(localRecovery.goals || "Ventas,Awareness,Confianza");
-    setThemes(localRecovery.themes || "Experiencia,Producto estrella,Testimonios");
+    setThemes(
+      localRecovery.themes || "Experiencia,Producto estrella,Testimonios",
+    );
     setMust(localRecovery.must || "");
     setManualCount(Number(localRecovery.manualCount || 5));
     setAddPanelCollapsed(Boolean((localRecovery.items || []).length));
+    setAutosaveAt(recoveredAt);
     setLocalRecovery(null);
-    showFeedback("Borrador local restaurado desde guardado automático.", "info");
+    showFeedback(
+      "Borrador local restaurado desde guardado automático.",
+      "info",
+    );
   }
 
   function showFeedback(message: string, type: "success" | "info" = "success") {
@@ -340,7 +560,7 @@ export default function CreatorPage() {
         ...item,
         localDraftId: item.localDraftId || createLocalDraftId(String(item.source || "item")),
         number: index + 1,
-        total,
+       total,
         status: initialOperationalStatus({ ...item, requiresProduction }),
         materialAvailable: requiresProduction ? false : item.materialAvailable,
         productionSpecificMaterialLink: requiresProduction ? "" : item.productionSpecificMaterialLink || "",
@@ -425,6 +645,9 @@ export default function CreatorPage() {
       );
       if (!ok) return;
     }
+    savedSnapshotRef.current = "";
+    dirtyRef.current = false;
+    clearLocalAutosave();
     setClientId(nextClientId);
     setCurrentDraftId("");
     setItems([]);
@@ -536,7 +759,7 @@ export default function CreatorPage() {
       personas.find((p) => p.id && p.id === item?.buyerPersonaId) ||
       personas.find((p) => p.name && p.name === item?.buyerPersonaName);
     if (!selected || !item?.buyerPersonaId) {
-      return "Sin enfoque particular. Usar el contexto general de la marca y no forzar la pieza a un buyer persona específico.";
+    return "Sin enfoque particular. Usar el contexto general de la marca y no forzar la pieza a un buyer persona específico.";
     }
     return [
       `Buyer persona elegido: ${selected.name}`,
@@ -581,7 +804,7 @@ export default function CreatorPage() {
         method: "POST",
         headers: await authJsonHeaders(),
         body: JSON.stringify({
-          clientName: client?.name || item.clientName,
+         clientName: client?.name || item.clientName,
           clientContext: clientContext(),
           marketContext: marketContext(),
           successfulContext: successfulRequestsContext(),
@@ -621,10 +844,15 @@ export default function CreatorPage() {
     }
   }
 
-  async function saveDraft() {
-    if (!canCreateRequests)
-      return permissionAlert("guardar borradores de solicitudes");
-    if (!client?.id) return alert("Selecciona cliente");
+  async function saveDraft(): Promise<boolean> {
+    if (!canCreateRequests) {
+      permissionAlert("guardar borradores de solicitudes");
+      return false;
+    }
+    if (!client?.id) {
+      alert("Selecciona cliente");
+      return false;
+    }
     const name = draftName || defaultBatchName(client.name);
     const itemsForSave = prepareItemsForPersistence(items, batchDueDate);
     setBusy(true);
@@ -649,10 +877,38 @@ export default function CreatorPage() {
         });
         setCurrentDraftId(ref.id);
       }
+      savedSnapshotRef.current = JSON.stringify({
+        clientId: client.id,
+        draftName: name,
+        batchDueDate,
+        items: itemsForSave,
+        manual,
+        creatorMode,
+        aiCount,
+        startDate,
+        interval,
+        types,
+        goals,
+        themes,
+        must,
+        manualCount,
+      });
+      dirtyRef.current = false;
+      clearLocalAutosave();
       setDraftName(name);
       setItems(itemsForSave);
       await load();
-      showFeedback(`Borrador guardado correctamente: ${name}. ${itemsForSave.length} solicitud(es) guardada(s).`);
+      showFeedback(
+        `Borrador guardado correctamente: ${name}. ${itemsForSave.length} solicitud(es) guardada(s).`,
+      );
+      return true;
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? `No se pudo guardar el borrador: ${error.message}`
+          : "No se pudo guardar el borrador.",
+      );
+      return false;
     } finally {
       publishingBatchRef.current = false;
       setPublishingBatch(false);
@@ -660,24 +916,63 @@ export default function CreatorPage() {
     }
   }
 
+  async function saveDraftAndLeave() {
+    if (!leaveWarning) return;
+    const href = leaveWarning.href;
+    const saved = await saveDraft();
+    if (!saved) return;
+    dirtyRef.current = false;
+    bypassNavigationRef.current = true;
+    setLeaveWarning(null);
+    router.push(href);
+  }
+
+  function leaveWithoutSaving() {
+    if (!leaveWarning) return;
+    const href = leaveWarning.href;
+    persistLocalAutosaveNow(false);
+    bypassNavigationRef.current = true;
+    setLeaveWarning(null);
+    router.push(href);
+  }
+
   function openDraft(draft: PlannerDraft) {
+    const loadedItems = normalizeCreatorItems(
+      (draft.items || []).map((item) => ({
+        ...item,
+        batchDueDate: draft.batchDueDate || item.batchDueDate || "",
+      })),
+    );
+    savedSnapshotRef.current = JSON.stringify({
+      clientId: draft.clientId,
+      draftName: draft.name,
+      batchDueDate: draft.batchDueDate || "",
+      items: loadedItems,
+      manual,
+      creatorMode,
+      aiCount,
+      startDate,
+      interval,
+      types,
+      goals,
+      themes,
+      must,
+      manualCount,
+    });
+    dirtyRef.current = false;
+    clearLocalAutosave();
     setCurrentDraftId(draft.id || "");
     setDraftName(draft.name);
     setBatchDueDate(draft.batchDueDate || "");
     setClientId(draft.clientId);
-    setItems(
-      normalizeCreatorItems(
-        (draft.items || []).map((item) => ({
-          ...item,
-          batchDueDate: draft.batchDueDate || item.batchDueDate || "",
-        })),
-      ),
-    );
+    setItems(loadedItems);
     setExpandedItemIndex(null);
     setAddPanelCollapsed(Boolean((draft.items || []).length));
   }
 
   function newDraft() {
+    savedSnapshotRef.current = "";
+    dirtyRef.current = false;
     clearLocalAutosave();
     setCurrentDraftId("");
     setDraftName("");
@@ -758,9 +1053,12 @@ export default function CreatorPage() {
       goalList[index % Math.max(goalList.length, 1)] || "Ventas";
     const topic =
       themeList[index % Math.max(themeList.length, 1)] || "Tema estratégico";
-    const suggestedArea = ["Reel", "TikTok", "Foto"].includes(contentType)
-      ? "Audiovisual"
-      : "Diseño";
+    const suggestedArea =
+      contentType === "Foto"
+        ? "Fotografía"
+        : ["Reel", "TikTok"].includes(contentType)
+          ? "Audiovisual"
+          : "Diseño";
     const personas = client?.buyerPersonas || [];
     const persona = personas.length ? personas[index % personas.length] : null;
     const importantDates = scheduleImportantDates || [];
@@ -818,7 +1116,7 @@ export default function CreatorPage() {
           : "No requiere producción. Usar assets de marca, material existente, stock o generación IA según el brief.",
         productionNotes: isVideoLike
           ? `Producción necesaria para capturar material del tema: ${topic}. Priorizar tomas útiles para ${format}, planos de recurso, detalles del producto/servicio y cierre visual para CTA.`
-          : "",
+         : "",
         publishDate,
       },
       "auto",
@@ -928,7 +1226,10 @@ export default function CreatorPage() {
                 ? "listo_para_revision"
                 : "pendiente",
             cta: proposal.cta || fallback.cta,
-            suggestedArea: proposal.suggestedArea || fallback.suggestedArea,
+            suggestedArea:
+              contentType === "Foto"
+                ? "Fotografía"
+                : proposal.suggestedArea || fallback.suggestedArea,
             requiresProduction,
             materialAvailable: requiresProduction
               ? false
@@ -1013,7 +1314,7 @@ export default function CreatorPage() {
         },
         "manual-blank",
       ),
-    );
+     );
     setItems(normalizeCreatorItems([...items, ...generated]));
     setExpandedItemIndex(null);
     setAddPanelCollapsed(true);
@@ -1234,7 +1535,7 @@ export default function CreatorPage() {
       return false;
     }
     const errors = list
-      .map((item, index) => ({ index, error: validateCreatorItem(item) }))
+      .map((item, index) => ({ index, error: validateCreatorItemForCreator(item) }))
       .filter((x) => x.error);
     if (errors.length) {
       alert(
@@ -1300,7 +1601,7 @@ export default function CreatorPage() {
             planningSummary.riskTone === "red" ? forceReason : "",
           forcedDateNotes:
             planningSummary.riskTone === "red" ? forceNotes : "",
-          status: x.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
+         status: x.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
         } as ContentRequest;
       },
     );
@@ -1321,7 +1622,7 @@ export default function CreatorPage() {
     setBusy(true);
     try {
       const summary = await saveRequestBatch(
-        {
+      {
           name,
           clientId: client.id,
           clientName: client.name,
@@ -1352,6 +1653,8 @@ export default function CreatorPage() {
           batchDueDate,
           items: preparedItems,
         });
+      savedSnapshotRef.current = "";
+      dirtyRef.current = false;
       setItems([]);
       setCurrentDraftId("");
       setExpandedItemIndex(null);
@@ -1513,6 +1816,30 @@ export default function CreatorPage() {
       </div>
 
       <div
+        className="mini"
+        style={{
+          margin: "-8px 0 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <strong style={{ color: "#166534" }}>
+          {autosaveAt
+            ? `✓ Autoguardado local ${new Date(autosaveAt).toLocaleTimeString("es-MX", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })}`
+            : hasMeaningfulCreatorWork()
+              ? "Autoguardado local pendiente..."
+              : "Autoguardado local listo"}
+        </strong>
+        <span>Se actualiza 700 ms después del último cambio.</span>
+      </div>
+
+      <div
         className={`operational-alert ${operationalSummary.riskTone === "red" ? "risk" : "ok"}`}
       >
         {operationalSummary.riskTone === "red"
@@ -1524,7 +1851,7 @@ export default function CreatorPage() {
         </span>
       </div>
 
-      {localRecovery && !items.length && (
+      {localRecovery && (
         <div className="inline-feedback info" style={{ alignItems: "center" }}>
           <strong>Autoguardado</strong>
           <span>
@@ -1658,7 +1985,7 @@ export default function CreatorPage() {
                         </p>
                       </div>
                       <div className="field">
-                        <label>Cada cuántos días</label>
+                        <label>Cada cuántos déas</label>
                         <input
                           type="number"
                           value={interval}
@@ -1779,7 +2106,7 @@ export default function CreatorPage() {
                             setManualField("suggestedArea", e.target.value)
                           }
                         >
-                          {areas.map((x) => (
+                          {creatorAreas.map((x) => (
                             <option key={x}>{x}</option>
                           ))}
                         </select>
@@ -1841,7 +2168,7 @@ export default function CreatorPage() {
             ) : (
               <div className="creator-accordion-list">
                 {items.map((item, index) => {
-                  const error = validateCreatorItem(item);
+                  const error = validateCreatorItemForCreator(item);
                   const expanded = expandedItemIndex === index;
                   return (
                     <div
@@ -1955,7 +2282,7 @@ export default function CreatorPage() {
                                     )
                                   }
                                 >
-                                  {areas.map((x) => (
+                                  {creatorAreas.map((x) => (
                                     <option key={x}>{x}</option>
                                   ))}
                                 </select>
@@ -2039,7 +2366,7 @@ export default function CreatorPage() {
                               </div>
                             </div>
                             <div className="field">
-                              <label>Copy In</label>
+                              <label>Copy In{isPhotographyOnly(item) ? " (opcional para Fotografía)" : ""}</label>
                               <textarea
                                 value={item.copyIn}
                                 onChange={(e) =>
@@ -2282,6 +2609,47 @@ export default function CreatorPage() {
         </aside>
       </section>
 
+      {leaveWarning && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ width: "min(540px,92vw)" }}>
+            <p className="eyebrow">Trabajo sin guardar</p>
+            <h2 style={{ marginTop: 0 }}>Tienes un lote sin guardar</h2>
+            <p>
+              Hay cambios en el Creador de Solicitudes que todavía no se han
+              guardado como borrador. El autoguardado local mantiene una copia
+              de recuperación, pero conviene guardar el borrador antes de salir.
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
+                marginTop: 18,
+              }}
+            >
+              <button
+                className="btn"
+                data-modal-dismiss
+                onClick={() => setLeaveWarning(null)}
+              >
+                Seguir editando
+              </button>
+              <button
+                className="btn blue"
+                onClick={saveDraftAndLeave}
+                disabled={busy}
+              >
+                {busy ? "Guardando..." : "Guardar borrador y salir"}
+              </button>
+              <button className="btn red" onClick={leaveWithoutSaving}>
+                Salir sin guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {preview && (
         <PreviewModal file={preview} onClose={() => setPreview(null)} />
       )}
@@ -2368,7 +2736,7 @@ function buildPlanningSummary(
     .forEach((cap) => {
       areaCapacity[cap.area] =
         (areaCapacity[cap.area] || 0) + Number(cap.dailyCapacityUnits || 5);
-    });
+   });
   const areaLoadToday: Record<string, number> = {};
   existing
     .filter(
@@ -2421,9 +2789,9 @@ function buildPlanningSummary(
       : latestClientDue;
   const productionDueLabel = hasExpiredProduction
     ? "Ya no viable"
-    : validProductionDates[0] || "";
+    : validProductionDueDates[0] || "";
   const riskReason = hasExpiredProduction
-    ? "la fecha máxima de producción ya pasó; debe usarse material disponible o mover la publicación"
+    ? "la fecha máxima de producción ya pasã; debe usarse material disponible o mover la publicación"
     : requestedTooSoon
       ? `la primera fecha viable por tiempos configurados es ${minimumViableDate}`
       : overload
@@ -2513,7 +2881,7 @@ function PlanningSummaryCard({
           <div className="planning-area-row" key={row.area}>
             <span>{row.area}</span>
             <small>
-              {row.count} pieza(s) · {row.hours} h
+             {row.count} pieza(s) · {row.hours} h
             </small>
             <b className={`capacity-dot ${row.tone}`}>
               {row.projected} / {row.capacity} piezas
@@ -2533,19 +2901,19 @@ function PlanningSummaryCard({
             desactiva producción y trabaja con material disponible.
           </span>
         </div>
-      )}
+       )}
       <p className="mini">
         {summary.riskTone === "red"
           ? `Riesgo: ${summary.riskReason}.`
           : "La fecha se calcula con horas por pieza, producción requerida y capacidad diaria en piezas."}
       </p>
-      {summary.riskTone === "red" && (
+     {summary.riskTone === "red" && (
         <div className="force-date-box">
           <h4>Forzar fecha con justificación</h4>
           <div className="field">
             <label>Motivo</label>
             <select
-              value={forceReason}
+                 value={forceReason}
               onChange={(e) => setForceReason(e.target.value)}
             >
               <option value="">Selecciona motivo...</option>
@@ -2621,7 +2989,7 @@ function RequestForm({
           value={request.suggestedArea}
           onChange={(e) => onChange("suggestedArea", e.target.value)}
         >
-          {areas.map((x) => (
+          {creatorAreas.map((x) => (
             <option key={x}>{x}</option>
           ))}
         </select>
@@ -2671,7 +3039,7 @@ function RequestForm({
         />
       </div>
       <div className="field full">
-        <label>Copy In</label>
+        <label>Copy In{isPhotographyOnly(request) ? " (opcional para Fotografía)" : ""}</label>
         <textarea
           value={request.copyIn}
           onChange={(e) => onChange("copyIn", e.target.value)}
@@ -2743,7 +3111,7 @@ function briefCompleteness(item: ContentRequest) {
     item.topic,
     item.creativeIdea && item.creativeIdea.length > 40,
     item.keyMessage,
-    item.copyIn,
+    isPhotographyOnly(item) ? true : item.copyIn,
     item.cta,
     item.platforms?.length,
     item.visualFormat || item.feedPlacement,
@@ -2764,7 +3132,7 @@ function briefMissingFields(item: ContentRequest) {
   if (!item.creativeIdea || item.creativeIdea.length < 40)
     missing.push("idea clara");
   if (!item.keyMessage) missing.push("mensaje clave");
-  if (!item.copyIn) missing.push("copy in");
+  if (!isPhotographyOnly(item) && !item.copyIn) missing.push("copy in");
   if (!item.cta) missing.push("CTA");
   if (!item.platforms?.length) missing.push("plataformas");
   if (item.requiresProduction && !item.productionNotes)
