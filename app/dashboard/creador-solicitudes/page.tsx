@@ -584,17 +584,42 @@ export default function CreatorPage() {
     });
   }
 
+  function stripUndefinedDeep<T>(value: T): T {
+    if (Array.isArray(value)) {
+      return value
+        .filter((entry) => entry !== undefined)
+        .map((entry) => stripUndefinedDeep(entry)) as T;
+    }
+
+    if (value && typeof value === "object") {
+      const prototype = Object.getPrototypeOf(value);
+      if (prototype !== Object.prototype && prototype !== null) return value;
+
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .filter(([, entry]) => entry !== undefined)
+          .map(([key, entry]) => [key, stripUndefinedDeep(entry)]),
+      ) as T;
+    }
+
+    return value;
+  }
+
   function prepareItemsForPersistence(list: ContentRequest[], dueDateValue = batchDueDate) {
-    return normalizeCreatorItems(
-      list.map((item) => ({
-        ...item,
-        id: undefined,
-        clientId: client?.id || item.clientId || "",
-        clientName: client?.name || item.clientName || "",
-        batchDueDate: dueDateValue,
-        dueDate: item.dueDate || dueDateValue,
-      })),
+    const prepared = normalizeCreatorItems(
+      list.map((item) => {
+        const { id: _id, ...itemWithoutFirestoreId } = item;
+        return {
+          ...itemWithoutFirestoreId,
+          clientId: client?.id || item.clientId || "",
+          clientName: client?.name || item.clientName || "",
+          batchDueDate: dueDateValue,
+          dueDate: item.dueDate || dueDateValue,
+        } as ContentRequest;
+      }),
     );
+
+    return stripUndefinedDeep(prepared);
   }
 
   function recoveredReuseItem(number: number, total: number, batch: RequestBatch): ContentRequest {
@@ -1002,18 +1027,23 @@ export default function CreatorPage() {
       .map((_, index) => index + 1)
       .filter((number) => !existingNumbers.has(number));
 
-    const clonedItems = activeBatchItems.map((item) => ({
-      ...item,
-      id: undefined,
-      localDraftId: createLocalDraftId("reuse"),
-      batchId: undefined,
-      batchName: undefined,
-      batchDueDate: "",
-      dueDate: "",
-      publishDate: "",
-      status: item.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
-      source: "reuse",
-    }));
+    const clonedItems = activeBatchItems.map((item) => {
+      const {
+        id: _id,
+        batchId: _batchId,
+        batchName: _batchName,
+        ...itemWithoutPreviousBatch
+      } = item;
+      return {
+        ...itemWithoutPreviousBatch,
+        localDraftId: createLocalDraftId("reuse"),
+        batchDueDate: "",
+        dueDate: "",
+        publishDate: "",
+        status: item.requiresProduction ? "pendiente_produccion" : "lista_asignacion",
+        source: "reuse",
+      } as ContentRequest;
+    });
 
     const recoveredItems = missingNumbers.map((number) =>
       recoveredReuseItem(number, declaredTotal, batch),
@@ -1416,15 +1446,15 @@ export default function CreatorPage() {
 
   function duplicateItem(index: number) {
     const source = items[index];
+    const { id: _id, ...sourceWithoutFirestoreId } = source;
     const duplicated = {
-      ...source,
-      id: undefined,
+      ...sourceWithoutFirestoreId,
       localDraftId: createLocalDraftId("duplicate"),
       source: "manual",
       number: items.length + 1,
       total: items.length + 1,
       status: initialOperationalStatus(source),
-    };
+    } as ContentRequest;
     setItems(normalizeCreatorItems([...items, duplicated]));
     setExpandedItemIndex(null);
     setAddPanelCollapsed(true);
@@ -1579,7 +1609,6 @@ export default function CreatorPage() {
         const risk = getDeliveryRisk(plan.clientDueDate, plan.deliveryDays);
         return {
           ...x,
-          id: undefined,
           number: i + 1,
           total: items.length,
           batchDueDate,
