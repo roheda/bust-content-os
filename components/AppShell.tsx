@@ -6,7 +6,6 @@ import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth
 import { auth } from "@/lib/firebase";
 import FeedbackWidget from "./FeedbackWidget";
 import PendingMentionsWidget from "./PendingMentionsWidget";
-import OperationalCollaborationTools from "./OperationalCollaborationTools";
 import { PlatformUser, canUser, findUserByAuth, listUsers, markUserLogin, moduleKeyForPath, platformModules } from "@/lib/data";
 
 const moduleIcons: Record<string, string> = {
@@ -503,7 +502,6 @@ export default function AppShell({
       <span>→</span>
     </button>
     <main className="main">
-      {canViewCurrentModule && <OperationalCollaborationTools activeUser={activeUser}/>}
       {canViewCurrentModule ? children : <section className="hero access-denied-panel">
         <div>
           <p className="eyebrow">Acceso restringido</p>
