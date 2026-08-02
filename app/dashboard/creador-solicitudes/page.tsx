@@ -16,6 +16,7 @@ import {
   TeamDailyCapacity,
   CleanupRetentionSettings,
   PlannerDraft,
+  PlatformUser,
   RequestBatch,
   ReferenceFile,
   areas,
@@ -35,6 +36,7 @@ import {
   subtractBusinessDays,
   todayDateKey,
   listUniqueBrands,
+  listUsers,
   listPlannerDrafts,
   deletePlannerDraft,
   listClientOperationalOverrides,
@@ -96,9 +98,96 @@ function validateCreatorItemForCreator(
   return "";
 }
 
+type CsvImportPreview = {
+  fileName: string;
+  totalRows: number;
+  validItems: ContentRequest[];
+  errors: string[];
+};
+
+const creatorCsvHeaders = [
+  "Numero", "Cliente", "NombreLote", "FechaPublicacion", "Tipo",
+  "Objetivo", "Area", "BuyerPersona", "Tema", "IdeaCreativa",
+  "MensajeClave", "CTA", "CopyIn", "Plataformas", "FormatoVisual",
+  "Ubicacion", "RequiereProduccion", "MaterialDisponible",
+  "LinksMaterial", "NotasProduccion", "Autor",
+];
+
+function csvEscape(value: unknown) {
+  const text = Array.isArray(value) ? value.join(" | ") : String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function detectCsvDelimiter(text: string) {
+  const firstLine = text.split(/\r?\n/, 1)[0] || "";
+  const counts = [",", ";", "\t"].map((delimiter) => ({
+    delimiter,
+    count: firstLine.split(delimiter).length - 1,
+  }));
+  return counts.sort((a, b) => b.count - a.count)[0]?.delimiter || ",";
+}
+
+function parseCsvTable(text: string) {
+  const delimiter = detectCsvDelimiter(text);
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quoted) {
+      if (character === '"' && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else if (character === '"') {
+        quoted = false;
+      } else {
+        cell += character;
+      }
+      continue;
+    }
+    if (character === '"') quoted = true;
+    else if (character === delimiter) { row.push(cell.trim()); cell = ""; }
+    else if (character === '\n') {
+      row.push(cell.trim());
+      if (row.some((value) => value !== "")) rows.push(row);
+      row = [];
+      cell = "";
+    } else if (character !== '\r') cell += character;
+  }
+  row.push(cell.trim());
+  if (row.some((value) => value !== "")) rows.push(row);
+  return rows;
+}
+
+function normalizeCsvHeader(value = "") {
+  return normalizeCreatorText(value).replace(/[^a-z0-9]/g, "");
+}
+
+function csvBoolean(value: string, fallback = false) {
+  const normalized = normalizeCreatorText(value).trim();
+  if (["si", "true", "1", "x", "yes"].includes(normalized)) return true;
+  if (["no", "false", "0"].includes(normalized)) return false;
+  return fallback;
+}
+
+function csvList(value = "") {
+  return value.split(/\s*[|;]\s*|\s*,\s*/).map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeCsvDate(value = "") {
+  const text = value.trim();
+  const iso = text.match(/^(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  const local = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})$/);
+  if (local) return `${local[3]}-${local[2].padStart(2, "0")}-${local[1].padStart(2, "0")}`;
+  return "";
+}
+
 export default function CreatorPage() {
   const router = useRouter();
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [users, setUsers] = useState<PlatformUser[]>([]);
   const [requests, setRequests] = useState<ContentRequest[]>([]);
   const [drafts, setDrafts] = useState<PlannerDraft[]>([]);
   const [batches, setBatches] = useState<RequestBatch[]>([]);
@@ -115,9 +204,14 @@ export default function CreatorPage() {
   const [draftName, setDraftName] = useState("");
   const [batchDueDate, setBatchDueDate] = useState("");
   const [clientId, setClientId] = useState("");
+  const [batchOwnerId, setBatchOwnerId] = useState("");
+  const [batchOwnerName, setBatchOwnerName] = useState("");
+  const [collaboratorIds, setCollaboratorIds] = useState<string[]>([]);
   const [items, setItems] = useState<ContentRequest[]>([]);
   const [manual, setManual] = useState<ContentRequest>(emptyRequest);
   const [preview, setPreview] = useState<ReferenceFile | null>(null);
+  const [csvPreview, setCsvPreview] = useState<CsvImportPreview | null>(null);
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [publishingBatch, setPublishingBatch] = useState(false);
   const publishingBatchRef = useRef(false);
@@ -165,6 +259,7 @@ export default function CreatorPage() {
   );
   const [manualCount, setManualCount] = useState(1);
   const permissions = useModulePermissions("creador");
+  const activeUser = permissions.activeUser;
   const canCreateRequests = permissions.canCreate || permissions.canEdit;
   const canGenerateRequests =
     permissions.canGenerate || permissions.canCreate || permissions.canEdit;
@@ -207,6 +302,9 @@ export default function CreatorPage() {
       aiKeepFormats,
       aiKeepFrequency,
       aiKeepObjectives,
+      batchOwnerId,
+      batchOwnerName,
+      collaboratorIds,
     });
   }
 
@@ -237,6 +335,9 @@ export default function CreatorPage() {
       aiKeepFormats,
       aiKeepFrequency,
       aiKeepObjectives,
+      batchOwnerId,
+      batchOwnerName,
+      collaboratorIds,
     };
   }
 
@@ -267,6 +368,7 @@ export default function CreatorPage() {
       loadedOverrides,
       loadedCapacities,
       loadedCleanupSettings,
+      loadedUsers,
     ] = await Promise.all([
       listUniqueBrands(),
       listRequests(),
@@ -276,6 +378,7 @@ export default function CreatorPage() {
       listClientOperationalOverrides(),
       listTeamDailyCapacities(),
       getCleanupRetentionSettings(),
+      listUsers().catch(() => [] as PlatformUser[]),
   ]);
     setBrands(loadedBrands);
     setRequests(loadedRequests);
@@ -285,18 +388,22 @@ export default function CreatorPage() {
     setClientOverrides(loadedOverrides);
     setTeamCapacities(loadedCapacities);
     setCleanupSettings(loadedCleanupSettings);
+    setUsers(loadedUsers.filter((user) => user.status !== "inactive"));
     if (!clientId && loadedBrands[0]?.id) {
       setClientId(loadedBrands[0].id);
-      if (!draftName)
-        setDraftName(
-        `${loadedBrands[0].name} · Creado ${new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" })}`,
-        );
+      if (!draftName) setDraftName(defaultBatchName(loadedBrands[0].name));
     }
   }
 
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!activeUser?.id) return;
+    if (!batchOwnerId) setBatchOwnerId(activeUser.id);
+    if (!batchOwnerName) setBatchOwnerName(activeUser.name || activeUser.email || "Content");
+  }, [activeUser?.id, activeUser?.name, activeUser?.email, batchOwnerId, batchOwnerName]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -352,6 +459,9 @@ export default function CreatorPage() {
     aiKeepFormats,
     aiKeepFrequency,
     aiKeepObjectives,
+    batchOwnerId,
+    batchOwnerName,
+    collaboratorIds,
   ]);
 
   useEffect(() => {
@@ -390,6 +500,9 @@ export default function CreatorPage() {
     aiKeepFormats,
     aiKeepFrequency,
     aiKeepObjectives,
+    batchOwnerId,
+    batchOwnerName,
+    collaboratorIds,
     localRecovery,
   ]);
 
@@ -585,6 +698,9 @@ export default function CreatorPage() {
     setAiKeepFormats(localRecovery.aiKeepFormats !== false);
     setAiKeepFrequency(localRecovery.aiKeepFrequency !== false);
     setAiKeepObjectives(localRecovery.aiKeepObjectives !== false);
+    setBatchOwnerId(localRecovery.batchOwnerId || activeUser?.id || "");
+    setBatchOwnerName(localRecovery.batchOwnerName || activeUser?.name || "");
+    setCollaboratorIds(Array.isArray(localRecovery.collaboratorIds) ? localRecovery.collaboratorIds : []);
     setAddPanelCollapsed(Boolean((localRecovery.items || []).length));
     setAutosaveAt(recoveredAt);
     setLocalRecovery(null);
@@ -628,8 +744,16 @@ export default function CreatorPage() {
     });
   }
 
-  function defaultBatchName(clientName = client?.name || "Cliente") {
-    return `${clientName} · Creado ${creationDateLabel()}`;
+  function monthYearLabel(dateValue = startDate) {
+    const parsed = dateValue ? new Date(`${dateValue}T12:00:00`) : new Date();
+    const safeDate = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    const month = safeDate.toLocaleDateString("es-MX", { month: "long" });
+    const capitalizedMonth = `${month.charAt(0).toUpperCase()}${month.slice(1)}`;
+    return `${capitalizedMonth} ${safeDate.getFullYear()}`;
+  }
+
+  function defaultBatchName(clientName = client?.name || "Cliente", dateValue = startDate) {
+    return `Parrilla ${clientName} ${monthYearLabel(dateValue)}`;
   }
 
   function createLocalDraftId(prefix = "draft") {
@@ -693,8 +817,17 @@ export default function CreatorPage() {
     const prepared = normalizeCreatorItems(
       list.map((item) => {
         const { id: _id, ...itemWithoutFirestoreId } = item;
+        const collaboration = collaborationMetadata();
         return {
           ...itemWithoutFirestoreId,
+          createdById: (item as any).createdById || collaboration.ownerId,
+          createdByName: (item as any).createdByName || collaboration.ownerName,
+          createdAt: (item as any).createdAt || new Date().toISOString(),
+          lastEditedById: activeUser?.id || collaboration.ownerId,
+          lastEditedByName: activeUser?.name || activeUser?.email || collaboration.ownerName,
+          lastEditedAt: new Date().toISOString(),
+          collaboratorIds: collaboration.collaboratorIds,
+          collaboratorNames: collaboration.collaboratorNames,
           clientId: client?.id || item.clientId || "",
           clientName: client?.name || item.clientName || "",
           batchDueDate: dueDateValue,
@@ -738,7 +871,7 @@ export default function CreatorPage() {
 
 
   function isAutoBatchName(name: string) {
-    return !name || / · (Lote|Creado) /.test(name);
+    return !name || / · (Lote|Creado) /.test(name) || /^Parrilla .+ [A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+ \d{4}$/.test(name);
   }
 
   function handleClientChange(nextClientId: string) {
@@ -759,6 +892,9 @@ export default function CreatorPage() {
     clearLocalAutosave();
     setClientId(nextClientId);
     setCurrentDraftId("");
+    setBatchOwnerId(activeUser?.id || "");
+    setBatchOwnerName(activeUser?.name || activeUser?.email || "");
+    setCollaboratorIds([]);
     setItems([]);
     setExpandedItemIndex(null);
     setAddPanelCollapsed(false);
@@ -767,6 +903,151 @@ export default function CreatorPage() {
     setAiReferenceBatchId("");
     setAiStartingPoint("fresh");
     if (selectedClient) setDraftName(defaultBatchName(selectedClient.name));
+  }
+
+  const eligibleCollaborators = useMemo(() =>
+    users.filter((user) => {
+      if (!user.id || user.status === "inactive" || user.id === batchOwnerId) return false;
+      const role = normalizeCreatorText(user.roleKey || "");
+      const department = normalizeCreatorText(user.department || "");
+      const title = normalizeCreatorText(user.jobTitle || "");
+      return ["content", "content_lead", "estrategia"].includes(role) || department.includes("content") || title.includes("content");
+    }).sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es")),
+  [users, batchOwnerId]);
+
+  const selectedCollaborators = useMemo(() =>
+    collaboratorIds.map((id) => users.find((user) => user.id === id)).filter(Boolean) as PlatformUser[],
+  [collaboratorIds, users]);
+
+  function collaborationMetadata() {
+    const ownerName = batchOwnerName || activeUser?.name || activeUser?.email || "Content";
+    return {
+      ownerId: batchOwnerId || activeUser?.id || "",
+      ownerName,
+      collaboratorIds,
+      collaboratorNames: selectedCollaborators.map((user) => user.name || user.email).filter(Boolean),
+      lastEditedById: activeUser?.id || "",
+      lastEditedByName: activeUser?.name || activeUser?.email || ownerName,
+      lastEditedAt: new Date().toISOString(),
+    };
+  }
+
+  function toggleCollaborator(userId: string) {
+    setCollaboratorIds((current) => current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]);
+  }
+
+  function downloadBatchCsv() {
+    const metadata = collaborationMetadata();
+    const rows: unknown[][] = items.map((item, index) => [
+      index + 1, client?.name || item.clientName || "",
+      draftName || defaultBatchName(client?.name || item.clientName || "Cliente"),
+      item.publishDate || "", item.contentType || "", item.objective || "",
+      item.suggestedArea || "", item.buyerPersonaName || "", item.topic || "",
+      item.creativeIdea || "", item.keyMessage || "", item.cta || "", item.copyIn || "",
+      item.platforms || [], item.visualFormat || "", item.feedPlacement || "",
+      item.requiresProduction ? "Sí" : "No", item.materialAvailable ? "Sí" : "No",
+      item.materialLinks || "", item.productionNotes || "",
+      (item as any).createdByName || metadata.ownerName,
+    ]);
+    const csvRows: unknown[][] = [creatorCsvHeaders, ...rows];
+    const csv = `\uFEFF${csvRows.map((row) => row.map(csvEscape).join(",")).join("\r\n")}`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const safeName = (draftName || defaultBatchName(client?.name || "Cliente")).replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ _-]/g, "").trim().replace(/\s+/g, "-");
+    anchor.href = url;
+    anchor.download = `${safeName || "parrilla"}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    showFeedback(items.length ? `Lote exportado para Excel: ${items.length} visual(es).` : "Plantilla CSV descargada para llenar en Excel.", "info");
+  }
+
+  function matchCatalogValue(value: string, catalog: string[], fallback: string) {
+    const normalized = normalizeCreatorText(value);
+    return catalog.find((option) => normalizeCreatorText(option) === normalized) || fallback;
+  }
+
+  async function previewCsvImport(file?: File | null) {
+    if (!file) return;
+    if (!client?.id) {
+      if (csvInputRef.current) csvInputRef.current.value = "";
+      return alert("Selecciona cliente antes de importar el CSV.");
+    }
+    try {
+      const text = await file.text();
+      const table = parseCsvTable(text.replace(/^\uFEFF/, ""));
+      if (table.length < 2) throw new Error("El archivo no contiene filas para importar.");
+      const headers = table[0].map(normalizeCsvHeader);
+      const indexOf = (...aliases: string[]) => headers.findIndex((header) => aliases.map(normalizeCsvHeader).includes(header));
+      const column = {
+        date: indexOf("FechaPublicacion", "Fecha", "PublishDate"),
+        type: indexOf("Tipo", "TipoContenido", "ContentType"),
+        objective: indexOf("Objetivo", "Objective"),
+        area: indexOf("Area", "AreaSugerida", "SuggestedArea"),
+        persona: indexOf("BuyerPersona", "Persona"),
+        topic: indexOf("Tema", "Topic"),
+        idea: indexOf("IdeaCreativa", "Idea", "CreativeIdea"),
+        message: indexOf("MensajeClave", "KeyMessage"),
+        cta: indexOf("CTA"), copy: indexOf("CopyIn", "Copy"),
+        platforms: indexOf("Plataformas", "Platforms"),
+        format: indexOf("FormatoVisual", "Formato", "VisualFormat"),
+        placement: indexOf("Ubicacion", "FeedPlacement"),
+        production: indexOf("RequiereProduccion", "Produccion", "RequiresProduction"),
+        material: indexOf("MaterialDisponible", "MaterialAvailable"),
+        links: indexOf("LinksMaterial", "MaterialLinks", "Links"),
+        notes: indexOf("NotasProduccion", "ProductionNotes"),
+      };
+      const valueAt = (row: string[], position: number) => position >= 0 ? String(row[position] || "").trim() : "";
+      const validItems: ContentRequest[] = [];
+      const errors: string[] = [];
+      table.slice(1).forEach((row, rowIndex) => {
+        const line = rowIndex + 2;
+        const publishDate = normalizeCsvDate(valueAt(row, column.date));
+        if (!publishDate) { errors.push(`Fila ${line}: FechaPublicacion debe usar YYYY-MM-DD o DD/MM/YYYY.`); return; }
+        const rawType = valueAt(row, column.type);
+        const rawObjective = valueAt(row, column.objective);
+        const rawArea = valueAt(row, column.area);
+        const contentType = matchCatalogValue(rawType, contentTypes, rawType ? "" : "Post");
+        const objective = matchCatalogValue(rawObjective, objectives, rawObjective ? "" : "Ventas");
+        const suggestedArea = matchCatalogValue(rawArea, creatorAreas, rawArea ? "" : "Diseño");
+        if (!contentType) { errors.push(`Fila ${line}: tipo no reconocido (${rawType}).`); return; }
+        if (!objective) { errors.push(`Fila ${line}: objetivo no reconocido (${rawObjective}).`); return; }
+        if (!suggestedArea) { errors.push(`Fila ${line}: área no reconocida (${rawArea}).`); return; }
+        const requiresProduction = csvBoolean(valueAt(row, column.production), false);
+        validItems.push(hydrate({
+          ...emptyRequest, clientId: client.id!, clientName: client.name,
+          number: items.length + validItems.length + 1, total: items.length + table.length - 1,
+          publishDate, contentType, objective, suggestedArea,
+          buyerPersonaName: valueAt(row, column.persona) || "Sin enfoque particular",
+          topic: valueAt(row, column.topic), creativeIdea: valueAt(row, column.idea),
+          keyMessage: valueAt(row, column.message), cta: valueAt(row, column.cta),
+          copyIn: valueAt(row, column.copy), copyStatus: valueAt(row, column.copy) ? "listo_para_revision" : "pendiente",
+          platforms: csvList(valueAt(row, column.platforms)), visualFormat: valueAt(row, column.format),
+          feedPlacement: valueAt(row, column.placement), requiresProduction,
+          materialAvailable: requiresProduction ? false : csvBoolean(valueAt(row, column.material), false),
+          materialLinks: valueAt(row, column.links), productionNotes: valueAt(row, column.notes), source: "csv-import",
+        }, "csv-import"));
+      });
+      setCsvPreview({ fileName: file.name, totalRows: Math.max(0, table.length - 1), validItems, errors });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "No se pudo leer el CSV.");
+    } finally {
+      if (csvInputRef.current) csvInputRef.current.value = "";
+    }
+  }
+
+  function confirmCsvImport() {
+    if (!csvPreview?.validItems.length) return;
+    const importedCount = csvPreview.validItems.length;
+    const firstNewIndex = items.length;
+    setItems(normalizeCreatorItems([...items, ...csvPreview.validItems]));
+    setExpandedItemIndex(firstNewIndex);
+    setWorkspaceView("list");
+    setAddPanelCollapsed(true);
+    setCsvPreview(null);
+    showFeedback(`${importedCount} visual(es) agregados desde CSV. Ningún contenido existente fue reemplazado.`);
   }
 
   function hydrate(req: ContentRequest, source: string): ContentRequest {
@@ -778,8 +1059,15 @@ export default function CreatorPage() {
     };
     const plan = getOperationalPlan(base, costRules, clientOverrides);
     const risk = getDeliveryRisk(plan.clientDueDate, plan.deliveryDays);
+    const metadata = collaborationMetadata();
     return {
       ...base,
+      createdById: (base as any).createdById || metadata.ownerId,
+      createdByName: (base as any).createdByName || metadata.ownerName,
+      createdAt: (base as any).createdAt || new Date().toISOString(),
+      lastEditedById: activeUser?.id || metadata.ownerId,
+      lastEditedByName: activeUser?.name || activeUser?.email || metadata.ownerName,
+      lastEditedAt: new Date().toISOString(),
       total: items.length + 1,
       number: items.length + 1,
       status: initialOperationalStatus(req),
@@ -798,7 +1086,7 @@ export default function CreatorPage() {
       operationalRisk:
         risk.tone === "bad" ? "red" : risk.tone === "mid" ? "yellow" : "green",
       source,
-    };
+    } as ContentRequest;
   }
 
   function setManualField(k: keyof ContentRequest, v: any) {
@@ -971,6 +1259,7 @@ export default function CreatorPage() {
     }
     const name = draftName || defaultBatchName(client.name);
     const itemsForSave = prepareItemsForPersistence(items, batchDueDate);
+    const collaboration = collaborationMetadata();
     setBusy(true);
     try {
       if (currentDraftId) {
@@ -981,7 +1270,8 @@ export default function CreatorPage() {
           status: "draft",
           batchDueDate,
           items: itemsForSave,
-        });
+          ...collaboration,
+        } as any);
       } else {
         const ref = await savePlannerDraft({
           name,
@@ -990,7 +1280,10 @@ export default function CreatorPage() {
           status: "draft",
           batchDueDate,
           items: itemsForSave,
-        });
+          ...collaboration,
+          createdById: collaboration.ownerId,
+          createdByName: collaboration.ownerName,
+        } as any);
         setCurrentDraftId(ref.id);
       }
       savedSnapshotRef.current = JSON.stringify({
@@ -1018,6 +1311,9 @@ export default function CreatorPage() {
         aiKeepFormats,
         aiKeepFrequency,
         aiKeepObjectives,
+        batchOwnerId: collaboration.ownerId,
+        batchOwnerName: collaboration.ownerName,
+        collaboratorIds: collaboration.collaboratorIds,
       });
       dirtyRef.current = false;
       clearLocalAutosave();
@@ -1094,6 +1390,9 @@ export default function CreatorPage() {
       aiKeepFormats,
       aiKeepFrequency,
       aiKeepObjectives,
+      batchOwnerId: (draft as any).ownerId || (draft as any).createdById || activeUser?.id || "",
+      batchOwnerName: (draft as any).ownerName || (draft as any).createdByName || activeUser?.name || "",
+      collaboratorIds: Array.isArray((draft as any).collaboratorIds) ? (draft as any).collaboratorIds : [],
     });
     dirtyRef.current = false;
     clearLocalAutosave();
@@ -1101,6 +1400,9 @@ export default function CreatorPage() {
     setDraftName(draft.name);
     setBatchDueDate(draft.batchDueDate || "");
     setClientId(draft.clientId);
+    setBatchOwnerId((draft as any).ownerId || (draft as any).createdById || activeUser?.id || "");
+    setBatchOwnerName((draft as any).ownerName || (draft as any).createdByName || activeUser?.name || "");
+    setCollaboratorIds(Array.isArray((draft as any).collaboratorIds) ? (draft as any).collaboratorIds : []);
     setItems(loadedItems);
     setExpandedItemIndex(null);
     setAddPanelCollapsed(Boolean((draft.items || []).length));
@@ -1111,8 +1413,11 @@ export default function CreatorPage() {
     dirtyRef.current = false;
     clearLocalAutosave();
     setCurrentDraftId("");
-    setDraftName("");
+    setDraftName(client?.name ? defaultBatchName(client.name) : "");
     setBatchDueDate("");
+    setBatchOwnerId(activeUser?.id || "");
+    setBatchOwnerName(activeUser?.name || activeUser?.email || "");
+    setCollaboratorIds([]);
     setItems([]);
     setManual(emptyRequest);
     setExpandedItemIndex(null);
@@ -1523,7 +1828,7 @@ export default function CreatorPage() {
 
   function updateItem(index: number, k: keyof ContentRequest, v: any) {
     const next = [...items];
-    const updated = { ...next[index], [k]: v };
+    const updated = { ...next[index], [k]: v, lastEditedById: activeUser?.id || batchOwnerId, lastEditedByName: activeUser?.name || activeUser?.email || batchOwnerName || "Content", lastEditedAt: new Date().toISOString() } as ContentRequest;
     if (
       k === "contentType" ||
       k === "publishDate" ||
@@ -1573,7 +1878,10 @@ export default function CreatorPage() {
       buyerPersonaId: persona?.id || "",
       buyerPersonaName: persona?.name || "Sin enfoque particular",
       buyerPersonaSnapshot: persona || null,
-    };
+      lastEditedById: activeUser?.id || batchOwnerId,
+      lastEditedByName: activeUser?.name || activeUser?.email || batchOwnerName || "Content",
+      lastEditedAt: new Date().toISOString(),
+    } as ContentRequest;
     setItems(normalizeCreatorItems(next));
   }
 
@@ -1594,6 +1902,12 @@ export default function CreatorPage() {
       ...sourceWithoutFirestoreId,
       localDraftId: createLocalDraftId("duplicate"),
       source: "manual",
+      createdById: activeUser?.id || batchOwnerId,
+      createdByName: activeUser?.name || activeUser?.email || batchOwnerName || "Content",
+      createdAt: new Date().toISOString(),
+      lastEditedById: activeUser?.id || batchOwnerId,
+      lastEditedByName: activeUser?.name || activeUser?.email || batchOwnerName || "Content",
+      lastEditedAt: new Date().toISOString(),
       number: items.length + 1,
       total: items.length + 1,
       status: initialOperationalStatus(source),
@@ -1741,6 +2055,7 @@ export default function CreatorPage() {
     if (busy) return alert("Espera a que termine la carga de referencias.");
     if (!client?.id) return alert("Selecciona cliente");
     const name = draftName || defaultBatchName(client.name);
+    const collaboration = collaborationMetadata();
     if (!batchDueDate) return alert("Define la fecha límite del lote.");
     const preparedItems = prepareItemsForPersistence(items, batchDueDate).map(
       (x, i) => {
@@ -1804,8 +2119,12 @@ export default function CreatorPage() {
           submissionKey,
           submissionStatus: "in_progress",
           submittedAt: new Date().toISOString(),
-          submittedBy: "Content"
-        },
+          submittedBy: activeUser?.name || activeUser?.email || collaboration.ownerName,
+          submittedById: activeUser?.id || collaboration.ownerId,
+          sentByName: activeUser?.name || activeUser?.email || collaboration.ownerName,
+          sentById: activeUser?.id || collaboration.ownerId,
+          ...collaboration,
+        } as any,
         preparedItems,
       );
       if ((summary as any).duplicate) {
@@ -1824,13 +2143,20 @@ export default function CreatorPage() {
           status: "sent_to_assignment",
           batchDueDate,
           items: preparedItems,
-        });
+          ...collaboration,
+          sentById: activeUser?.id || collaboration.ownerId,
+          sentByName: activeUser?.name || activeUser?.email || collaboration.ownerName,
+          sentAt: new Date().toISOString(),
+        } as any);
       savedSnapshotRef.current = "";
       dirtyRef.current = false;
       setItems([]);
       setCurrentDraftId("");
       setExpandedItemIndex(null);
-      setDraftName("");
+      setDraftName(client?.name ? defaultBatchName(client.name) : "");
+      setCollaboratorIds([]);
+      setBatchOwnerId(activeUser?.id || "");
+      setBatchOwnerName(activeUser?.name || activeUser?.email || "");
       setForceReason("");
       setForceNotes("");
       clearLocalAutosave();
@@ -2381,6 +2707,22 @@ export default function CreatorPage() {
           background: transparent !important;
         }
 
+        .creator-collaboration-panel, .creator-file-tools { margin-top:14px; border:1px solid rgba(52,58,64,.12); border-radius:22px; background:rgba(248,249,250,.78); padding:15px; }
+        .creator-collaboration-head, .creator-file-tools { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+        .creator-collaboration-head strong, .creator-file-tools strong { display:block; color:var(--brand-dark); }
+        .creator-collaboration-head span:not(.pill), .creator-file-tools span { display:block; margin-top:4px; color:#667085; font-size:12px; line-height:1.45; font-weight:750; }
+        .creator-collaborator-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:9px; margin-top:12px; }
+        .creator-collaborator { border:1px solid rgba(52,58,64,.12); border-radius:17px; background:#fff; padding:11px 12px; display:grid; gap:3px; text-align:left; color:var(--brand-dark); cursor:pointer; }
+        .creator-collaborator strong { font-size:13px; } .creator-collaborator span { color:#667085; font-size:11px; font-weight:750; }
+        .creator-collaborator.selected { border-color:rgba(158,252,123,.95); background:linear-gradient(135deg,rgba(158,252,123,.34),#fff); box-shadow:0 0 0 3px rgba(158,252,123,.16); }
+        .creator-file-actions { display:flex; justify-content:flex-end; gap:9px; flex-wrap:wrap; }
+        .creator-csv-preview { display:grid; gap:14px; }
+        .creator-csv-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+        .creator-csv-summary > div { border:1px solid var(--line); border-radius:16px; padding:12px; background:#fff; }
+        .creator-csv-summary span { display:block; color:#667085; font-size:10px; font-weight:900; text-transform:uppercase; }
+        .creator-csv-summary strong { display:block; margin-top:5px; font-size:22px; }
+        .creator-csv-errors { max-height:220px; overflow:auto; border:1px solid #fecaca; background:#fff1f2; border-radius:16px; padding:12px; color:#991b1b; font-size:12px; line-height:1.5; }
+
         @media (max-width: 1180px) {
           .creator-batch-fields { grid-template-columns: 1fr 1fr; }
           .creator-batch-fields .field:nth-child(2) { grid-column: 1 / -1; }
@@ -2402,6 +2744,9 @@ export default function CreatorPage() {
           }
           .creator-batch-fields { grid-template-columns: 1fr; }
           .creator-batch-fields .field:nth-child(2) { grid-column: auto; }
+          .creator-collaboration-head, .creator-file-tools { flex-direction:column; }
+          .creator-file-actions { justify-content:flex-start; }
+          .creator-csv-summary { grid-template-columns:1fr; }
           .creator-workspace-head {
             align-items: flex-start;
             flex-direction: column;
@@ -2451,6 +2796,7 @@ export default function CreatorPage() {
           </div>
           <div className="creator-batch-config-summary">
             <span className="pill">{items.length} visuales</span>
+            <span className="pill">{collaboratorIds.length} colaboradores</span>
             <span className="pill">
               {batchDueDate ? `Límite ${batchDueDate}` : "Sin fecha límite"}
             </span>
@@ -2490,7 +2836,7 @@ export default function CreatorPage() {
                 <input
                   value={draftName}
                   onChange={(event) => setDraftName(event.target.value)}
-                  placeholder="Ej. Acerofertas · Agosto semana 1"
+                  placeholder="Parrilla Cliente Mes Año"
                 />
               </div>
               <div className="field">
@@ -2506,6 +2852,38 @@ export default function CreatorPage() {
                     )
                   }
                 />
+              </div>
+            </div>
+
+            <div className="creator-collaboration-panel">
+              <div className="creator-collaboration-head">
+                <div>
+                  <p className="eyebrow">Colaboración del lote</p>
+                  <strong>Responsable: {batchOwnerName || activeUser?.name || "Content"}</strong>
+                  <span>Los colaboradores seleccionados pueden abrir y editar este mismo borrador. Se conserva el autor y el último editor de cada visual; evita editar el mismo visual al mismo tiempo en esta versión.</span>
+                </div>
+                <span className="pill">{collaboratorIds.length} colaboradores</span>
+              </div>
+              <div className="creator-collaborator-grid">
+                {eligibleCollaborators.map((user) => (
+                  <button type="button" key={user.id} className={collaboratorIds.includes(user.id || "") ? "creator-collaborator selected" : "creator-collaborator"} onClick={() => user.id && toggleCollaborator(user.id)}>
+                    <strong>{user.name}</strong>
+                    <span>{user.jobTitle || user.roleLabel || "Content Manager"}</span>
+                  </button>
+                ))}
+                {!eligibleCollaborators.length && <p className="mini">No hay otros usuarios de Content activos para agregar.</p>}
+              </div>
+            </div>
+
+            <div className="creator-file-tools">
+              <div>
+                <strong>Respaldo en Excel</strong>
+                <span>Exporta o importa CSV compatible con Excel. La importación solo agrega visuales nuevos y nunca reemplaza los existentes.</span>
+              </div>
+              <div className="creator-file-actions">
+                <button className="btn" type="button" onClick={downloadBatchCsv}>{items.length ? "Exportar lote CSV" : "Descargar plantilla CSV"}</button>
+                <button className="btn" type="button" onClick={() => csvInputRef.current?.click()} disabled={!client?.id}>Importar CSV</button>
+                <input ref={csvInputRef} type="file" accept=".csv,text/csv" hidden onChange={(event) => previewCsvImport(event.target.files?.[0])} />
               </div>
             </div>
 
@@ -2765,97 +3143,40 @@ export default function CreatorPage() {
                       </div>
                     )}
 
-                    <div className="creator-ai-direction">
-                      <div>
-                        <label className="creator-inline-label">
-                          Qué conservar
-                        </label>
-                        <div className="chip-group">
-                          <button
-                            type="button"
-                            className={aiKeepTone ? "chip-btn selected" : "chip-btn"}
-                            onClick={() => setAiKeepTone((value) => !value)}
-                          >
-                            Tono
-                          </button>
-                          <button
-                            type="button"
-                            className={aiKeepFormats ? "chip-btn selected" : "chip-btn"}
-                            onClick={() => setAiKeepFormats((value) => !value)}
-                          >
-                            Formatos
-                          </button>
-                          <button
-                            type="button"
-                            className={aiKeepFrequency ? "chip-btn selected" : "chip-btn"}
-                            onClick={() => setAiKeepFrequency((value) => !value)}
-                          >
-                            Frecuencia
-                          </button>
-                          <button
-                            type="button"
-                            className={aiKeepObjectives ? "chip-btn selected" : "chip-btn"}
-                            onClick={() => setAiKeepObjectives((value) => !value)}
-                          >
-                            Objetivos
-                          </button>
+                    {aiStartingPoint === "reference" && (
+                      <div className="creator-ai-direction">
+                        <div>
+                          <label className="creator-inline-label">Qué conservar del lote anterior</label>
+                          <div className="chip-group">
+                            <button type="button" className={aiKeepTone ? "chip-btn selected" : "chip-btn"} onClick={() => setAiKeepTone((value) => !value)}>Tono</button>
+                            <button type="button" className={aiKeepFormats ? "chip-btn selected" : "chip-btn"} onClick={() => setAiKeepFormats((value) => !value)}>Formatos</button>
+                            <button type="button" className={aiKeepFrequency ? "chip-btn selected" : "chip-btn"} onClick={() => setAiKeepFrequency((value) => !value)}>Frecuencia</button>
+                            <button type="button" className={aiKeepObjectives ? "chip-btn selected" : "chip-btn"} onClick={() => setAiKeepObjectives((value) => !value)}>Objetivos</button>
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>Qué tan diferente debe ser</label>
+                          <select value={aiCreativityLevel} onChange={(event) => setAiCreativityLevel(event.target.value as "conservative" | "balanced" | "exploratory")}>
+                            <option value="conservative">Conservador · misma estructura</option>
+                            <option value="balanced">Equilibrado · conserva y renueva</option>
+                            <option value="exploratory">Exploratorio · nuevas rutas creativas</option>
+                          </select>
+                        </div>
+                        <div className="field full">
+                          <label>Qué quieres modificar respecto al lote anterior</label>
+                          <textarea value={aiChangeNotes} onChange={(event) => setAiChangeNotes(event.target.value)} placeholder="Ej. Mantener el tono y la proporción de Reels, pero dar más peso a experiencia, producto nuevo y contenido compartible." />
                         </div>
                       </div>
+                    )}
 
+                    <div className="creator-ai-direction">
                       <div className="field">
-                        <label>Qué tan diferente debe ser</label>
-                        <select
-                          value={aiCreativityLevel}
-                          onChange={(event) =>
-                            setAiCreativityLevel(
-                              event.target.value as
-                                | "conservative"
-                                | "balanced"
-                                | "exploratory",
-                            )
-                          }
-                        >
-                          <option value="conservative">
-                            Conservador · misma estructura
-                          </option>
-                          <option value="balanced">
-                            Equilibrado · conserva y renueva
-                          </option>
-                          <option value="exploratory">
-                            Exploratorio · nuevas rutas creativas
-                          </option>
-                        </select>
-                      </div>
-
-                      <div className="field full">
-                        <label>Qué quieres modificar respecto al lote</label>
-                        <textarea
-                          value={aiChangeNotes}
-                          onChange={(event) =>
-                            setAiChangeNotes(event.target.value)
-                          }
-                          placeholder="Ej. Mantener el tono y la proporción de Reels, pero dar más peso a experiencia, producto nuevo y contenido compartible."
-                        />
+                        <label>Esta parrilla debe incluir</label>
+                        <textarea value={aiMustInclude} onChange={(event) => setAiMustInclude(event.target.value)} placeholder="Productos, campañas, promociones o temas obligatorios." />
                       </div>
                       <div className="field">
-                        <label>Debe incluir</label>
-                        <textarea
-                          value={aiMustInclude}
-                          onChange={(event) =>
-                            setAiMustInclude(event.target.value)
-                          }
-                          placeholder="Productos, campañas, promociones o temas obligatorios."
-                        />
-                      </div>
-                      <div className="field">
-                        <label>No debe incluir</label>
-                        <textarea
-                          value={aiMustAvoid}
-                          onChange={(event) =>
-                            setAiMustAvoid(event.target.value)
-                          }
-                          placeholder="Temas repetidos, productos, promociones o enfoques a evitar."
-                        />
+                        <label>Esta parrilla no debe incluir</label>
+                        <textarea value={aiMustAvoid} onChange={(event) => setAiMustAvoid(event.target.value)} placeholder="Temas repetidos, productos, promociones o enfoques a evitar." />
                       </div>
                     </div>
 
@@ -2877,7 +3198,11 @@ export default function CreatorPage() {
                         <input
                           type="date"
                           value={startDate}
-                          onChange={(event) => setStartDate(event.target.value)}
+                          onChange={(event) => {
+                            const nextDate = event.target.value;
+                            if (client?.name && isAutoBatchName(draftName)) setDraftName(defaultBatchName(client.name, nextDate));
+                            setStartDate(nextDate);
+                          }}
                         />
                         <p className="mini field-note">
                           Puede ser sábado o domingo.
@@ -2970,7 +3295,11 @@ export default function CreatorPage() {
                         <input
                           type="date"
                           value={startDate}
-                          onChange={(event) => setStartDate(event.target.value)}
+                          onChange={(event) => {
+                            const nextDate = event.target.value;
+                            if (client?.name && isAutoBatchName(draftName)) setDraftName(defaultBatchName(client.name, nextDate));
+                            setStartDate(nextDate);
+                          }}
                         />
                         <p className="mini field-note">
                           La publicación puede caer en sábado o domingo.
@@ -3175,6 +3504,9 @@ export default function CreatorPage() {
                           <span className="summary-muted">
                             {item.contentType || "Sin tipo"} ·{" "}
                             {item.objective || "Sin objetivo"}
+                          </span>
+                          <span className="summary-muted">
+                            Autor: {(item as any).createdByName || batchOwnerName || "Content"} · Última edición: {(item as any).lastEditedByName || (item as any).createdByName || batchOwnerName || "Content"}
                           </span>
                         </div>
                         <div className="summary-meta">
@@ -3566,6 +3898,12 @@ export default function CreatorPage() {
                         Límite: {draft.batchDueDate || "Sin fecha"} ·{" "}
                         {draft.status}
                       </span>
+                      <span className="mini">
+                        Responsable: {(draft as any).ownerName || (draft as any).createdByName || "Content"}
+                        {Array.isArray((draft as any).collaboratorNames) && (draft as any).collaboratorNames.length
+                          ? ` · Colaboradores: ${(draft as any).collaboratorNames.join(", ")}`
+                          : ""}
+                      </span>
                       <div className="draft-actions">
                         <button className="btn" onClick={() => openDraft(draft)}>
                           Abrir
@@ -3645,6 +3983,28 @@ export default function CreatorPage() {
           </details>
         </aside>
       </section>
+
+      {csvPreview && (
+        <div className="modal-backdrop">
+          <div className="modal-card creator-csv-preview" style={{ width: "min(760px,94vw)" }}>
+            <div><p className="eyebrow">Vista previa de importación</p><h2 style={{ margin:0 }}>{csvPreview.fileName}</h2><p className="mini">Solo se agregarán las filas válidas al final del lote actual. Los visuales existentes no se modifican.</p></div>
+            <div className="creator-csv-summary">
+              <div><span>Filas detectadas</span><strong>{csvPreview.totalRows}</strong></div>
+              <div><span>Listas para agregar</span><strong>{csvPreview.validItems.length}</strong></div>
+              <div><span>Con errores</span><strong>{csvPreview.errors.length}</strong></div>
+            </div>
+            {csvPreview.validItems.length > 0 && <div className="draft-list">
+              {csvPreview.validItems.slice(0,5).map((item,index) => <div className="draft-item" key={item.localDraftId || index}><strong>Visual {items.length + index + 1} · {item.contentType} · {item.topic || "Sin tema todavía"}</strong><span className="mini">{item.publishDate} · {item.objective} · {item.suggestedArea}</span></div>)}
+              {csvPreview.validItems.length > 5 && <p className="mini">Y {csvPreview.validItems.length - 5} visual(es) más.</p>}
+            </div>}
+            {csvPreview.errors.length > 0 && <div className="creator-csv-errors">{csvPreview.errors.slice(0,20).map((error) => <div key={error}>{error}</div>)}{csvPreview.errors.length > 20 && <div>Y {csvPreview.errors.length - 20} error(es) más.</div>}</div>}
+            <div style={{ display:"flex", justifyContent:"flex-end", gap:10, flexWrap:"wrap" }}>
+              <button className="btn" type="button" onClick={() => setCsvPreview(null)}>Cancelar</button>
+              <button className="btn dark" type="button" onClick={confirmCsvImport} disabled={!csvPreview.validItems.length}>Agregar {csvPreview.validItems.length} visual(es)</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {leaveWarning && (
         <div className="modal-backdrop">
