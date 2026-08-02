@@ -128,6 +128,20 @@ export default function CreatorPage() {
   );
   const [creatorMode, setCreatorMode] = useState<"ia" | "manual">("ia");
   const [addPanelCollapsed, setAddPanelCollapsed] = useState(false);
+  const [batchConfigCollapsed, setBatchConfigCollapsed] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState<"list" | "accordion">("list");
+  const [aiStartingPoint, setAiStartingPoint] = useState<"fresh" | "reference">("fresh");
+  const [aiReferenceBatchId, setAiReferenceBatchId] = useState("");
+  const [aiCreativityLevel, setAiCreativityLevel] = useState<
+    "conservative" | "balanced" | "exploratory"
+  >("balanced");
+  const [aiChangeNotes, setAiChangeNotes] = useState("");
+  const [aiMustInclude, setAiMustInclude] = useState("");
+  const [aiMustAvoid, setAiMustAvoid] = useState("");
+  const [aiKeepTone, setAiKeepTone] = useState(true);
+  const [aiKeepFormats, setAiKeepFormats] = useState(true);
+  const [aiKeepFrequency, setAiKeepFrequency] = useState(true);
+  const [aiKeepObjectives, setAiKeepObjectives] = useState(true);
   const [feedback, setFeedback] = useState<{ type: "success" | "info"; message: string } | null>(null);
   const [localRecovery, setLocalRecovery] = useState<any | null>(null);
   const [autosaveAt, setAutosaveAt] = useState("");
@@ -149,7 +163,7 @@ export default function CreatorPage() {
   const [must, setMust] = useState(
     "CTA claro, alineado al tono de marca y sin contenido de relleno.",
   );
-  const [manualCount, setManualCount] = useState(5);
+  const [manualCount, setManualCount] = useState(1);
   const permissions = useModulePermissions("creador");
   const canCreateRequests = permissions.canCreate || permissions.canEdit;
   const canGenerateRequests =
@@ -183,6 +197,16 @@ export default function CreatorPage() {
       themes,
       must,
       manualCount,
+      aiStartingPoint,
+      aiReferenceBatchId,
+      aiCreativityLevel,
+      aiChangeNotes,
+      aiMustInclude,
+      aiMustAvoid,
+      aiKeepTone,
+      aiKeepFormats,
+      aiKeepFrequency,
+      aiKeepObjectives,
     });
   }
 
@@ -203,6 +227,16 @@ export default function CreatorPage() {
       themes,
       must,
       manualCount,
+      aiStartingPoint,
+      aiReferenceBatchId,
+      aiCreativityLevel,
+      aiChangeNotes,
+      aiMustInclude,
+      aiMustAvoid,
+      aiKeepTone,
+      aiKeepFormats,
+      aiKeepFrequency,
+      aiKeepObjectives,
     };
   }
 
@@ -308,6 +342,16 @@ export default function CreatorPage() {
     themes,
     must,
     manualCount,
+    aiStartingPoint,
+    aiReferenceBatchId,
+    aiCreativityLevel,
+    aiChangeNotes,
+    aiMustInclude,
+    aiMustAvoid,
+    aiKeepTone,
+    aiKeepFormats,
+    aiKeepFrequency,
+    aiKeepObjectives,
   ]);
 
   useEffect(() => {
@@ -336,6 +380,16 @@ export default function CreatorPage() {
     themes,
     must,
     manualCount,
+    aiStartingPoint,
+    aiReferenceBatchId,
+    aiCreativityLevel,
+    aiChangeNotes,
+    aiMustInclude,
+    aiMustAvoid,
+    aiKeepTone,
+    aiKeepFormats,
+    aiKeepFrequency,
+    aiKeepObjectives,
     localRecovery,
   ]);
 
@@ -388,6 +442,26 @@ export default function CreatorPage() {
   useEffect(() => {
     if (!items.length) setAddPanelCollapsed(false);
   }, [items.length]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("bust-content-os:creator-workspace-view");
+    if (stored === "list" || stored === "accordion") setWorkspaceView(stored);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined")
+      window.localStorage.setItem(
+        "bust-content-os:creator-workspace-view",
+        workspaceView,
+      );
+    if (
+      workspaceView === "list" &&
+      items.length &&
+      (expandedItemIndex === null || expandedItemIndex >= items.length)
+    )
+      setExpandedItemIndex(0);
+  }, [workspaceView, items.length, expandedItemIndex]);
 
   const client = brands.find((x) => x.id === clientId) || brands[0];
   const existing = client?.id
@@ -500,7 +574,17 @@ export default function CreatorPage() {
       localRecovery.themes || "Experiencia,Producto estrella,Testimonios",
     );
     setMust(localRecovery.must || "");
-    setManualCount(Number(localRecovery.manualCount || 5));
+    setManualCount(Number(localRecovery.manualCount || 1));
+    setAiStartingPoint(localRecovery.aiStartingPoint || "fresh");
+    setAiReferenceBatchId(localRecovery.aiReferenceBatchId || "");
+    setAiCreativityLevel(localRecovery.aiCreativityLevel || "balanced");
+    setAiChangeNotes(localRecovery.aiChangeNotes || "");
+    setAiMustInclude(localRecovery.aiMustInclude || "");
+    setAiMustAvoid(localRecovery.aiMustAvoid || "");
+    setAiKeepTone(localRecovery.aiKeepTone !== false);
+    setAiKeepFormats(localRecovery.aiKeepFormats !== false);
+    setAiKeepFrequency(localRecovery.aiKeepFrequency !== false);
+    setAiKeepObjectives(localRecovery.aiKeepObjectives !== false);
     setAddPanelCollapsed(Boolean((localRecovery.items || []).length));
     setAutosaveAt(recoveredAt);
     setLocalRecovery(null);
@@ -680,6 +764,8 @@ export default function CreatorPage() {
     setAddPanelCollapsed(false);
     setManual(emptyRequest);
     setBatchDueDate("");
+    setAiReferenceBatchId("");
+    setAiStartingPoint("fresh");
     if (selectedClient) setDraftName(defaultBatchName(selectedClient.name));
   }
 
@@ -832,7 +918,12 @@ export default function CreatorPage() {
          clientName: client?.name || item.clientName,
           clientContext: clientContext(),
           marketContext: marketContext(),
-          successfulContext: successfulRequestsContext(),
+          successfulContext: [
+            successfulRequestsContext(),
+            buildAiGenerationInstructions(),
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
           buyerPersonaName: item.buyerPersonaName || "Sin enfoque particular",
           buyerPersonaContext: buyerPersonaContext(item),
           contentType: item.contentType,
@@ -917,6 +1008,16 @@ export default function CreatorPage() {
         themes,
         must,
         manualCount,
+        aiStartingPoint,
+        aiReferenceBatchId,
+        aiCreativityLevel,
+        aiChangeNotes,
+        aiMustInclude,
+        aiMustAvoid,
+        aiKeepTone,
+        aiKeepFormats,
+        aiKeepFrequency,
+        aiKeepObjectives,
       });
       dirtyRef.current = false;
       clearLocalAutosave();
@@ -983,6 +1084,16 @@ export default function CreatorPage() {
       themes,
       must,
       manualCount,
+      aiStartingPoint,
+      aiReferenceBatchId,
+      aiCreativityLevel,
+      aiChangeNotes,
+      aiMustInclude,
+      aiMustAvoid,
+      aiKeepTone,
+      aiKeepFormats,
+      aiKeepFrequency,
+      aiKeepObjectives,
     });
     dirtyRef.current = false;
     clearLocalAutosave();
@@ -1006,6 +1117,12 @@ export default function CreatorPage() {
     setManual(emptyRequest);
     setExpandedItemIndex(null);
     setAddPanelCollapsed(false);
+    setBatchConfigCollapsed(false);
+    setAiReferenceBatchId("");
+    setAiStartingPoint("fresh");
+    setAiChangeNotes("");
+    setAiMustInclude("");
+    setAiMustAvoid("");
   }
 
   function reuseBatch(batch: RequestBatch) {
@@ -1284,8 +1401,10 @@ export default function CreatorPage() {
         total: items.length + generated.length,
       }));
       setItems(normalizeCreatorItems([...items, ...numbered]));
-      setExpandedItemIndex(null);
+      setExpandedItemIndex(items.length);
+      setWorkspaceView("list");
       setAddPanelCollapsed(true);
+      setBatchConfigCollapsed(true);
       showFeedback(`${generated.length} solicitud(es) generada(s) y agregada(s) al lote.`);
     } catch (error) {
       const generated = Array.from({ length: targetCount }).map((_, i) =>
@@ -1297,8 +1416,10 @@ export default function CreatorPage() {
         total: items.length + generated.length,
       }));
       setItems(normalizeCreatorItems([...items, ...numbered]));
-      setExpandedItemIndex(null);
+      setExpandedItemIndex(items.length);
+      setWorkspaceView("list");
       setAddPanelCollapsed(true);
+      setBatchConfigCollapsed(true);
       alert(
         `No se pudo completar con IA externa. Agregué propuestas completas base para no detener el flujo. Detalle: ${error instanceof Error ? error.message : "Error desconocido"}`,
       );
@@ -1307,11 +1428,23 @@ export default function CreatorPage() {
     }
   }
 
-  function addManualBlankBatch() {
+  function addManualBlankBatch(countOverride?: number) {
     if (!client?.id) return alert("Selecciona cliente");
-    if (!startDate) return alert("Define la primera fecha de publicación.");
     if (!draftName) setDraftName(defaultBatchName(client.name));
-    const count = Math.max(1, Number(manualCount || 1));
+
+    const count = Math.max(1, Number(countOverride || manualCount || 1));
+    const lastPublishDate = items[items.length - 1]?.publishDate || "";
+    const firstNewDate =
+      countOverride && lastPublishDate
+        ? addDays(lastPublishDate, Math.max(1, interval))
+        : startDate;
+
+    if (!firstNewDate)
+      return alert(
+        "Define la primera fecha de publicación para crear el primer visual.",
+      );
+
+    const firstNewIndex = items.length;
     const generated = Array.from({ length: count }).map((_, index) =>
       hydrate(
         {
@@ -1326,7 +1459,10 @@ export default function CreatorPage() {
           visualFormat: manual.visualFormat || "",
           feedPlacement: manual.feedPlacement || "",
           suggestedArea: manual.suggestedArea || "Diseño",
-          publishDate: addDays(startDate, index * Math.max(1, interval)),
+          publishDate: addDays(
+            firstNewDate,
+            index * Math.max(1, interval),
+          ),
           topic: "",
           creativeIdea: "",
           copyIn: "",
@@ -1344,11 +1480,18 @@ export default function CreatorPage() {
         },
         "manual-blank",
       ),
-     );
+    );
+
     setItems(normalizeCreatorItems([...items, ...generated]));
-    setExpandedItemIndex(null);
+    setExpandedItemIndex(firstNewIndex);
+    setWorkspaceView("list");
     setAddPanelCollapsed(true);
-    showFeedback(`${count} solicitud(es) en blanco agregada(s) al lote.`);
+    setBatchConfigCollapsed(true);
+    showFeedback(
+      count === 1
+        ? "Visual 1 listo para trabajar."
+        : `${count} visuales en blanco agregados al lote.`,
+    );
   }
 
   function addManual() {
@@ -1757,6 +1900,128 @@ export default function CreatorPage() {
     return true;
   }).length, [batches, client?.id, cleanupSettings.hideDeletedByDefault, activeBatchIds]);
 
+  const aiReferenceBatches = useMemo(
+    () =>
+      batches
+        .filter((batch) => {
+          if (!batch.id) return false;
+          if (client?.id && batch.clientId !== client.id) return false;
+          if (
+            ["eliminada", "deleted", "archived"].includes(
+              String(batch.status || ""),
+            )
+          )
+            return false;
+          return activeBatchIds.has(batch.id);
+        })
+        .map((batch) => {
+          const batchItems = requests.filter(
+            (request) =>
+              request.batchId === batch.id && request.status !== "eliminada",
+          );
+          return {
+            ...batch,
+            activeItems: batchItems,
+            activeCount: batchItems.length,
+          };
+        })
+        .filter((batch) => batch.activeCount > 0)
+        .sort((a, b) =>
+          String((b as any).createdAt || b.batchDueDate || "").localeCompare(
+            String((a as any).createdAt || a.batchDueDate || ""),
+          ),
+        ),
+    [batches, client?.id, requests, activeBatchIds],
+  );
+
+  const aiReferenceBatch = useMemo(
+    () =>
+      aiReferenceBatches.find((batch) => batch.id === aiReferenceBatchId) ||
+      null,
+    [aiReferenceBatches, aiReferenceBatchId],
+  );
+
+  const aiReferenceItems = useMemo(
+    () => aiReferenceBatch?.activeItems || [],
+    [aiReferenceBatch],
+  );
+
+  const aiReferenceSummary = useMemo(() => {
+    const typeCounts = new Map<string, number>();
+    const objectiveCounts = new Map<string, number>();
+    aiReferenceItems.forEach((item) => {
+      const type = item.contentType || "Sin tipo";
+      const objective = item.objective || "Sin objetivo";
+      typeCounts.set(type, (typeCounts.get(type) || 0) + 1);
+      objectiveCounts.set(objective, (objectiveCounts.get(objective) || 0) + 1);
+    });
+    const topEntries = (map: Map<string, number>) =>
+      Array.from(map.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([label, count]) => `${label}: ${count}`)
+        .join(" · ");
+    return {
+      types: topEntries(typeCounts),
+      objectives: topEntries(objectiveCounts),
+      productionCount: aiReferenceItems.filter((item) => item.requiresProduction)
+        .length,
+    };
+  }, [aiReferenceItems]);
+
+  function buildAiGenerationInstructions() {
+    const base: string[] = [];
+    if (aiStartingPoint !== "reference" || !aiReferenceBatch) {
+      if (aiMustInclude.trim())
+        base.push(`Debe incluir: ${aiMustInclude.trim()}`);
+      if (aiMustAvoid.trim())
+        base.push(`No debe incluir: ${aiMustAvoid.trim()}`);
+      if (aiChangeNotes.trim())
+        base.push(`Dirección adicional: ${aiChangeNotes.trim()}`);
+      return base.join("\n");
+    }
+
+    const keep = [
+      aiKeepTone && "tono y estilo de comunicación",
+      aiKeepFormats && "proporción y mezcla de formatos",
+      aiKeepFrequency && "ritmo editorial y frecuencia",
+      aiKeepObjectives && "balance de objetivos",
+    ].filter(Boolean);
+
+    const referenceRows = aiReferenceItems.slice(0, 30).map((item, index) => ({
+      visual: index + 1,
+      type: item.contentType,
+      objective: item.objective,
+      topic: item.topic,
+      creativeIdea: item.creativeIdea,
+      keyMessage: item.keyMessage,
+      cta: item.cta,
+      platforms: item.platforms,
+      requiresProduction: item.requiresProduction,
+    }));
+
+    base.push(
+      `Usa como referencia operativa el lote "${aiReferenceBatch.name}" del mismo cliente.`,
+      `Conserva: ${keep.join(", ") || "solo el nivel general de calidad"}.`,
+      `Nivel de cambio: ${
+        aiCreativityLevel === "conservative"
+          ? "conservador; mantener estructura y renovar temas"
+          : aiCreativityLevel === "exploratory"
+            ? "exploratorio; proponer ángulos y formatos notablemente nuevos"
+            : "equilibrado; conservar lo que funciona sin repetir ideas"
+      }.`,
+      "No copies literalmente temas, ideas, mensajes, copy ni CTA del lote de referencia.",
+      `Contenido del lote de referencia: ${JSON.stringify(referenceRows)}`,
+    );
+    if (aiChangeNotes.trim())
+      base.push(`Cambios solicitados respecto al lote anterior: ${aiChangeNotes.trim()}`);
+    if (aiMustInclude.trim())
+      base.push(`La nueva parrilla debe incluir: ${aiMustInclude.trim()}`);
+    if (aiMustAvoid.trim())
+      base.push(`La nueva parrilla no debe incluir: ${aiMustAvoid.trim()}`);
+    return base.join("\n");
+  }
+
   async function hideReusableBatch(batch: RequestBatch) {
     if (!canDeleteDrafts) return permissionAlert("eliminar lote de reuso");
     if (!batch.id) return;
@@ -1769,6 +2034,393 @@ export default function CreatorPage() {
 
   return (
     <AppShell active="Creador de Solicitudes">
+      <style jsx global>{`
+        .creator-batch-config {
+          margin: 20px 0 12px;
+          border: 1px solid rgba(52, 58, 64, 0.14);
+          border-radius: 28px;
+          overflow: hidden;
+          background: rgba(248, 249, 250, 0.92);
+          box-shadow: 0 18px 48px rgba(52, 58, 64, 0.07);
+        }
+        .creator-batch-config-head {
+          width: 100%;
+          border: 0;
+          padding: 18px 20px;
+          background: linear-gradient(135deg, #ffffff, #f6fff1);
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 18px;
+          align-items: center;
+          text-align: left;
+          color: var(--brand-dark);
+          cursor: pointer;
+        }
+        .creator-batch-config-head h2 {
+          margin: 0;
+          font-size: 22px;
+          letter-spacing: -0.04em;
+        }
+        .creator-batch-config-head .eyebrow { margin-bottom: 5px; }
+        .creator-batch-config-head > div > span {
+          display: block;
+          margin-top: 5px;
+          color: #667085;
+          font-size: 12px;
+          font-weight: 800;
+        }
+        .creator-batch-config-summary {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .creator-batch-config-body {
+          padding: 18px 20px 20px;
+          border-top: 1px solid rgba(52, 58, 64, 0.1);
+          background: rgba(255, 255, 255, 0.92);
+        }
+        .creator-batch-fields {
+          display: grid;
+          grid-template-columns: minmax(190px, 0.8fr) minmax(280px, 1.35fr) minmax(210px, 0.7fr);
+          gap: 14px;
+          align-items: end;
+        }
+        .creator-batch-fields .field { margin: 0; }
+        .creator-batch-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 16px;
+        }
+        .creator-batch-config.collapsed .creator-batch-config-head {
+          padding-block: 14px;
+        }
+
+        .creator-ai-start {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+        .creator-ai-start button {
+          border: 1px solid rgba(52, 58, 64, 0.14);
+          border-radius: 20px;
+          background: #fff;
+          padding: 14px;
+          text-align: left;
+          color: var(--brand-dark);
+          font-weight: 950;
+          cursor: pointer;
+          display: grid;
+          gap: 5px;
+        }
+        .creator-ai-start button small {
+          color: #667085;
+          font-size: 12px;
+          line-height: 1.4;
+          font-weight: 750;
+        }
+        .creator-ai-start button.active {
+          border-color: rgba(158, 252, 123, 0.95);
+          background: linear-gradient(135deg, rgba(158, 252, 123, 0.28), #fff);
+          box-shadow: 0 0 0 3px rgba(158, 252, 123, 0.18);
+        }
+        .creator-ai-reference,
+        .creator-ai-direction {
+          border: 1px solid rgba(52, 58, 64, 0.12);
+          border-radius: 22px;
+          background: rgba(248, 249, 250, 0.82);
+          padding: 15px;
+        }
+        .creator-ai-reference-summary {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 10px;
+        }
+        .creator-ai-reference-summary > div {
+          border: 1px solid rgba(52, 58, 64, 0.1);
+          border-radius: 16px;
+          background: #fff;
+          padding: 11px;
+          min-width: 0;
+        }
+        .creator-ai-reference-summary span {
+          display: block;
+          color: #667085;
+          font-size: 10px;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+        .creator-ai-reference-summary strong {
+          display: block;
+          margin-top: 5px;
+          font-size: 12px;
+          line-height: 1.35;
+        }
+        .creator-ai-direction {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+        .creator-inline-label {
+          display: block;
+          margin-bottom: 9px;
+          color: #667085;
+          font-size: 11px;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.12em;
+        }
+        .creator-ai-direction .full { grid-column: 1 / -1; }
+        .creator-primary-action {
+          width: 100%;
+          min-height: 50px;
+        }
+
+        .creator-workspace-card { padding: 0 !important; overflow: hidden; }
+        .creator-workspace-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 17px 18px;
+          border-bottom: 1px solid rgba(52, 58, 64, 0.1);
+          background: linear-gradient(180deg, #fff, #f8fafc);
+        }
+        .creator-workspace-head h3 { margin: 0; }
+        .creator-workspace-head .eyebrow { margin-bottom: 4px; }
+        .creator-workspace-head-actions {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .creator-view-switch {
+          display: flex;
+          gap: 5px;
+          padding: 4px;
+          border: 1px solid rgba(52, 58, 64, 0.14);
+          border-radius: 999px;
+          background: #f3f4f6;
+        }
+        .creator-view-switch button {
+          border: 0;
+          border-radius: 999px;
+          background: transparent;
+          padding: 9px 12px;
+          color: #667085;
+          font-size: 12px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+        .creator-view-switch button.active {
+          background: var(--brand-dark);
+          color: #fff;
+          box-shadow: 0 8px 18px rgba(52, 58, 64, 0.14);
+        }
+        .creator-empty-workspace { margin: 18px; }
+        .creator-workspace {
+          display: grid;
+          min-height: 520px;
+        }
+        .creator-workspace-list {
+          grid-template-columns: 260px minmax(0, 1fr);
+        }
+        .creator-workspace-accordion {
+          grid-template-columns: 1fr;
+        }
+        .creator-visual-list {
+          min-width: 0;
+          padding: 12px;
+          border-right: 1px solid rgba(52, 58, 64, 0.1);
+          background: rgba(237, 234, 230, 0.48);
+          max-height: calc(100vh - 210px);
+          overflow-y: auto;
+        }
+        .creator-visual-list-head {
+          display: flex;
+          justify-content: space-between;
+          gap: 8px;
+          align-items: center;
+          padding: 4px 4px 10px;
+        }
+        .creator-visual-list-item {
+          width: 100%;
+          border: 1px solid rgba(52, 58, 64, 0.1);
+          border-radius: 17px;
+          background: #fff;
+          padding: 10px;
+          display: grid;
+          grid-template-columns: 34px minmax(0, 1fr) 26px;
+          gap: 9px;
+          align-items: center;
+          text-align: left;
+          color: var(--brand-dark);
+          cursor: pointer;
+          margin-bottom: 8px;
+        }
+        .creator-visual-list-item.active {
+          border-color: rgba(158, 252, 123, 0.95);
+          background: linear-gradient(135deg, rgba(158, 252, 123, 0.3), #fff);
+          box-shadow: 0 10px 24px rgba(52, 58, 64, 0.08);
+        }
+        .creator-visual-number {
+          width: 31px;
+          height: 31px;
+          border-radius: 11px;
+          display: grid;
+          place-items: center;
+          background: var(--brand-dark);
+          color: #fff;
+          font-size: 12px;
+          font-weight: 950;
+        }
+        .creator-visual-list-copy {
+          min-width: 0;
+          display: grid;
+          gap: 3px;
+        }
+        .creator-visual-list-copy strong,
+        .creator-visual-list-copy small {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .creator-visual-list-copy strong { font-size: 12.5px; }
+        .creator-visual-list-copy small {
+          color: #667085;
+          font-size: 10.5px;
+          font-weight: 750;
+        }
+        .creator-visual-status {
+          width: 24px;
+          height: 24px;
+          display: grid;
+          place-items: center;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 950;
+        }
+        .creator-visual-status.ready {
+          background: rgba(158, 252, 123, 0.4);
+          color: #315425;
+        }
+        .creator-visual-status.pending {
+          background: #fff1f2;
+          color: #b42318;
+        }
+        .creator-workspace-editor {
+          min-width: 0;
+          padding: 14px;
+          overflow: visible;
+        }
+        .creator-workspace-editor .creator-accordion-list { margin-top: 0; }
+        .creator-workspace-list .creator-accordion-card {
+          box-shadow: none;
+          border-radius: 20px;
+        }
+        .creator-workspace-list .creator-accordion-summary {
+          cursor: default;
+        }
+
+        .creator-sidebar-section {
+          border: 1px solid rgba(52, 58, 64, 0.13);
+          border-radius: 22px;
+          background: rgba(248, 249, 250, 0.9);
+          overflow: hidden;
+          box-shadow: 0 12px 32px rgba(52, 58, 64, 0.06);
+        }
+        .creator-sidebar-section > summary {
+          list-style: none;
+          cursor: pointer;
+          padding: 13px 14px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          color: var(--brand-dark);
+          font-size: 13px;
+          font-weight: 950;
+          background: linear-gradient(180deg, #fff, #f8fafc);
+        }
+        .creator-sidebar-section > summary::-webkit-details-marker {
+          display: none;
+        }
+        .creator-sidebar-section > summary::after {
+          content: "＋";
+          color: #667085;
+          font-size: 16px;
+        }
+        .creator-sidebar-section[open] > summary::after { content: "−"; }
+        .creator-sidebar-section > summary small {
+          margin-left: auto;
+          color: #667085;
+          font-size: 10px;
+          font-weight: 850;
+        }
+        .creator-sidebar-section-body {
+          border-top: 1px solid rgba(52, 58, 64, 0.09);
+          padding: 10px;
+          background: rgba(255, 255, 255, 0.74);
+        }
+        .creator-sidebar-section-body > .card {
+          padding: 12px !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          background: transparent !important;
+        }
+        .creator-sidebar-section-body .planning-summary-card {
+          padding: 12px !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          background: transparent !important;
+        }
+
+        @media (max-width: 1180px) {
+          .creator-batch-fields { grid-template-columns: 1fr 1fr; }
+          .creator-batch-fields .field:nth-child(2) { grid-column: 1 / -1; }
+          .creator-ai-reference-summary { grid-template-columns: 1fr 1fr; }
+          .creator-workspace-list { grid-template-columns: 220px minmax(0, 1fr); }
+          .creator-visual-list { max-height: none; }
+        }
+        @media (max-width: 860px) {
+          .creator-batch-config-head,
+          .creator-ai-start,
+          .creator-ai-direction,
+          .creator-workspace-list {
+            grid-template-columns: 1fr;
+          }
+          .creator-batch-config-summary,
+          .creator-batch-actions,
+          .creator-workspace-head-actions {
+            justify-content: flex-start;
+          }
+          .creator-batch-fields { grid-template-columns: 1fr; }
+          .creator-batch-fields .field:nth-child(2) { grid-column: auto; }
+          .creator-workspace-head {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+          .creator-visual-list {
+            border-right: 0;
+            border-bottom: 1px solid rgba(52, 58, 64, 0.1);
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+          }
+          .creator-visual-list-head { min-width: 130px; }
+          .creator-visual-list-item {
+            min-width: 220px;
+            margin-bottom: 0;
+          }
+          .creator-ai-reference-summary { grid-template-columns: 1fr; }
+        }
+      `}</style>
       <div className="page-title">
         <p className="eyebrow">Content</p>
         <h1>Creador de Solicitudes</h1>
@@ -1778,71 +2430,121 @@ export default function CreatorPage() {
         </p>
       </div>
 
-      <section className="grid kpis">
-        {[
-          ["Cliente", client?.name || "Sin cliente"],
-          ["En lote", String(items.length)],
-          ["Costo solicitud", money(operationalSummary.totalCost)],
-          ["Piezas", `${operationalSummary.totalPieces} contenidos`],
-          ["Fecha viable", operationalSummary.viableDate || "Sin fecha"],
-          ["Semáforo", operationalSummary.riskLabel],
-        ].map(([a, b]) => (
-          <div className="kpi" key={a}>
-            <span>{a}</span>
-            <strong>{b}</strong>
+      <section
+        className={`creator-batch-config ${batchConfigCollapsed ? "collapsed" : "open"}`}
+      >
+        <button
+          type="button"
+          className="creator-batch-config-head"
+          onClick={() => setBatchConfigCollapsed((value) => !value)}
+          aria-expanded={!batchConfigCollapsed}
+        >
+          <div>
+            <p className="eyebrow">Configuración del lote</p>
+            <h2>{draftName || "Nuevo lote de contenido"}</h2>
+            <span>
+              {client?.name || "Sin cliente"} ·{" "}
+              {currentDraftId
+                ? `Borrador #${currentDraftId.slice(0, 7).toUpperCase()}`
+                : "Sin guardar todavía"}
+            </span>
           </div>
-        ))}
-      </section>
+          <div className="creator-batch-config-summary">
+            <span className="pill">{items.length} visuales</span>
+            <span className="pill">
+              {batchDueDate ? `Límite ${batchDueDate}` : "Sin fecha límite"}
+            </span>
+            <span
+              className={
+                operationalSummary.riskTone === "red"
+                  ? "pill red"
+                  : "pill green"
+              }
+            >
+              {operationalSummary.riskLabel}
+            </span>
+            <span className="summary-chevron">
+              {batchConfigCollapsed ? "Configurar" : "Minimizar"}
+            </span>
+          </div>
+        </button>
 
-      <div className="batch-bar">
-        <div className="field" style={{ margin: 0, flex: 1 }}>
-          <label>Nombre del lote</label>
-          <input
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
-            placeholder="Ej. Cliente · Semana 2 julio"
-          />
-        </div>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Fecha límite del lote</label>
-          <input
-            type="date"
-            value={batchDueDate}
-            onChange={(e) =>
-              setBusinessDate(
-                setBatchDueDate,
-                e.target.value,
-                "fecha límite del lote",
-              )
-            }
-          />
-        </div>
-        <button
-          className="btn blue"
-          onClick={saveDraft}
-          disabled={!canCreateRequests}
-        >
-          Guardar borrador
-        </button>
-        <button
-          className="btn dark"
-          onClick={publishBatch}
-          disabled={busy || publishingBatch || !canCreateRequests}
-        >
-          {publishingBatch
-            ? "Enviando lote..."
-            : busy
-              ? "Cargando referencias..."
-              : "Aprobar lote y enviar a Asignación"}
-        </button>
-        <button
-          className="btn red"
-          onClick={newDraft}
-          disabled={!canCreateRequests}
-        >
-          Nuevo
-        </button>
-      </div>
+        {!batchConfigCollapsed && (
+          <div className="creator-batch-config-body">
+            <div className="creator-batch-fields">
+              <div className="field">
+                <label>Cliente</label>
+                <select
+                  value={clientId}
+                  onChange={(event) => handleClientChange(event.target.value)}
+                >
+                  {brands.map((brand) => (
+                    <option key={brand.id} value={brand.id}>
+                      {brand.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Nombre del lote</label>
+                <input
+                  value={draftName}
+                  onChange={(event) => setDraftName(event.target.value)}
+                  placeholder="Ej. Acerofertas · Agosto semana 1"
+                />
+              </div>
+              <div className="field">
+                <label>Fecha límite operativa</label>
+                <input
+                  type="date"
+                  value={batchDueDate}
+                  onChange={(event) =>
+                    setBusinessDate(
+                      setBatchDueDate,
+                      event.target.value,
+                      "fecha límite del lote",
+                    )
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="creator-batch-actions">
+              <button
+                className="btn"
+                type="button"
+                onClick={saveDraft}
+                disabled={busy || !canCreateRequests}
+              >
+                {busy && !publishingBatch ? "Guardando..." : "Guardar borrador"}
+              </button>
+              <button
+                className="btn dark"
+                type="button"
+                onClick={publishBatch}
+                disabled={
+                  busy ||
+                  publishingBatch ||
+                  !canCreateRequests ||
+                  !items.length
+                }
+              >
+                {publishingBatch
+                  ? "Enviando lote..."
+                  : "Revisar y enviar a Asignación"}
+              </button>
+              <button
+                className="btn red"
+                type="button"
+                onClick={newDraft}
+                disabled={busy || !canCreateRequests}
+              >
+                Nuevo lote
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
       <div
         className="mini"
@@ -1949,20 +2651,6 @@ export default function CreatorPage() {
             </button>
             {!(addPanelCollapsed && items.length) && (
               <div className="creator-add-body">
-                <div className="field">
-                  <label>Cliente</label>
-                  <select
-                    value={clientId}
-                    onChange={(e) => handleClientChange(e.target.value)}
-                  >
-                    {brands.map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 <div
                   className="creator-mode-tabs"
                   role="tablist"
@@ -1987,97 +2675,200 @@ export default function CreatorPage() {
                 {creatorMode === "ia" ? (
                   <div className="creator-mode-panel">
                     <div className="mode-intro">
-                      <strong>Modo IA</strong>
+                      <strong>Modo IA guiado</strong>
                       <span>
-                        Genera propuestas automáticamente con base en el brief,
-                        reglas del cliente y configuración del lote.
+                        Crea desde cero o toma como referencia una parrilla
+                        anterior del mismo cliente sin repetir contenidos.
                       </span>
                     </div>
-                    <div className="form-grid">
-                      <div className="field">
-                        <label>Cuántas</label>
-                        <input
-                          type="number"
-                          value={aiCount}
-                          onChange={(e) => setAiCount(Number(e.target.value))}
-                        />
+
+                    <div className="creator-ai-start">
+                      <button
+                        type="button"
+                        className={aiStartingPoint === "fresh" ? "active" : ""}
+                        onClick={() => {
+                          setAiStartingPoint("fresh");
+                          setAiReferenceBatchId("");
+                        }}
+                      >
+                        Crear desde cero
+                        <small>Brand Brain, buyer personas y reglas actuales.</small>
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          aiStartingPoint === "reference" ? "active" : ""
+                        }
+                        onClick={() => setAiStartingPoint("reference")}
+                      >
+                        Inspirarme en un lote anterior
+                        <small>
+                          Conserva estructura y estilo, pero genera ideas nuevas.
+                        </small>
+                      </button>
+                    </div>
+
+                    {aiStartingPoint === "reference" && (
+                      <div className="creator-ai-reference">
+                        <div className="field">
+                          <label>Parrilla de referencia</label>
+                          <select
+                            value={aiReferenceBatchId}
+                            onChange={(event) =>
+                              setAiReferenceBatchId(event.target.value)
+                            }
+                          >
+                            <option value="">Seleccionar lote realizado</option>
+                            {aiReferenceBatches.map((batch) => (
+                              <option key={batch.id} value={batch.id}>
+                                {batch.name} · {batch.activeCount} visuales
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {aiReferenceBatch && (
+                          <div className="creator-ai-reference-summary">
+                            <div>
+                              <span>Lote elegido</span>
+                              <strong>{aiReferenceBatch.name}</strong>
+                            </div>
+                            <div>
+                              <span>Formatos</span>
+                              <strong>
+                                {aiReferenceSummary.types || "Sin información"}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Objetivos</span>
+                              <strong>
+                                {aiReferenceSummary.objectives ||
+                                  "Sin información"}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Producción</span>
+                              <strong>
+                                {aiReferenceSummary.productionCount} de{" "}
+                                {aiReferenceItems.length} visuales
+                              </strong>
+                            </div>
+                          </div>
+                        )}
+
+                        {!aiReferenceBatches.length && (
+                          <p className="mini">
+                            Este cliente todavía no tiene lotes realizados
+                            disponibles como referencia.
+                          </p>
+                        )}
                       </div>
-                      <div className="field">
-                        <label>Primera fecha de publicación</label>
-                        <input
-                          type="date"
-                          value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
-                        />
-                        <p className="mini field-note">
-                          Puede ser sábado o domingo.
-                        </p>
+                    )}
+
+                    <div className="creator-ai-direction">
+                      <div>
+                        <label className="creator-inline-label">
+                          Qué conservar
+                        </label>
+                        <div className="chip-group">
+                          <button
+                            type="button"
+                            className={aiKeepTone ? "chip-btn selected" : "chip-btn"}
+                            onClick={() => setAiKeepTone((value) => !value)}
+                          >
+                            Tono
+                          </button>
+                          <button
+                            type="button"
+                            className={aiKeepFormats ? "chip-btn selected" : "chip-btn"}
+                            onClick={() => setAiKeepFormats((value) => !value)}
+                          >
+                            Formatos
+                          </button>
+                          <button
+                            type="button"
+                            className={aiKeepFrequency ? "chip-btn selected" : "chip-btn"}
+                            onClick={() => setAiKeepFrequency((value) => !value)}
+                          >
+                            Frecuencia
+                          </button>
+                          <button
+                            type="button"
+                            className={aiKeepObjectives ? "chip-btn selected" : "chip-btn"}
+                            onClick={() => setAiKeepObjectives((value) => !value)}
+                          >
+                            Objetivos
+                          </button>
+                        </div>
                       </div>
+
                       <div className="field">
-                        <label>Cada cuántos déas</label>
-                        <input
-                          type="number"
-                          value={interval}
-                          onChange={(e) => setInterval(Number(e.target.value))}
-                        />
+                        <label>Qué tan diferente debe ser</label>
+                        <select
+                          value={aiCreativityLevel}
+                          onChange={(event) =>
+                            setAiCreativityLevel(
+                              event.target.value as
+                                | "conservative"
+                                | "balanced"
+                                | "exploratory",
+                            )
+                          }
+                        >
+                          <option value="conservative">
+                            Conservador · misma estructura
+                          </option>
+                          <option value="balanced">
+                            Equilibrado · conserva y renueva
+                          </option>
+                          <option value="exploratory">
+                            Exploratorio · nuevas rutas creativas
+                          </option>
+                        </select>
                       </div>
-                      <div className="field">
-                        <label>Tipos</label>
-                        <input
-                          value={types}
-                          onChange={(e) => setTypes(e.target.value)}
-                        />
-                      </div>
-                      <div className="field">
-                        <label>Objetivos</label>
-                        <input
-                          value={goals}
-                          onChange={(e) => setGoals(e.target.value)}
-                        />
-                      </div>
-                      <div className="field">
-                        <label>Temas</label>
-                        <input
-                          value={themes}
-                          onChange={(e) => setThemes(e.target.value)}
-                        />
-                      </div>
+
                       <div className="field full">
-                        <label>Factores obligatorios</label>
+                        <label>Qué quieres modificar respecto al lote</label>
                         <textarea
-                          value={must}
-                          onChange={(e) => setMust(e.target.value)}
+                          value={aiChangeNotes}
+                          onChange={(event) =>
+                            setAiChangeNotes(event.target.value)
+                          }
+                          placeholder="Ej. Mantener el tono y la proporción de Reels, pero dar más peso a experiencia, producto nuevo y contenido compartible."
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Debe incluir</label>
+                        <textarea
+                          value={aiMustInclude}
+                          onChange={(event) =>
+                            setAiMustInclude(event.target.value)
+                          }
+                          placeholder="Productos, campañas, promociones o temas obligatorios."
+                        />
+                      </div>
+                      <div className="field">
+                        <label>No debe incluir</label>
+                        <textarea
+                          value={aiMustAvoid}
+                          onChange={(event) =>
+                            setAiMustAvoid(event.target.value)
+                          }
+                          placeholder="Temas repetidos, productos, promociones o enfoques a evitar."
                         />
                       </div>
                     </div>
-                    <button
-                      className="btn blue"
-                      onClick={generateAI}
-                      disabled={busy || !canGenerateRequests}
-                    >
-                      {busy
-                        ? "Generando publicaciones..."
-                        : "Generar publicaciones completas con IA"}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="creator-mode-panel">
-                    <div className="mode-intro">
-                      <strong>Modo Manual</strong>
-                      <span>
-                        Crea espacios en blanco por cantidad, fecha e intervalo.
-                        No usa IA ni prellena copy o idea.
-                      </span>
-                    </div>
+
                     <div className="form-grid">
                       <div className="field">
-                        <label>Cuántas solicitudes</label>
+                        <label>Cuántos visuales</label>
                         <input
                           type="number"
                           min="1"
-                          value={manualCount}
-                          onChange={(e) =>
-                            setManualCount(Number(e.target.value))
+                          max="30"
+                          value={aiCount}
+                          onChange={(event) =>
+                            setAiCount(Number(event.target.value))
                           }
                         />
                       </div>
@@ -2086,10 +2877,10 @@ export default function CreatorPage() {
                         <input
                           type="date"
                           value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
+                          onChange={(event) => setStartDate(event.target.value)}
                         />
                         <p className="mini field-note">
-                          La publicación sí puede caer en sábado o domingo.
+                          Puede ser sábado o domingo.
                         </p>
                       </div>
                       <div className="field">
@@ -2098,19 +2889,114 @@ export default function CreatorPage() {
                           type="number"
                           min="1"
                           value={interval}
-                          onChange={(e) => setInterval(Number(e.target.value))}
+                          onChange={(event) =>
+                            setInterval(Number(event.target.value))
+                          }
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Tipos permitidos</label>
+                        <input
+                          value={types}
+                          onChange={(event) => setTypes(event.target.value)}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Objetivos</label>
+                        <input
+                          value={goals}
+                          onChange={(event) => setGoals(event.target.value)}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Temas base</label>
+                        <input
+                          value={themes}
+                          onChange={(event) => setThemes(event.target.value)}
+                        />
+                      </div>
+                      <div className="field full">
+                        <label>Reglas generales obligatorias</label>
+                        <textarea
+                          value={must}
+                          onChange={(event) => setMust(event.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn dark creator-primary-action"
+                      onClick={generateAI}
+                      disabled={
+                        busy ||
+                        !canGenerateRequests ||
+                        (aiStartingPoint === "reference" &&
+                          !aiReferenceBatchId)
+                      }
+                    >
+                      {busy
+                        ? "Generando propuestas..."
+                        : aiStartingPoint === "reference"
+                          ? "Generar nueva parrilla con esta referencia"
+                          : "Generar propuestas con IA"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="creator-mode-panel">
+                    <div className="mode-intro">
+                      <strong>Modo Manual</strong>
+                      <span>
+                        Primero crea la cantidad de visuales. Después trabaja uno
+                        por uno en el espacio del lote.
+                      </span>
+                    </div>
+                    <div className="form-grid">
+                      <div className="field">
+                        <label>Cuántos visuales quieres iniciar</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="50"
+                          value={manualCount}
+                          onChange={(event) =>
+                            setManualCount(
+                              Math.max(1, Number(event.target.value || 1)),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Primera fecha de publicación</label>
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(event) => setStartDate(event.target.value)}
+                        />
+                        <p className="mini field-note">
+                          La publicación puede caer en sábado o domingo.
+                        </p>
+                      </div>
+                      <div className="field">
+                        <label>Cada cuántos días</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={interval}
+                          onChange={(event) =>
+                            setInterval(Number(event.target.value))
+                          }
                         />
                       </div>
                       <div className="field">
                         <label>Formato base</label>
                         <select
                           value={manual.contentType}
-                          onChange={(e) =>
-                            setManualField("contentType", e.target.value)
+                          onChange={(event) =>
+                            setManualField("contentType", event.target.value)
                           }
                         >
-                          {contentTypes.map((x) => (
-                            <option key={x}>{x}</option>
+                          {contentTypes.map((type) => (
+                            <option key={type}>{type}</option>
                           ))}
                         </select>
                       </div>
@@ -2118,12 +3004,12 @@ export default function CreatorPage() {
                         <label>Objetivo base</label>
                         <select
                           value={manual.objective}
-                          onChange={(e) =>
-                            setManualField("objective", e.target.value)
+                          onChange={(event) =>
+                            setManualField("objective", event.target.value)
                           }
                         >
-                          {objectives.map((x) => (
-                            <option key={x}>{x}</option>
+                          {objectives.map((objective) => (
+                            <option key={objective}>{objective}</option>
                           ))}
                         </select>
                       </div>
@@ -2131,58 +3017,24 @@ export default function CreatorPage() {
                         <label>Área base</label>
                         <select
                           value={manual.suggestedArea}
-                          onChange={(e) =>
-                            setManualField("suggestedArea", e.target.value)
+                          onChange={(event) =>
+                            setManualField("suggestedArea", event.target.value)
                           }
                         >
-                          {creatorAreas.map((x) => (
-                            <option key={x}>{x}</option>
+                          {creatorAreas.map((area) => (
+                            <option key={area}>{area}</option>
                           ))}
                         </select>
                       </div>
                     </div>
                     <button
-                      className="btn blue"
-                      onClick={addManualBlankBatch}
+                      className="btn dark creator-primary-action"
+                      onClick={() => addManualBlankBatch()}
                       disabled={!canCreateRequests}
                     >
-                      Crear solicitudes en blanco
-                    </button>
-                    <h3 style={{ marginTop: 28 }}>
-                      Agregar una solicitud manual completa
-                    </h3>
-                    <RequestForm
-                      request={manual}
-                      buyerPersonas={client?.buyerPersonas || []}
-                      onPersonaChange={(persona) =>
-                        setManual({
-                          ...manual,
-                          buyerPersonaId: persona?.id || "",
-                          buyerPersonaName:
-                            persona?.name || "Sin enfoque particular",
-                          buyerPersonaSnapshot: persona || null,
-                        })
-                      }
-                      onChange={setManualField}
-                      onUpload={uploadToManual}
-                      onPreview={setPreview}
-                      onImprove={() => improveCreativeIdea("manual")}
-                      improving={improvingKey === "manual"}
-                      onRemove={(_, index) =>
-                        setManual({
-                          ...manual,
-                          referenceFiles: manual.referenceFiles.filter(
-                            (_, i) => i !== index,
-                          ),
-                        })
-                      }
-                    />
-                    <button
-                      className="btn"
-                      onClick={addManual}
-                      disabled={!canCreateRequests}
-                    >
-                      Agregar manual completa al lote
+                      {manualCount === 1
+                        ? "Crear Visual 1 y empezar"
+                        : `Crear ${manualCount} visuales y empezar`}
                     </button>
                   </div>
                 )}
@@ -2190,15 +3042,112 @@ export default function CreatorPage() {
             )}
           </div>
 
-          <div className="card">
-            <h3>Lote actual</h3>
+          <div className="card creator-workspace-card">
+            <div className="creator-workspace-head">
+              <div>
+                <p className="eyebrow">Espacio de trabajo</p>
+                <h3>Lote actual</h3>
+                <span className="mini">
+                  Selecciona una vista y trabaja un visual a la vez.
+                </span>
+              </div>
+              <div className="creator-workspace-head-actions">
+                <div className="creator-view-switch" role="tablist">
+                  <button
+                    type="button"
+                    className={workspaceView === "list" ? "active" : ""}
+                    onClick={() => setWorkspaceView("list")}
+                  >
+                    Lista lateral
+                  </button>
+                  <button
+                    type="button"
+                    className={workspaceView === "accordion" ? "active" : ""}
+                    onClick={() => setWorkspaceView("accordion")}
+                  >
+                    Acordeón
+                  </button>
+                </div>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => addManualBlankBatch(1)}
+                  disabled={!canCreateRequests}
+                >
+                  + Agregar visual
+                </button>
+              </div>
+            </div>
             {!items.length ? (
-              <div className="empty">Todavía no hay solicitudes.</div>
+              <div className="empty creator-empty-workspace">
+                Primero configura Modo Manual o Modo IA para crear tu primer
+                visual.
+              </div>
             ) : (
-              <div className="creator-accordion-list">
-                {items.map((item, index) => {
+              <div className={`creator-workspace creator-workspace-${workspaceView}`}>
+                {workspaceView === "list" && (
+                  <aside className="creator-visual-list">
+                    <div className="creator-visual-list-head">
+                      <strong>{items.length} visuales</strong>
+                      <span className="mini">
+                        {items.filter((item) => !validateCreatorItemForCreator(item)).length} listos
+                      </span>
+                    </div>
+                    {items.map((item, index) => {
+                      const itemError = validateCreatorItemForCreator(item);
+                      return (
+                        <button
+                          type="button"
+                          key={item.localDraftId || index}
+                          className={
+                            expandedItemIndex === index
+                              ? "creator-visual-list-item active"
+                              : "creator-visual-list-item"
+                          }
+                          onClick={() => setExpandedItemIndex(index)}
+                        >
+                          <span className="creator-visual-number">
+                            {index + 1}
+                          </span>
+                          <span className="creator-visual-list-copy">
+                            <strong>
+                              {item.topic ||
+                                item.contentType ||
+                                `Visual ${index + 1}`}
+                            </strong>
+                            <small>
+                              {item.contentType || "Sin tipo"} ·{" "}
+                              {item.publishDate || "Sin fecha"}
+                            </small>
+                          </span>
+                          <span
+                            className={
+                              itemError
+                                ? "creator-visual-status pending"
+                                : "creator-visual-status ready"
+                            }
+                            title={itemError || "Visual completo"}
+                          >
+                            {itemError ? "!" : "✓"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </aside>
+                )}
+                <div className="creator-workspace-editor">
+                  <div className="creator-accordion-list">
+                {items
+                  .map((item, index) => ({ item, index }))
+                  .filter(
+                    ({ index }) =>
+                      workspaceView === "accordion" ||
+                      index === (expandedItemIndex ?? 0),
+                  )
+                  .map(({ item, index }) => {
                   const error = validateCreatorItemForCreator(item);
-                  const expanded = expandedItemIndex === index;
+                  const expanded =
+                    workspaceView === "list" || expandedItemIndex === index;
                   return (
                     <div
                       className={`creator-accordion-card ${expanded ? "expanded" : "collapsed"}`}
@@ -2207,12 +3156,16 @@ export default function CreatorPage() {
                       <button
                         type="button"
                         className="creator-accordion-summary"
-                        onClick={() => toggleItem(index)}
+                        onClick={() =>
+                          workspaceView === "accordion"
+                            ? toggleItem(index)
+                            : setExpandedItemIndex(index)
+                        }
                         aria-expanded={expanded}
                       >
                         <div className="summary-main">
                           <span className="request-index-pill">
-                            Solicitud {index + 1} de {items.length}
+                            Visual {index + 1} de {items.length}
                           </span>
                           <strong>
                             {item.topic ||
@@ -2253,7 +3206,11 @@ export default function CreatorPage() {
                             <span className="pill green">Lista</span>
                           )}
                           <span className="summary-chevron">
-                            {expanded ? "Ocultar" : "Editar"}
+                            {workspaceView === "list"
+                              ? "Editando"
+                              : expanded
+                                ? "Ocultar"
+                                : "Editar"}
                           </span>
                         </div>
                       </button>
@@ -2557,84 +3514,135 @@ export default function CreatorPage() {
                     </div>
                   );
                 })}
+                  </div>
+                </div>
               </div>
             )}
           </div>
         </div>
 
         <aside className="grid creator-planning-sidebar">
-          <PlanningSummaryCard
-            summary={planningSummary}
-            forceReason={forceReason}
-            forceNotes={forceNotes}
-            setForceReason={setForceReason}
-            setForceNotes={setForceNotes}
-          />
-          <div className="card planning-calendar-card">
-            <h3>Calendario del lote</h3>
-            <CalendarPanel items={calendarItems} />
-          </div>
-          <div className="card">
-            <h3>Borradores guardados</h3>
-            <div className="draft-list">
-              {drafts.map((draft) => (
-                <div className="draft-item" key={draft.id}>
-                  <strong>{draft.name}</strong>
-                  <span className="mini">
-                    {draft.clientName} · {draft.items?.length || 0} solicitudes
-                    · Límite: {draft.batchDueDate || "Sin fecha"} ·{" "}
-                    {draft.status}
-                  </span>
-                  <div className="draft-actions">
-                    <button className="btn" onClick={() => openDraft(draft)}>
-                      Abrir
-                    </button>
+          <details className="creator-sidebar-section" open>
+            <summary>
+              <span>Planeación viva</span>
+              <small>{planningSummary.riskLabel}</small>
+            </summary>
+            <div className="creator-sidebar-section-body">
+              <PlanningSummaryCard
+                summary={planningSummary}
+                forceReason={forceReason}
+                forceNotes={forceNotes}
+                setForceReason={setForceReason}
+                setForceNotes={setForceNotes}
+              />
+            </div>
+          </details>
+
+          <details className="creator-sidebar-section">
+            <summary>
+              <span>Calendario del lote</span>
+              <small>{calendarItems.length} fechas</small>
+            </summary>
+            <div className="creator-sidebar-section-body">
+              <div className="card planning-calendar-card">
+                <CalendarPanel items={calendarItems} />
+              </div>
+            </div>
+          </details>
+
+          <details className="creator-sidebar-section">
+            <summary>
+              <span>Borradores guardados</span>
+              <small>{drafts.length}</small>
+            </summary>
+            <div className="creator-sidebar-section-body">
+              <div className="card">
+                <div className="draft-list">
+                  {drafts.map((draft) => (
+                    <div className="draft-item" key={draft.id}>
+                      <strong>{draft.name}</strong>
+                      <span className="mini">
+                        {draft.clientName} · {draft.items?.length || 0} visuales ·
+                        Límite: {draft.batchDueDate || "Sin fecha"} ·{" "}
+                        {draft.status}
+                      </span>
+                      <div className="draft-actions">
+                        <button className="btn" onClick={() => openDraft(draft)}>
+                          Abrir
+                        </button>
+                        <button
+                          className="btn red"
+                          onClick={() => removeDraft(draft.id)}
+                          disabled={!canDeleteDrafts}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {!drafts.length && (
+                    <p className="mini">Aún no hay borradores.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details className="creator-sidebar-section">
+            <summary>
+              <span>Lotes realizados para reusar</span>
+              <small>{totalReusableBatches}</small>
+            </summary>
+            <div className="creator-sidebar-section-body">
+              <div className="card">
+                <div className="batch-reuse-grid">
+                  {reusableBatches.map((batch) => (
+                    <div className="batch-reuse-card" key={batch.id}>
+                      <strong>{batch.name}</strong>
+                      <span className="mini">
+                        {batch.clientName} · Límite anterior:{" "}
+                        {batch.batchDueDate || "Sin fecha"} ·{" "}
+                        {batch.totalRequests || 0} visuales
+                      </span>
+                      <div className="draft-actions">
+                        <button className="btn" onClick={() => reuseBatch(batch)}>
+                          Reusar lote
+                        </button>
+                        <button
+                          className="btn red"
+                          onClick={() => hideReusableBatch(batch)}
+                          disabled={!canDeleteDrafts}
+                        >
+                          Eliminar de reuso
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {!reusableBatches.length && (
+                    <p className="mini">
+                      No hay lotes recientes disponibles para reusar.
+                    </p>
+                  )}
+                  {totalReusableBatches >
+                    Math.max(
+                      1,
+                      Number(cleanupSettings.reuseBatchLimit || 5),
+                    ) && (
                     <button
-                      className="btn red"
-                      onClick={() => removeDraft(draft.id)}
-                      disabled={!canDeleteDrafts}
+                      className="btn"
+                      onClick={() =>
+                        setShowFullReuseHistory((value) => !value)
+                      }
                     >
-                      Eliminar
+                      {showFullReuseHistory
+                        ? "Mostrar solo recientes"
+                        : "Ver historial completo"}
                     </button>
-                  </div>
+                  )}
                 </div>
-              ))}
-              {!drafts.length && <p className="mini">Aún no hay borradores.</p>}
+              </div>
             </div>
-          </div>
-          <div className="card">
-            <h3>Lotes realizados para reusar</h3>
-            <div className="batch-reuse-grid">
-              {reusableBatches.map((batch) => (
-                <div className="batch-reuse-card" key={batch.id}>
-                  <strong>{batch.name}</strong>
-                  <span className="mini">
-                    {batch.clientName} · Límite anterior:{" "}
-                    {batch.batchDueDate || "Sin fecha"} ·{" "}
-                    {batch.totalRequests || 0} solicitudes
-                  </span>
-                  <div className="draft-actions">
-                    <button className="btn" onClick={() => reuseBatch(batch)}>
-                      Reusar lote
-                    </button>
-                    <button className="btn red" onClick={() => hideReusableBatch(batch)} disabled={!canDeleteDrafts}>
-                      Eliminar de reuso
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {!reusableBatches.length && (
-                <p className="mini">
-                  No hay lotes recientes disponibles para reusar. Si tienes historial, activa “Ver historial completo”.
-                </p>
-              )}
-              {totalReusableBatches > Math.max(1, Number(cleanupSettings.reuseBatchLimit || 5)) && (
-                <button className="btn" onClick={() => setShowFullReuseHistory((value) => !value)}>
-                  {showFullReuseHistory ? "Mostrar solo recientes" : "Ver historial completo"}
-                </button>
-              )}
-            </div>
-          </div>
+          </details>
         </aside>
       </section>
 
