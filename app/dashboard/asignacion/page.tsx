@@ -332,9 +332,8 @@ export default function AssignmentPage() {
     );
   }
 
-  function getTeamOptionsForArea(areaValue = "") {
-    const normalizedArea = normalizeAssignableArea(areaValue) || "Diseño";
-    return teamOptionsByArea[normalizedArea] || [];
+  function getTeamOptionsForArea(_areaValue = "") {
+    return teamOptions;
   }
 
   function sortValue(item: ContentRequest, key: string) {
@@ -437,16 +436,8 @@ export default function AssignmentPage() {
   );
   const selectedAssignableCount = selectedItems.filter(canAssignRequest).length;
   const selectedBlockedCount = selectedItems.length - selectedAssignableCount;
-  const selectedAssignableAreas = useMemo(
-    () =>
-      Array.from(
-        new Set(selectedItems.filter(canAssignRequest).map(getAreaForItem)),
-      ),
-    [selectedItems],
-  );
-  const bulkArea =
-    selectedAssignableAreas.length === 1 ? selectedAssignableAreas[0] : "";
-  const bulkTeamOptions = bulkArea ? getTeamOptionsForArea(bulkArea) : [];
+  const bulkCanAssign = selectedAssignableCount > 0;
+  const bulkTeamOptions = teamOptions;
 
   function toggle(id: string) {
     if (!canUseBulkActions) {
@@ -597,7 +588,11 @@ export default function AssignmentPage() {
         item.assignedTo || "",
       )
         ? item.assignedTo || ""
-        : getTeamOptionsForArea(targetArea)[0] || "";
+        : "";
+      if (!assignee) {
+        alert("Selecciona un responsable antes de asignar la solicitud.");
+        return;
+      }
       const payload = buildAssignmentPayload(item, assignee, targetArea);
       await update(item.id, {
         ...payload,
@@ -637,6 +632,10 @@ export default function AssignmentPage() {
       const assignee = validAssignees.includes(detailDraft.assignedTo || "")
         ? detailDraft.assignedTo || ""
         : "";
+      if (!assignee) {
+        alert("Selecciona un responsable antes de asignar la solicitud.");
+        return;
+      }
       const payload = buildAssignmentPayload(item, assignee, targetArea);
       await updateRequest(item.id, {
         ...payload,
@@ -671,20 +670,8 @@ export default function AssignmentPage() {
     );
     const assignable = selectedItems.filter(canAssignRequest);
     const blocked = selectedItems.filter((item) => !canAssignRequest(item));
-    const areasInSelection = Array.from(
-      new Set(assignable.map(getAreaForItem)),
-    );
-    if (areasInSelection.length > 1) {
-      alert(
-        "Selecciona solicitudes de una sola área para asignarlas en bloque. Diseño y Audiovisual tienen responsables distintos.",
-      );
-      return;
-    }
-    const validBulkAssignees = getTeamOptionsForArea(areasInSelection[0] || "");
-    if (!validBulkAssignees.includes(bulkAssignee)) {
-      alert(
-        `La persona seleccionada no pertenece al área ${areasInSelection[0] || "correspondiente"}.`,
-      );
+    if (!teamOptions.includes(bulkAssignee)) {
+      alert("Selecciona una persona creativa activa.");
       return;
     }
     if (!assignable.length) {
@@ -702,7 +689,6 @@ export default function AssignmentPage() {
           const areaValue =
             item.assignedArea ||
             item.suggestedArea ||
-            areasInSelection[0] ||
             "Diseño";
           const payload = buildAssignmentPayload(item, bulkAssignee, areaValue);
           return updateRequest(item.id!, {
@@ -822,8 +808,9 @@ export default function AssignmentPage() {
           <p className="eyebrow">Operación</p>
           <h1>Asignación</h1>
           <p>
-            Los jefes de área asignan solicitudes listas. Las piezas sin
-            material quedan bloqueadas desde origen.
+            El área define el tipo de trabajo, pero cualquier integrante
+            creativo puede ser responsable. Las piezas sin material quedan
+            bloqueadas desde origen.
           </p>
         </div>
       </section>
@@ -936,18 +923,10 @@ export default function AssignmentPage() {
             className="assignment-person-select assignment-bulk-select"
             value={bulkAssignee}
             onChange={(e) => setBulkAssignee(e.target.value)}
-            disabled={!bulkArea || !canAssignAction || bulkAssigning}
-            title={
-              bulkArea
-                ? `Solo aparecen personas de ${bulkArea}`
-                : "Selecciona solicitudes de una sola área"
-            }
+            disabled={!bulkCanAssign || !canAssignAction || bulkAssigning}
+            title="Puedes asignar solicitudes de Diseño o Audiovisual a cualquier integrante creativo"
           >
-            <option value="">
-              {bulkArea
-                ? `Asignar seleccionadas a ${bulkArea}...`
-                : "Selecciona una sola área"}
-            </option>
+            <option value="">Asignar seleccionadas a...</option>
             {bulkTeamOptions.map((name) => (
               <option key={name}>{name}</option>
             ))}
@@ -955,7 +934,7 @@ export default function AssignmentPage() {
           <button
             className="btn blue"
             onClick={assignSelected}
-            disabled={!bulkArea || !canAssignAction || bulkAssigning}
+            disabled={!bulkCanAssign || !canAssignAction || bulkAssigning}
           >
             {bulkAssigning ? "Asignando..." : "Asignar seleccionadas"}
           </button>
@@ -1105,7 +1084,6 @@ export default function AssignmentPage() {
                                   item.id &&
                                   update(item.id, {
                                     assignedArea: e.target.value,
-                                    assignedTo: "",
                                   })
                                 }
                               >
@@ -1120,7 +1098,7 @@ export default function AssignmentPage() {
                                   item.id && update(item.id, { assignedTo: e.target.value })
                                 }
                                 disabled={!canAssignAction || assigningIds.includes(item.id || "")}
-                                title={`Solo aparecen personas de ${rowArea}`}
+                                title="Cualquier integrante creativo puede tomar esta tarea"
                               >
                                 <option value="">Sin asignar</option>
                                 {rowTeamOptions.map((x) => (
@@ -1503,7 +1481,6 @@ function RequestDetail({
                 setDraft({
                   ...draft,
                   assignedArea: e.target.value,
-                  assignedTo: "",
                 })
               }
             >

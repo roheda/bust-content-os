@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { auth } from "@/lib/firebase";
@@ -64,18 +64,18 @@ function timelineSortValue(value?: string) {
 }
 
 const people = ["Todos", ...organizationTeam.map((member) => member.name)];
-const areas = ["Todas", "Diseño", "Audiovisual"];
+const areas = ["Todas", "DiseÃ±o", "Audiovisual"];
 const commentTargets = [
   "Content",
   "Key Account",
-  "Diseño",
+  "DiseÃ±o",
   "Audiovisual",
   "Cliente",
   "Interno",
 ];
 const workStatuses = [
   ["asignada", "Asignada"],
-  ["en_revision", "En revisión"],
+  ["en_revision", "En revisiÃ³n"],
   ["rebotada", "Rebotada"],
 ];
 
@@ -99,6 +99,9 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [workflowFilter, setWorkflowFilter] = useState("pending");
   const [overdueFilter, setOverdueFilter] = useState("all");
+  const [taskOrder, setTaskOrder] = useState<"chronological" | "visual">(
+    "chronological",
+  );
   const [selected, setSelected] = useState<ContentRequest | null>(null);
   const [comment, setComment] = useState("");
   const [mentionSearch, setMentionSearch] = useState("");
@@ -106,9 +109,15 @@ export default function TasksPage() {
   const [finalLink, setFinalLink] = useState("");
   const [preview, setPreview] = useState<ReferenceFile | null>(null);
   const [contextPost, setContextPost] = useState<ContentRequest | null>(null);
+  const taskOrderSkipSaveRef = useRef(true);
   const permissions = useModulePermissions("tareas");
   const canEditTasks = permissions.canEdit;
   const canGenerateFromTasks = permissions.canGenerate || permissions.canEdit;
+  const taskOrderStorageKey = `bust-content-os:tasks-order:${
+    permissions.activeUser?.id ||
+    permissions.activeUser?.email ||
+    "default"
+  }`;
 
   async function load() {
     const [
@@ -143,6 +152,26 @@ export default function TasksPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    taskOrderSkipSaveRef.current = true;
+    const savedOrder = window.localStorage.getItem(taskOrderStorageKey);
+    setTaskOrder(
+      savedOrder === "chronological" || savedOrder === "visual"
+        ? savedOrder
+        : "chronological",
+    );
+  }, [taskOrderStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (taskOrderSkipSaveRef.current) {
+      taskOrderSkipSaveRef.current = false;
+      return;
+    }
+    window.localStorage.setItem(taskOrderStorageKey, taskOrder);
+  }, [taskOrder, taskOrderStorageKey]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !requests.length) return;
@@ -201,13 +230,19 @@ export default function TasksPage() {
                       ? x.status === "finalizada"
                       : true;
 
+        const directlyAssigned =
+          person !== "Todos" && x.assignedTo === person;
+        const areaMatches =
+          area === "Todas" ||
+          directlyAssigned ||
+          x.assignedArea === area ||
+          x.suggestedArea === area;
+
         return (
           taskStates &&
           workflowOk &&
-          (person === "Todos" || x.assignedTo === person) &&
-          (area === "Todas" ||
-            x.assignedArea === area ||
-            x.suggestedArea === area) &&
+          (person === "Todos" || directlyAssigned) &&
+          areaMatches &&
           (statusFilter === "all" || x.status === statusFilter) &&
           (overdueFilter === "all" ||
             (overdueFilter === "overdue" ? overdue : !overdue))
@@ -216,24 +251,27 @@ export default function TasksPage() {
     [requests, person, area, statusFilter, workflowFilter, overdueFilter],
   );
 
+  const orderedTasks = useMemo(
+    () => [...filtered].sort((a, b) => compareTasks(a, b, taskOrder)),
+    [filtered, taskOrder],
+  );
+
   const weekDays = useMemo(() => getWeekDays(cursor), [cursor]);
   const monthDays = useMemo(() => getMonthDays(cursor), [cursor]);
 
   const tasksByDate = useMemo(() => {
     const map: Record<string, ContentRequest[]> = {};
-    for (const item of filtered) {
+    for (const item of orderedTasks) {
       const date = getTaskDate(item);
       if (!date) continue;
       map[date] = map[date] || [];
       map[date].push(item);
     }
     Object.values(map).forEach((list) =>
-      list.sort((a, b) =>
-        (a.clientName || "").localeCompare(b.clientName || ""),
-      ),
+      list.sort((a, b) => compareTasks(a, b, taskOrder)),
     );
     return map;
-  }, [filtered]);
+  }, [orderedTasks, taskOrder]);
 
   const mentionsFeed = useMemo(() => {
     return requests
@@ -260,17 +298,17 @@ export default function TasksPage() {
     }));
     const fromOrg = organizationTeam.map((member) => ({
       name: member.name,
-      role: `${member.area} · ${member.role}`,
+      role: `${member.area} Â· ${member.role}`,
       token: makeMentionToken(member.name),
     }));
     const areas = [
       "Content",
       "Key Account",
-      "Diseño",
+      "DiseÃ±o",
       "Audiovisual",
       "Cliente",
       "Interno",
-    ].map((name) => ({ name, role: "Área", token: makeMentionToken(name) }));
+    ].map((name) => ({ name, role: "Ãrea", token: makeMentionToken(name) }));
     const merged = [...fromUsers, ...fromOrg, ...areas].filter(
       (item) => item.name && item.token,
     );
@@ -312,7 +350,7 @@ export default function TasksPage() {
         id: `${Date.now()}`,
         author: currentActorName(),
         target: "Interno",
-        body: "Tarea abierta por el responsable. Estado actualizado a En revisión.",
+        body: "Tarea abierta por el responsable. Estado actualizado a En revisiÃ³n.",
         mentions: [],
         createdAt: new Date().toISOString(),
       };
@@ -352,7 +390,7 @@ export default function TasksPage() {
     if (!selected?.id) return;
     if (status === "pendiente_aprobacion")
       return alert(
-        "Para enviar a aprobación usa el botón Enviar a aprobación y pega el link final.",
+        "Para enviar a aprobaciÃ³n usa el botÃ³n Enviar a aprobaciÃ³n y pega el link final.",
       );
     const label = statusLabel(status);
     const nextLog: TaskComment = {
@@ -374,20 +412,20 @@ export default function TasksPage() {
   }
 
   function extractMentions(value: string) {
-    const matches = value.match(/@[\wÁÉÍÓÚáéíóúÑñ._-]+/g) || [];
+    const matches = value.match(/@[\wÃÃÃÃÃÃ¡Ã©Ã­Ã³ÃºÃÃ±._-]+/g) || [];
     return Array.from(new Set(matches.map((item) => item.trim())));
   }
 
   function handleCommentChange(value: string) {
     setComment(value);
-    const match = value.match(/(^|\s)@([\wÁÉÍÓÚáéíóúÑñ._-]*)$/);
+    const match = value.match(/(^|\s)@([\wÃÃÃÃÃÃ¡Ã©Ã­Ã³ÃºÃÃ±._-]*)$/);
     setMentionSearch(match ? match[2] : "");
   }
 
   function insertMention(token: string) {
     setComment((current) => {
       const next = current.replace(
-        /(^|\s)@[\wÁÉÍÓÚáéíóúÑñ._-]*$/,
+        /(^|\s)@[\wÃÃÃÃÃÃ¡Ã©Ã­Ã³ÃºÃÃ±._-]*$/,
         (match, prefix) => `${prefix}@${token} `,
       );
       return next === current ? `${current} @${token} ` : next;
@@ -430,18 +468,18 @@ export default function TasksPage() {
   }
 
   async function sendToApproval() {
-    if (!canEditTasks) return permissionAlert("enviar tareas a aprobación");
+    if (!canEditTasks) return permissionAlert("enviar tareas a aprobaciÃ³n");
     if (!selected?.id) return;
     if (!finalLink.trim())
       return alert(
-        "Para mandar a aprobación debes pegar el link final de Drive.",
+        "Para mandar a aprobaciÃ³n debes pegar el link final de Drive.",
       );
     const comments = [...(selected.comments || [])];
     comments.push({
       id: `${Date.now()}`,
       author: currentActorName(),
       target: "Aprobaciones",
-      body: `Enviado a aprobación. Link final: ${finalLink.trim()}`,
+      body: `Enviado a aprobaciÃ³n. Link final: ${finalLink.trim()}`,
       mentions: [],
       createdAt: new Date().toISOString(),
     });
@@ -459,7 +497,7 @@ export default function TasksPage() {
       comments,
     });
     await load();
-    alert("Tarea enviada a aprobación");
+    alert("Tarea enviada a aprobaciÃ³n");
   }
 
   async function sendToGenerator() {
@@ -506,14 +544,14 @@ export default function TasksPage() {
           <h1>Tareas</h1>
           <p>
             Trabajo diario del equipo: calendario, lista, vista por persona,
-            comentarios, vencimientos y envío a aprobación.
+            comentarios, vencimientos y envÃ­o a aprobaciÃ³n.
           </p>
         </div>
       </section>
 
       {!canEditTasks && (
         <section className="card readonly-note">
-          Modo solo lectura: puedes consultar tareas, pero tu rol no puede cambiar estados, comentar ni enviar a aprobación.
+          Modo solo lectura: puedes consultar tareas, pero tu rol no puede cambiar estados, comentar ni enviar a aprobaciÃ³n.
         </section>
       )}
 
@@ -563,10 +601,10 @@ export default function TasksPage() {
               >
                 Mes
               </button>
-              <button onClick={() => move(-1)}>← Anterior</button>
+              <button onClick={() => move(-1)}>â Anterior</button>
               <button onClick={() => setCursor(new Date())}>Hoy</button>
-              <button onClick={() => move(1)}>Siguiente →</button>
-              <span className="mini workdays-note">Solo días hábiles</span>
+              <button onClick={() => move(1)}>Siguiente â</button>
+              <span className="mini workdays-note">Solo dÃ­as hÃ¡biles</span>
             </>
           )}
           <select value={person} onChange={(e) => setPerson(e.target.value)}>
@@ -580,12 +618,24 @@ export default function TasksPage() {
             ))}
           </select>
           <select
+            value={taskOrder}
+            onChange={(e) =>
+              setTaskOrder(
+                e.target.value as "chronological" | "visual",
+              )
+            }
+            title="Orden de las tareas"
+          >
+            <option value="chronological">Orden cronológico</option>
+            <option value="visual">Orden por número de visual</option>
+          </select>
+          <select
             value={workflowFilter}
             onChange={(e) => setWorkflowFilter(e.target.value)}
           >
             <option value="pending">Pendientes</option>
             <option value="active">Activas</option>
-            <option value="approval">En aprobación</option>
+            <option value="approval">En aprobaciÃ³n</option>
             <option value="rejected">Rebotadas</option>
             <option value="finished">Finalizadas</option>
             <option value="all">Todas</option>
@@ -649,7 +699,13 @@ export default function TasksPage() {
 
       <section className="calendar-workspace no-doubts-panel">
         <div>
-          {view === "hoy" && <TodayView tasks={filtered} onOpen={openTask} />}
+          {view === "hoy" && (
+            <TodayView
+              tasks={orderedTasks}
+              order={taskOrder}
+              onOpen={openTask}
+            />
+          )}
 
           {view === "calendario" &&
             (calendarMode === "semana" ? (
@@ -667,9 +723,19 @@ export default function TasksPage() {
               />
             ))}
 
-          {view === "lista" && <ListView tasks={filtered} onOpen={openTask} />}
+          {view === "lista" && (
+            <ListView
+              tasks={orderedTasks}
+              order={taskOrder}
+              onOpen={openTask}
+            />
+          )}
           {view === "persona" && (
-            <PersonView tasks={filtered} onOpen={openTask} />
+            <PersonView
+              tasks={orderedTasks}
+              order={taskOrder}
+              onOpen={openTask}
+            />
           )}
         </div>
       </section>
@@ -694,14 +760,14 @@ export default function TasksPage() {
                   {taskSubtitleLine(selected)}
                 </p>
                 <p className="mini">
-                  Trabajar: {getTaskDate(selected) || "Sin fecha"} · Límite
+                  Trabajar: {getTaskDate(selected) || "Sin fecha"} Â· LÃ­mite
                   interno:{" "}
                   {selected.internalDueDate || selected.dueDate || "Sin fecha"}{" "}
-                  · Publica:{" "}
+                  Â· Publica:{" "}
                   {selected.publishDate ||
                     selected.clientDueDate ||
                     "Sin fecha"}{" "}
-                  · Lote: {selected.batchName || "Sin lote"}
+                  Â· Lote: {selected.batchName || "Sin lote"}
                 </p>
               </div>
               <button className="btn red" onClick={closeTask}>
@@ -745,16 +811,16 @@ export default function TasksPage() {
 
                 {selected.status !== "finalizada" ? (
                   <div className="finalize-box">
-                    <h4>Mandar a aprobación</h4>
+                    <h4>Mandar a aprobaciÃ³n</h4>
                     <p className="mini">
-                      Para mandar a aprobación debes pegar el link final del
+                      Para mandar a aprobaciÃ³n debes pegar el link final del
                       post en Drive.
                     </p>
                     <input
                       className="drive-link-input"
                       value={finalLink}
                       onChange={(e) => setFinalLink(e.target.value)}
-                      placeholder="Pega aquí el link de Drive, Canva, archivo o carpeta"
+                      placeholder="Pega aquÃ­ el link de Drive, Canva, archivo o carpeta"
                       disabled={!canEditTasks}
                     />
                     <button
@@ -763,7 +829,7 @@ export default function TasksPage() {
                       onClick={sendToApproval}
                       disabled={!canEditTasks}
                     >
-                      Enviar a aprobación
+                      Enviar a aprobaciÃ³n
                     </button>
                   </div>
                 ) : (
@@ -780,7 +846,7 @@ export default function TasksPage() {
                         target="_blank"
                       >
                         <span>{selected.finalPostLink}</span>
-                        <small>Abrir →</small>
+                        <small>Abrir â</small>
                       </a>
                     )}
                   </div>
@@ -1018,6 +1084,7 @@ export default function TasksPage() {
   );
 }
 
+type TaskOrder = "chronological" | "visual";
 type TaskTimelineEvent = { title: string; body: string; date?: string };
 
 function buildTaskTimeline(
@@ -1336,6 +1403,40 @@ function getTaskDate(item: ContentRequest) {
   return getEffectiveWorkDate(item);
 }
 
+function getTaskVisualNumber(item: ContentRequest) {
+  const raw = item.lotSequenceNumber ?? item.number;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : Number.MAX_SAFE_INTEGER;
+}
+
+function compareTasks(
+  a: ContentRequest,
+  b: ContentRequest,
+  order: TaskOrder,
+) {
+  const dateA = getTaskDate(a) || "9999-12-31";
+  const dateB = getTaskDate(b) || "9999-12-31";
+  const visualCompare = getTaskVisualNumber(a) - getTaskVisualNumber(b);
+  const batchCompare = `${a.clientName || ""} ${a.batchName || ""}`.localeCompare(
+    `${b.clientName || ""} ${b.batchName || ""}`,
+    "es",
+    { numeric: true, sensitivity: "base" },
+  );
+
+  if (order === "visual") {
+    return (
+      batchCompare ||
+      visualCompare ||
+      dateA.localeCompare(dateB) ||
+      (a.clientName || "").localeCompare(b.clientName || "", "es")
+    );
+  }
+
+  return dateA.localeCompare(dateB) || visualCompare || batchCompare;
+}
+
 function isOverdue(item: ContentRequest) {
   const date =
     item.internalDueDate ||
@@ -1410,26 +1511,28 @@ function formatCalendarLabel(date: Date, mode: "semana" | "mes") {
 
 function TodayView({
   tasks,
+  order,
   onOpen,
 }: {
   tasks: ContentRequest[];
+  order: TaskOrder;
   onOpen: (item: ContentRequest) => void;
 }) {
   const today = todayDateKey();
   const active = tasks.filter((task) => !isClosedTask(task));
   const carried = active
     .filter((task) => isCarriedTask(task) || isOverdue(task))
-    .sort(sortDailyTasks);
+    .sort((a, b) => compareTasks(a, b, order));
   const todayList = active
     .filter(
       (task) =>
         getTaskDate(task) === today &&
         !carried.some((item) => item.id === task.id),
     )
-    .sort(sortDailyTasks);
+    .sort((a, b) => compareTasks(a, b, order));
   const nextList = active
     .filter((task) => getTaskDate(task) > today)
-    .sort(sortDailyTasks)
+    .sort((a, b) => compareTasks(a, b, order))
     .slice(0, 10);
   return (
     <div className="daily-workspace">
@@ -1520,18 +1623,6 @@ function DailyTaskCard({
       )}
     </button>
   );
-}
-
-function sortDailyTasks(a: ContentRequest, b: ContentRequest) {
-  const carriedScore =
-    Number(isCarriedTask(b) || isOverdue(b)) -
-    Number(isCarriedTask(a) || isOverdue(a));
-  if (carriedScore) return carriedScore;
-  const dateCompare = (getTaskDate(a) || "").localeCompare(
-    getTaskDate(b) || "",
-  );
-  if (dateCompare) return dateCompare;
-  return (a.clientName || "").localeCompare(b.clientName || "", "es");
 }
 
 function WeekView({
@@ -1651,9 +1742,11 @@ function TaskChip({
 
 function ListView({
   tasks,
+  order,
   onOpen,
 }: {
   tasks: ContentRequest[];
+  order: TaskOrder;
   onOpen: (item: ContentRequest) => void;
 }) {
   if (!tasks.length)
@@ -1664,8 +1757,8 @@ function ListView({
     );
   return (
     <div>
-      {tasks
-        .sort((a, b) => getTaskDate(a).localeCompare(getTaskDate(b)))
+      {[...tasks]
+        .sort((a, b) => compareTasks(a, b, order))
         .map((task) => (
           <button
             className={`list-task-card ${isOverdue(task) ? "task-chip overdue" : ""} ${task.status === "rebotada" ? "rejected" : ""}`}
@@ -1690,9 +1783,11 @@ function ListView({
 
 function PersonView({
   tasks,
+  order,
   onOpen,
 }: {
   tasks: ContentRequest[];
+  order: TaskOrder;
   onOpen: (item: ContentRequest) => void;
 }) {
   const grouped: Record<string, ContentRequest[]> = {};
@@ -1706,9 +1801,11 @@ function PersonView({
       {Object.entries(grouped).map(([person, items]) => (
         <div className="person-column" key={person}>
           <h3>{person}</h3>
-          {items.map((task) => (
-            <TaskChip task={task} onOpen={onOpen} key={task.id} />
-          ))}
+          {[...items]
+            .sort((a, b) => compareTasks(a, b, order))
+            .map((task) => (
+              <TaskChip task={task} onOpen={onOpen} key={task.id} />
+            ))}
         </div>
       ))}
     </div>
