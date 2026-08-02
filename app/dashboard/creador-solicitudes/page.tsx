@@ -1,14 +1,18 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { doc, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import AppShell from "@/components/AppShell";
 import {
   useModulePermissions,
   permissionAlert,
 } from "@/components/useModulePermissions";
 import { authJsonHeaders } from "@/lib/client-auth";
+import { auth, db } from "@/lib/firebase";
 import {
   Brand,
+  PlatformUser,
+  canUser,
   ClientOperationalOverride,
   ClientBuyerPersona,
   ContentRequest,
@@ -35,6 +39,7 @@ import {
   subtractBusinessDays,
   todayDateKey,
   listUniqueBrands,
+  listUsers,
   listPlannerDrafts,
   deletePlannerDraft,
   listClientOperationalOverrides,
@@ -66,6 +71,30 @@ function isPhotographyOnly(item: Partial<ContentRequest>) {
   return area.includes("fotograf") || type === "foto";
 }
 
+function splitProductionDishes(value: string | string[] | undefined) {
+  const entries = Array.isArray(value)
+    ? value
+    : String(value || "").split(/[,\n;]/g);
+  return Array.from(
+    new Map(
+      entries
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+        .map((entry) => [normalizeCreatorText(entry), entry]),
+    ).values(),
+  );
+}
+
+function formatSharedDate(value: any) {
+  if (!value) return "";
+  try {
+    const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+    return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("es-MX");
+  } catch {
+    return "";
+  }
+}
+
 function validateCreatorItemForCreator(
   item: ContentRequest,
   options: { strict?: boolean } = {},
@@ -86,8 +115,12 @@ function validateCreatorItemForCreator(
   if (!item.keyMessage.trim()) return "Falta mensaje clave.";
   if (!isPhotographyOnly(item) && !item.copyIn.trim()) return "Falta Copy In.";
   if (!item.cta.trim()) return "Falta CTA.";
-  if (item.requiresProduction && !item.productionNotes.trim())
-    return "Faltan notas para producción.";
+  if (
+    item.requiresProduction &&
+    !item.productionNotes.trim() &&
+    !String((item as ContentRequest & Record<string, any>).productionTechnicalNotes || "").trim()
+  )
+    return "Faltan notas generales o técnicas para producción.";
 
   if (!item.requiresProduction && !hasMaterial(item)) {
     return "Si no requiere producción, debes marcar material disponible y agregar un link de material.";
@@ -131,11 +164,21 @@ export default function CreatorPage() {
   const [feedback, setFeedback] = useState<{ type: "success" | "info"; message: string } | null>(null);
   const [localRecovery, setLocalRecovery] = useState<any | null>(null);
   const [autosaveAt, setAutosaveAt] = useState("");
+  const [creatorUsers, setCreatorUsers] = useState<PlatformUser[]>([]);
+  const [collaborationEnabled, setCollaborationEnabled] = useState(true);
+  const [collaboratorIds, setCollaboratorIds] = useState<string[]>([]);
+  const [sharedSyncStatus, setSharedSyncStatus] = useState("Listo para compartir");
+  const [lastSharedEditor, setLastSharedEditor] = useState("");
+  const [lastSharedAt, setLastSharedAt] = useState("");
+  const [remoteDraftUpdate, setRemoteDraftUpdate] = useState<any | null>(null);
+  const [syncingSharedDraft, setSyncingSharedDraft] = useState(false);
   const [leaveWarning, setLeaveWarning] = useState<{ href: string } | null>(null);
   const savedSnapshotRef = useRef("");
   const dirtyRef = useRef(false);
   const bypassNavigationRef = useRef(false);
   const latestAutosavePayloadRef = useRef<any | null>(null);
+  const sharedRevisionRef = useRef(0);
+  const applyingRemoteDraftRef = useRef(false);
   const autosaveKey = "bust-content-os:creator-autosave:v82";
 
   const [aiCount, setAiCount] = useState(5);
@@ -155,6 +198,44 @@ export default function CreatorPage() {
   const canGenerateRequests =
     permissions.canGenerate || permissions.canCreate || permissions.canEdit;
   const canDeleteDrafts = permissions.canDelete || permissions.canEdit;
+  const eligibleCollaborators = useMemo(
+    () =>
+      creatorUsers
+        .filter((user) => user.status !== "inactive")
+        .filter(
+          (user) =>
+            canUser(user, "creador", "create") ||
+            canUser(user, "creador", "edit"),
+        )
+        .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, "es")),
+    [creatorUsers],
+  );
+
+  function currentEditorIdentity() {
+    const firebaseUser = auth.currentUser;
+    const savedId =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("bust-active-user-id") || ""
+        : "";
+    const profile =
+      creatorUsers.find((user) => user.id === savedId) ||
+      creatorUsers.find(
+        (user) =>
+          Boolean(firebaseUser?.uid && user.authUid === firebaseUser.uid) ||
+          Boolean(
+            firebaseUser?.email &&
+              user.email?.toLowerCase() === firebaseUser.email.toLowerCase(),
+          ),
+      );
+    return {
+      id: profile?.id || firebaseUser?.uid || firebaseUser?.email || "local-user",
+      name:
+        profile?.name ||
+        firebaseUser?.displayName ||
+        firebaseUser?.email ||
+        "Content Manager",
+    };
+  }
 
   function hasMeaningfulCreatorWork() {
     return Boolean(
@@ -183,6 +264,8 @@ export default function CreatorPage() {
       themes,
       must,
       manualCount,
+      collaborationEnabled,
+      collaboratorIds,
     });
   }
 
@@ -203,6 +286,8 @@ export default function CreatorPage() {
       themes,
       must,
       manualCount,
+      collaborationEnabled,
+      collaboratorIds,
     };
   }
 
@@ -233,6 +318,7 @@ export default function CreatorPage() {
       loadedOverrides,
       loadedCapacities,
       loadedCleanupSettings,
+      loadedUsers,
     ] = await Promise.all([
       listUniqueBrands(),
       listRequests(),
@@ -242,6 +328,7 @@ export default function CreatorPage() {
       listClientOperationalOverrides(),
       listTeamDailyCapacities(),
       getCleanupRetentionSettings(),
+      listUsers().catch(() => []),
   ]);
     setBrands(loadedBrands);
     setRequests(loadedRequests);
@@ -251,6 +338,7 @@ export default function CreatorPage() {
     setClientOverrides(loadedOverrides);
     setTeamCapacities(loadedCapacities);
     setCleanupSettings(loadedCleanupSettings);
+    setCreatorUsers(loadedUsers);
     if (!clientId && loadedBrands[0]?.id) {
       setClientId(loadedBrands[0].id);
       if (!draftName)
@@ -308,6 +396,8 @@ export default function CreatorPage() {
     themes,
     must,
     manualCount,
+    collaborationEnabled,
+    collaboratorIds,
   ]);
 
   useEffect(() => {
@@ -336,6 +426,8 @@ export default function CreatorPage() {
     themes,
     must,
     manualCount,
+    collaborationEnabled,
+    collaboratorIds,
     localRecovery,
   ]);
 
@@ -388,6 +480,83 @@ export default function CreatorPage() {
   useEffect(() => {
     if (!items.length) setAddPanelCollapsed(false);
   }, [items.length]);
+
+  useEffect(() => {
+    if (currentDraftId || collaboratorIds.length || !creatorUsers.length) return;
+    const editor = currentEditorIdentity();
+    if (editor.id) setCollaboratorIds([editor.id]);
+  }, [creatorUsers, currentDraftId]);
+
+  useEffect(() => {
+    if (!currentDraftId || !collaborationEnabled) return;
+    const draftRef = doc(db, "plannerDrafts", currentDraftId);
+    return onSnapshot(
+      draftRef,
+      (snapshot) => {
+        if (!snapshot.exists()) return;
+        const data = { id: snapshot.id, ...snapshot.data() } as any;
+        const revision = Number(data.collaborationRevision || 0);
+        if (revision <= sharedRevisionRef.current) return;
+        const editor = currentEditorIdentity();
+        if (data.lastEditedById === editor.id) {
+          sharedRevisionRef.current = revision;
+          setLastSharedEditor(data.lastEditedByName || editor.name);
+          setLastSharedAt(formatSharedDate(data.lastEditedAt || data.updatedAt));
+          return;
+        }
+        if (dirtyRef.current) {
+          setRemoteDraftUpdate(data);
+          setSharedSyncStatus(
+            `Cambios nuevos de ${data.lastEditedByName || "otro integrante"}. Descarga tu respaldo antes de aplicarlos.`,
+          );
+          return;
+        }
+        applySharedDraftData(data);
+      },
+      (snapshotError) => {
+        setSharedSyncStatus(
+          `No se pudo escuchar el borrador compartido: ${snapshotError.message}`,
+        );
+      },
+    );
+  }, [currentDraftId, collaborationEnabled, creatorUsers]);
+
+  useEffect(() => {
+    if (
+      !currentDraftId ||
+      !collaborationEnabled ||
+      localRecovery ||
+      remoteDraftUpdate ||
+      applyingRemoteDraftRef.current ||
+      !hasMeaningfulCreatorWork()
+    )
+      return;
+    if (currentCreatorSnapshot() === savedSnapshotRef.current) return;
+    const timer = window.setTimeout(() => {
+      void syncSharedDraftSilently();
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, [
+    currentDraftId,
+    collaborationEnabled,
+    remoteDraftUpdate,
+    localRecovery,
+    clientId,
+    draftName,
+    batchDueDate,
+    items,
+    manual,
+    creatorMode,
+    aiCount,
+    startDate,
+    interval,
+    types,
+    goals,
+    themes,
+    must,
+    manualCount,
+    collaboratorIds,
+  ]);
 
   const client = brands.find((x) => x.id === clientId) || brands[0];
   const existing = client?.id
@@ -501,6 +670,8 @@ export default function CreatorPage() {
     );
     setMust(localRecovery.must || "");
     setManualCount(Number(localRecovery.manualCount || 5));
+    setCollaborationEnabled(localRecovery.collaborationEnabled !== false);
+    setCollaboratorIds(localRecovery.collaboratorIds || []);
     setAddPanelCollapsed(Boolean((localRecovery.items || []).length));
     setAutosaveAt(recoveredAt);
     setLocalRecovery(null);
@@ -869,6 +1040,303 @@ export default function CreatorPage() {
     }
   }
 
+  function toggleCollaborator(id?: string) {
+    if (!id) return;
+    setCollaboratorIds((current) =>
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id],
+    );
+  }
+
+  function csvCell(value: unknown) {
+    const text = Array.isArray(value)
+      ? value.join(" | ")
+      : typeof value === "object" && value
+        ? JSON.stringify(value)
+        : String(value ?? "");
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  function downloadCurrentBatchBackup() {
+    if (!items.length) {
+      alert("Todavía no hay solicitudes en el lote para descargar.");
+      return;
+    }
+    persistLocalAutosaveNow(false);
+    const headers = [
+      "Número visual",
+      "Cliente",
+      "Lote",
+      "Fecha límite lote",
+      "Fecha publicación",
+      "Tipo",
+      "Área sugerida",
+      "Objetivo",
+      "Tema",
+      "Idea creativa",
+      "Mensaje clave",
+      "Copy In",
+      "CTA",
+      "Plataformas",
+      "Formato visual",
+      "Ubicación feed",
+      "Requiere producción",
+      "Platillos",
+      "Props / cosas especiales",
+      "Notas técnicas producción",
+      "Notas generales producción",
+      "Links inspiración",
+      "Links material",
+      "Estado",
+      "Respaldo generado",
+    ];
+    const generatedAt = new Date().toLocaleString("es-MX");
+    const rows = items.map((item, index) => {
+      const production = item as ContentRequest & Record<string, any>;
+      return [
+        item.lotSequenceNumber || item.number || index + 1,
+        item.clientName,
+        draftName || "Lote sin nombre",
+        batchDueDate,
+        item.publishDate,
+        item.contentType,
+        item.suggestedArea,
+        item.objective,
+        item.topic,
+        item.creativeIdea,
+        item.keyMessage,
+        item.copyIn,
+        item.cta,
+        item.platforms || [],
+        item.visualFormat,
+        item.feedPlacement,
+        item.requiresProduction ? "Sí" : "No",
+        splitProductionDishes(production.productionDishes),
+        production.productionSpecialRequirements || "",
+        production.productionTechnicalNotes || "",
+        item.productionNotes || "",
+        item.referenceLinks || "",
+        item.materialLinks || "",
+        item.status || "",
+        generatedAt,
+      ];
+    });
+    const csv = [headers, ...rows]
+      .map((row) => row.map(csvCell).join(","))
+      .join("\r\n");
+    const blob = new Blob(["\ufeff", csv], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeName = (draftName || client?.name || "lote-solicitudes")
+      .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+    link.href = url;
+    link.download = `${safeName || "lote-solicitudes"}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showFeedback(
+      `Respaldo descargado con ${items.length} solicitud(es). Se puede abrir en Excel.`,
+      "info",
+    );
+  }
+
+  function sharedCreatorState() {
+    return stripUndefinedDeep({
+      manual,
+      creatorMode,
+      aiCount,
+      startDate,
+      interval,
+      types,
+      goals,
+      themes,
+      must,
+      manualCount,
+    });
+  }
+
+  function sharedDraftPayload(name: string, itemsForSave: ContentRequest[]) {
+    const editor = currentEditorIdentity();
+    const collaboratorNames = eligibleCollaborators
+      .filter((user) => collaboratorIds.includes(user.id || ""))
+      .map((user) => user.name || user.email);
+    return stripUndefinedDeep({
+      name,
+      clientId: client?.id || "",
+      clientName: client?.name || "",
+      status: "draft",
+      batchDueDate,
+      items: itemsForSave,
+      collaborationEnabled,
+      collaboratorIds,
+      collaboratorNames,
+      creatorState: sharedCreatorState(),
+      lastEditedById: editor.id,
+      lastEditedByName: editor.name,
+    });
+  }
+
+  function creatorSnapshotFromDraft(data: any, loadedItems: ContentRequest[]) {
+    const state = data?.creatorState || {};
+    return JSON.stringify({
+      clientId: data.clientId || "",
+      draftName: data.name || "",
+      batchDueDate: data.batchDueDate || "",
+      items: loadedItems,
+      manual: state.manual || emptyRequest,
+      creatorMode: state.creatorMode || "ia",
+      aiCount: Number(state.aiCount || 5),
+      startDate: state.startDate || "",
+      interval: Number(state.interval || 2),
+      types: state.types || "Reel,Carrusel,Post",
+      goals: state.goals || "Ventas,Awareness,Confianza",
+      themes: state.themes || "Experiencia,Producto estrella,Testimonios",
+      must: state.must || "",
+      manualCount: Number(state.manualCount || 5),
+      collaborationEnabled: data.collaborationEnabled !== false,
+      collaboratorIds: data.collaboratorIds || [],
+    });
+  }
+
+  function applySharedDraftData(data: any, announce = true) {
+    const state = data?.creatorState || {};
+    const loadedItems = normalizeCreatorItems(
+      (data.items || []).map((item: ContentRequest) => ({
+        ...item,
+        batchDueDate: data.batchDueDate || item.batchDueDate || "",
+      })),
+    );
+    applyingRemoteDraftRef.current = true;
+    setDraftName(data.name || "");
+    setBatchDueDate(data.batchDueDate || "");
+    setClientId(data.clientId || clientId);
+    setItems(loadedItems);
+    setManual(state.manual || emptyRequest);
+    setCreatorMode(state.creatorMode || "ia");
+    setAiCount(Number(state.aiCount || 5));
+    setStartDate(state.startDate || "");
+    setInterval(Number(state.interval || 2));
+    setTypes(state.types || "Reel,Carrusel,Post");
+    setGoals(state.goals || "Ventas,Awareness,Confianza");
+    setThemes(state.themes || "Experiencia,Producto estrella,Testimonios");
+    setMust(state.must || "");
+    setManualCount(Number(state.manualCount || 5));
+    setCollaborationEnabled(data.collaborationEnabled !== false);
+    setCollaboratorIds(data.collaboratorIds || []);
+    setLastSharedEditor(data.lastEditedByName || "");
+    setLastSharedAt(formatSharedDate(data.lastEditedAt || data.updatedAt));
+    sharedRevisionRef.current = Number(data.collaborationRevision || 0);
+    savedSnapshotRef.current = creatorSnapshotFromDraft(data, loadedItems);
+    dirtyRef.current = false;
+    setRemoteDraftUpdate(null);
+    setSharedSyncStatus("Sincronizado con el equipo");
+    setExpandedItemIndex(null);
+    setAddPanelCollapsed(Boolean(loadedItems.length));
+    clearLocalAutosave();
+    window.setTimeout(() => {
+      applyingRemoteDraftRef.current = false;
+    }, 0);
+    if (announce) showFeedback("Se aplicó la versión más reciente del lote compartido.", "info");
+  }
+
+  async function updateExistingSharedDraft(
+    id: string,
+    payload: Record<string, any>,
+  ) {
+    const editor = currentEditorIdentity();
+    const draftRef = doc(db, "plannerDrafts", id);
+    let nextRevision = sharedRevisionRef.current + 1;
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(draftRef);
+      if (!snapshot.exists()) throw new Error("El borrador compartido ya no existe.");
+      const remote = snapshot.data() as any;
+      const remoteRevision = Number(remote.collaborationRevision || 0);
+      const remoteEditor = String(remote.lastEditedById || "");
+      if (
+        remoteRevision > sharedRevisionRef.current &&
+        remoteEditor &&
+        remoteEditor !== editor.id
+      ) {
+        setRemoteDraftUpdate({ id: snapshot.id, ...remote });
+        throw new Error(
+          `Hay una versión más reciente guardada por ${remote.lastEditedByName || "otro integrante"}. Descarga tu respaldo y aplica los cambios del equipo antes de continuar.`,
+        );
+      }
+      nextRevision = Math.max(remoteRevision, sharedRevisionRef.current) + 1;
+      transaction.update(draftRef, {
+        ...payload,
+        collaborationRevision: nextRevision,
+        lastEditedById: editor.id,
+        lastEditedByName: editor.name,
+        lastEditedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    });
+    sharedRevisionRef.current = nextRevision;
+    setLastSharedEditor(editor.name);
+    setLastSharedAt(new Date().toLocaleString("es-MX"));
+  }
+
+  async function syncSharedDraftSilently() {
+    if (
+      !currentDraftId ||
+      !collaborationEnabled ||
+      syncingSharedDraft ||
+      remoteDraftUpdate ||
+      applyingRemoteDraftRef.current ||
+      !client?.id
+    )
+      return;
+    const name = draftName || defaultBatchName(client.name);
+    const itemsForSave = prepareItemsForPersistence(items, batchDueDate);
+    setSyncingSharedDraft(true);
+    setSharedSyncStatus("Sincronizando cambios...");
+    try {
+      await updateExistingSharedDraft(
+        currentDraftId,
+        sharedDraftPayload(name, itemsForSave),
+      );
+      setDraftName(name);
+      setItems(itemsForSave);
+      savedSnapshotRef.current = JSON.stringify({
+        clientId: client.id,
+        draftName: name,
+        batchDueDate,
+        items: itemsForSave,
+        manual,
+        creatorMode,
+        aiCount,
+        startDate,
+        interval,
+        types,
+        goals,
+        themes,
+        must,
+        manualCount,
+        collaborationEnabled,
+        collaboratorIds,
+      });
+      dirtyRef.current = false;
+      setAutosaveAt(new Date().toISOString());
+      clearLocalAutosave();
+      setSharedSyncStatus("Sincronizado con el equipo");
+    } catch (error) {
+      setSharedSyncStatus(
+        error instanceof Error ? error.message : "No se pudo sincronizar el lote.",
+      );
+    } finally {
+      setSyncingSharedDraft(false);
+    }
+  }
+
   async function saveDraft(): Promise<boolean> {
     if (!canCreateRequests) {
       permissionAlert("guardar borradores de solicitudes");
@@ -880,27 +1348,27 @@ export default function CreatorPage() {
     }
     const name = draftName || defaultBatchName(client.name);
     const itemsForSave = prepareItemsForPersistence(items, batchDueDate);
+    const payload = sharedDraftPayload(name, itemsForSave);
     setBusy(true);
+    setSharedSyncStatus("Guardando borrador compartido...");
     try {
-      if (currentDraftId) {
-        await updatePlannerDraft(currentDraftId, {
-          name,
-          clientId: client.id,
-          clientName: client.name,
-          status: "draft",
-          batchDueDate,
-          items: itemsForSave,
-        });
+      let draftId = currentDraftId;
+      if (draftId) {
+        await updateExistingSharedDraft(draftId, payload);
       } else {
+        const editor = currentEditorIdentity();
         const ref = await savePlannerDraft({
-          name,
-          clientId: client.id,
-          clientName: client.name,
-          status: "draft",
-          batchDueDate,
-          items: itemsForSave,
-        });
+          ...payload,
+          collaborationRevision: 1,
+          lastEditedById: editor.id,
+          lastEditedByName: editor.name,
+          lastEditedAt: new Date().toISOString(),
+        } as PlannerDraft);
+        draftId = ref.id;
         setCurrentDraftId(ref.id);
+        sharedRevisionRef.current = 1;
+        setLastSharedEditor(editor.name);
+        setLastSharedAt(new Date().toLocaleString("es-MX"));
       }
       savedSnapshotRef.current = JSON.stringify({
         clientId: client.id,
@@ -917,14 +1385,21 @@ export default function CreatorPage() {
         themes,
         must,
         manualCount,
+        collaborationEnabled,
+        collaboratorIds,
       });
       dirtyRef.current = false;
       clearLocalAutosave();
       setDraftName(name);
       setItems(itemsForSave);
+      setSharedSyncStatus(
+        collaborationEnabled
+          ? "Sincronizado con el equipo"
+          : "Borrador guardado",
+      );
       await load();
       showFeedback(
-        `Borrador guardado correctamente: ${name}. ${itemsForSave.length} solicitud(es) guardada(s).`,
+        `Borrador guardado correctamente: ${name}. ${itemsForSave.length} solicitud(es) guardada(s).${collaborationEnabled ? " Ya puede abrirlo otro Content Manager." : ""}`,
       );
       return true;
     } catch (error) {
@@ -962,37 +1437,14 @@ export default function CreatorPage() {
   }
 
   function openDraft(draft: PlannerDraft) {
-    const loadedItems = normalizeCreatorItems(
-      (draft.items || []).map((item) => ({
-        ...item,
-        batchDueDate: draft.batchDueDate || item.batchDueDate || "",
-      })),
-    );
-    savedSnapshotRef.current = JSON.stringify({
-      clientId: draft.clientId,
-      draftName: draft.name,
-      batchDueDate: draft.batchDueDate || "",
-      items: loadedItems,
-      manual,
-      creatorMode,
-      aiCount,
-      startDate,
-      interval,
-      types,
-      goals,
-      themes,
-      must,
-      manualCount,
-    });
-    dirtyRef.current = false;
-    clearLocalAutosave();
+    const data = draft as PlannerDraft & Record<string, any>;
     setCurrentDraftId(draft.id || "");
-    setDraftName(draft.name);
-    setBatchDueDate(draft.batchDueDate || "");
-    setClientId(draft.clientId);
-    setItems(loadedItems);
-    setExpandedItemIndex(null);
-    setAddPanelCollapsed(Boolean((draft.items || []).length));
+    sharedRevisionRef.current = Number(data.collaborationRevision || 0);
+    setCollaborationEnabled(data.collaborationEnabled !== false);
+    setCollaboratorIds(data.collaboratorIds || []);
+    setLastSharedEditor(data.lastEditedByName || "");
+    setLastSharedAt(formatSharedDate(data.lastEditedAt || data.updatedAt));
+    applySharedDraftData(data, false);
   }
 
   function newDraft() {
@@ -1000,6 +1452,14 @@ export default function CreatorPage() {
     dirtyRef.current = false;
     clearLocalAutosave();
     setCurrentDraftId("");
+    sharedRevisionRef.current = 0;
+    setRemoteDraftUpdate(null);
+    setCollaborationEnabled(true);
+    const editor = currentEditorIdentity();
+    setCollaboratorIds(editor.id ? [editor.id] : []);
+    setLastSharedEditor("");
+    setLastSharedAt("");
+    setSharedSyncStatus("Listo para compartir");
     setDraftName("");
     setBatchDueDate("");
     setItems([]);
@@ -1818,6 +2278,15 @@ export default function CreatorPage() {
           />
         </div>
         <button
+          className="btn"
+          type="button"
+          onClick={downloadCurrentBatchBackup}
+          disabled={!items.length}
+          title="Descarga inmediata compatible con Excel"
+        >
+          Descargar respaldo del lote
+        </button>
+        <button
           className="btn blue"
           onClick={saveDraft}
           disabled={!canCreateRequests}
@@ -1843,6 +2312,91 @@ export default function CreatorPage() {
           Nuevo
         </button>
       </div>
+
+      <section className="card" style={{ margin: "0 0 16px", padding: 16 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <p className="eyebrow">Lote compartido</p>
+            <h3 style={{ margin: "0 0 5px" }}>Colaboración entre Content Managers</h3>
+            <p className="mini" style={{ margin: 0 }}>
+              Guarda el borrador una vez para activarlo. Después, los cambios se sincronizan automáticamente y se bloquea cualquier sobrescritura si existe una versión más reciente del equipo.
+            </p>
+          </div>
+          <label className="check-row" style={{ margin: 0 }}>
+            <input
+              type="checkbox"
+              checked={collaborationEnabled}
+              onChange={(event) => setCollaborationEnabled(event.target.checked)}
+            />{" "}
+            Lote colaborativo
+          </label>
+        </div>
+
+        {collaborationEnabled && (
+          <>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
+              {eligibleCollaborators.map((user) => (
+                <button
+                  type="button"
+                  className={
+                    collaboratorIds.includes(user.id || "")
+                      ? "chip-btn selected"
+                      : "chip-btn"
+                  }
+                  key={user.id || user.email}
+                  onClick={() => toggleCollaborator(user.id)}
+                >
+                  {user.name || user.email}
+                </button>
+              ))}
+              {!eligibleCollaborators.length && (
+                <span className="mini">No fue posible cargar los perfiles disponibles.</span>
+              )}
+            </div>
+            <div
+              className="mini"
+              style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}
+            >
+              <strong>{syncingSharedDraft ? "Sincronizando..." : sharedSyncStatus}</strong>
+              {currentDraftId ? (
+                <span>Borrador compartido activo · revisión {sharedRevisionRef.current || 0}</span>
+              ) : (
+                <span>Guarda el borrador para compartirlo.</span>
+              )}
+              {lastSharedEditor && (
+                <span>Última edición: {lastSharedEditor}{lastSharedAt ? ` · ${lastSharedAt}` : ""}</span>
+              )}
+            </div>
+          </>
+        )}
+
+        {remoteDraftUpdate && (
+          <div className="inline-feedback info" style={{ marginTop: 14, alignItems: "center" }}>
+            <strong>Cambios nuevos del equipo</strong>
+            <span>
+              {remoteDraftUpdate.lastEditedByName || "Otro integrante"} guardó una versión más reciente. Para no perder tu trabajo, descarga primero tu respaldo y después aplica la versión compartida.
+            </span>
+            <button className="btn" type="button" onClick={downloadCurrentBatchBackup}>
+              Descargar mi versión
+            </button>
+            <button
+              className="btn blue"
+              type="button"
+              onClick={() => applySharedDraftData(remoteDraftUpdate)}
+            >
+              Aplicar cambios del equipo
+            </button>
+          </div>
+        )}
+      </section>
 
       <div
         className="mini"
@@ -2470,19 +3024,72 @@ export default function CreatorPage() {
                                   pesados en solicitudes.
                                 </p>
                                 {item.requiresProduction && (
-                                  <div className="field">
-                                    <label>Notas para producción</label>
-                                    <textarea
-                                      value={item.productionNotes}
-                                      onChange={(e) =>
-                                        updateItem(
-                                          index,
-                                          "productionNotes",
-                                          e.target.value,
-                                        )
-                                      }
-                                      placeholder="Tomas necesarias, estilo, locación, etc."
-                                    />
+                                  <div style={{ display: "grid", gap: 12 }}>
+                                    <div className="field">
+                                      <label>Platillos necesarios para este visual</label>
+                                      <input
+                                        value={splitProductionDishes(
+                                          (item as ContentRequest & Record<string, any>).productionDishes,
+                                        ).join(", ")}
+                                        onChange={(e) =>
+                                          updateItem(
+                                            index,
+                                            "productionDishes" as keyof ContentRequest,
+                                            splitProductionDishes(e.target.value),
+                                          )
+                                        }
+                                        placeholder="Ej. Hamburguesa clásica, papas, limonada"
+                                      />
+                                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                                        {splitProductionDishes(
+                                          (item as ContentRequest & Record<string, any>).productionDishes,
+                                        ).map((dish) => (
+                                          <span className="pill" key={dish}>{dish}</span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    <div className="field">
+                                      <label>Cosas especiales, props o alertas</label>
+                                      <textarea
+                                        value={(item as ContentRequest & Record<string, any>).productionSpecialRequirements || ""}
+                                        onChange={(e) =>
+                                          updateItem(
+                                            index,
+                                            "productionSpecialRequirements" as keyof ContentRequest,
+                                            e.target.value,
+                                          )
+                                        }
+                                        placeholder="Ej. Cartulina, lentes, hielo seco, modelo, permiso, objeto especial..."
+                                      />
+                                    </div>
+                                    <div className="field">
+                                      <label>Notas técnicas de producción por visual</label>
+                                      <textarea
+                                        value={(item as ContentRequest & Record<string, any>).productionTechnicalNotes || ""}
+                                        onChange={(e) =>
+                                          updateItem(
+                                            index,
+                                            "productionTechnicalNotes" as keyof ContentRequest,
+                                            e.target.value,
+                                          )
+                                        }
+                                        placeholder="Encuadre, iluminación, movimiento, orden de tomas y forma de ejecutar la referencia."
+                                      />
+                                    </div>
+                                    <div className="field">
+                                      <label>Notas generales para producción</label>
+                                      <textarea
+                                        value={item.productionNotes}
+                                        onChange={(e) =>
+                                          updateItem(
+                                            index,
+                                            "productionNotes",
+                                            e.target.value,
+                                          )
+                                        }
+                                        placeholder="Tomas necesarias, estilo, locación, etc."
+                                      />
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -2584,6 +3191,9 @@ export default function CreatorPage() {
                     {draft.clientName} · {draft.items?.length || 0} solicitudes
                     · Límite: {draft.batchDueDate || "Sin fecha"} ·{" "}
                     {draft.status}
+                    {(draft as PlannerDraft & Record<string, any>).collaborationEnabled !== false && " · Colaborativo"}
+                    {(draft as PlannerDraft & Record<string, any>).lastEditedByName &&
+                      ` · Editó ${(draft as PlannerDraft & Record<string, any>).lastEditedByName}`}
                   </span>
                   <div className="draft-actions">
                     <button className="btn" onClick={() => openDraft(draft)}>
@@ -3125,6 +3735,66 @@ function RequestForm({
           No cargues archivos de material aquí. Pega el link de
           Drive/Frame/Dropbox para evitar saturar Storage.
         </p>
+        {request.requiresProduction && (
+          <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+            <div className="field">
+              <label>Platillos necesarios para este visual</label>
+              <input
+                value={splitProductionDishes(
+                  (request as ContentRequest & Record<string, any>).productionDishes,
+                ).join(", ")}
+                onChange={(e) =>
+                  onChange(
+                    "productionDishes" as keyof ContentRequest,
+                    splitProductionDishes(e.target.value),
+                  )
+                }
+                placeholder="Ej. Hamburguesa clásica, papas, limonada"
+              />
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                {splitProductionDishes(
+                  (request as ContentRequest & Record<string, any>).productionDishes,
+                ).map((dish) => (
+                  <span className="pill" key={dish}>{dish}</span>
+                ))}
+              </div>
+            </div>
+            <div className="field">
+              <label>Cosas especiales, props o alertas</label>
+              <textarea
+                value={(request as ContentRequest & Record<string, any>).productionSpecialRequirements || ""}
+                onChange={(e) =>
+                  onChange(
+                    "productionSpecialRequirements" as keyof ContentRequest,
+                    e.target.value,
+                  )
+                }
+                placeholder="Ej. Cartulina, lentes, hielo seco, modelo, permiso, objeto especial..."
+              />
+            </div>
+            <div className="field">
+              <label>Notas técnicas de producción por visual</label>
+              <textarea
+                value={(request as ContentRequest & Record<string, any>).productionTechnicalNotes || ""}
+                onChange={(e) =>
+                  onChange(
+                    "productionTechnicalNotes" as keyof ContentRequest,
+                    e.target.value,
+                  )
+                }
+                placeholder="Encuadre, iluminación, movimiento, orden de tomas y forma de ejecutar la referencia."
+              />
+            </div>
+            <div className="field">
+              <label>Notas generales para producción</label>
+              <textarea
+                value={request.productionNotes || ""}
+                onChange={(e) => onChange("productionNotes", e.target.value)}
+                placeholder="Tomas necesarias, estilo, locación, etc."
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3145,7 +3815,8 @@ function briefCompleteness(item: ContentRequest) {
     item.platforms?.length,
     item.visualFormat || item.feedPlacement,
     item.requiresProduction
-      ? item.productionNotes
+      ? item.productionNotes ||
+        (item as ContentRequest & Record<string, any>).productionTechnicalNotes
       : item.materialAvailable || item.materialLinks,
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
@@ -3164,7 +3835,11 @@ function briefMissingFields(item: ContentRequest) {
   if (!isPhotographyOnly(item) && !item.copyIn) missing.push("copy in");
   if (!item.cta) missing.push("CTA");
   if (!item.platforms?.length) missing.push("plataformas");
-  if (item.requiresProduction && !item.productionNotes)
+  if (
+    item.requiresProduction &&
+    !item.productionNotes &&
+    !(item as ContentRequest & Record<string, any>).productionTechnicalNotes
+  )
     missing.push("notas producción");
   if (
     !item.requiresProduction &&
