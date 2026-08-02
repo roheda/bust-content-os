@@ -184,6 +184,23 @@ function normalizeCsvDate(value = "") {
   return "";
 }
 
+function safeCreatorExitHref(value = "") {
+  const fallback = "/dashboard/creador-solicitudes";
+  if (typeof window === "undefined") return fallback;
+  try {
+    const url = new URL(value || fallback, window.location.origin);
+    if (url.origin !== window.location.origin) return fallback;
+    const isKnownAppRoute =
+      url.pathname === "/dashboard" ||
+      url.pathname.startsWith("/dashboard/") ||
+      url.pathname === "/login";
+    if (!isKnownAppRoute) return fallback;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function CreatorPage() {
   const router = useRouter();
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -540,7 +557,7 @@ export default function CreatorPage() {
       event.preventDefault();
       event.stopPropagation();
       persistLocalAutosaveNow(true);
-      setLeaveWarning({ href: `${url.pathname}${url.search}${url.hash}` });
+      setLeaveWarning({ href: safeCreatorExitHref(`${url.pathname}${url.search}${url.hash}`) });
     }
 
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -1346,7 +1363,7 @@ export default function CreatorPage() {
     dirtyRef.current = false;
     bypassNavigationRef.current = true;
     setLeaveWarning(null);
-    router.push(href);
+    router.push(safeCreatorExitHref(href));
   }
 
   function leaveWithoutSaving() {
@@ -1355,7 +1372,7 @@ export default function CreatorPage() {
     persistLocalAutosaveNow(false);
     bypassNavigationRef.current = true;
     setLeaveWarning(null);
-    router.push(href);
+    router.push(safeCreatorExitHref(href));
   }
 
   function openDraft(draft: PlannerDraft) {
