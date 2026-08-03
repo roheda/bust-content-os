@@ -25,7 +25,6 @@ import {
   emptyRequest,
   getCleanupRetentionSettings,
   getRequestDate,
-  hasMaterial,
   isImageFile,
   isVideoFile,
   estimateRequestCost,
@@ -54,6 +53,48 @@ import {
 } from "@/lib/data";
 
 const creatorAreas = Array.from(new Set([...areas, "Fotografía"]));
+
+const productionNotesTemplate = `Describe libremente lo que debe producirse. Usa las nomenclaturas ## para que Producción pueda convertir estas notas en un plan de rodaje automático.
+
+Usa una línea ##Producto por cada producto, servicio o elemento principal que deba aparecer.
+
+##Producto:
+##Modelo:
+##Toma:
+##Locación:
+##Condición:
+##Orden:
+
+Detalles adicionales:`;
+
+function ensureProductionNotesTemplate(value = "") {
+  const current = String(value || "").trim();
+  if (!current) return productionNotesTemplate;
+  if (/^##\s*Producto\s*:/im.test(current)) return current;
+  return `${current}
+
+Información para el plan de rodaje:
+##Producto:
+##Modelo:
+##Toma:
+##Locación:
+##Condición:
+##Orden:
+
+Detalles adicionales:`;
+}
+
+function hasMeaningfulProductionNotes(value = "") {
+  const cleaned = String(value || "")
+    .replace(/Describe libremente lo que debe producirse[^\n]*/gi, "")
+    .replace(/Usa las nomenclaturas[^\n]*/gi, "")
+    .replace(/Usa una línea ##Producto[^\n]*/gi, "")
+    .replace(/Información para el plan de rodaje:/gi, "")
+    .replace(/^##\s*(Producto|Modelo|Toma|Locación|Condición|Orden)\s*:\s*$/gim, "")
+    .replace(/^Detalles adicionales:\s*$/gim, "")
+    .trim();
+  return cleaned.length >= 8;
+}
 
 function normalizeCreatorText(value = "") {
   return value
@@ -88,11 +129,14 @@ function validateCreatorItemForCreator(
   if (!item.keyMessage.trim()) return "Falta mensaje clave.";
   if (!isPhotographyOnly(item) && !item.copyIn.trim()) return "Falta Copy In.";
   if (!item.cta.trim()) return "Falta CTA.";
-  if (item.requiresProduction && !item.productionNotes.trim())
-    return "Faltan notas para producción.";
+  if (item.requiresProduction && !hasMeaningfulProductionNotes(item.productionNotes))
+    return "Completa las notas de producción; la plantilla vacía no es suficiente.";
 
-  if (!item.requiresProduction && !hasMaterial(item)) {
-    return "Si no requiere producción, debes marcar material disponible y agregar un link de material.";
+  if (
+    !item.requiresProduction &&
+    (!item.materialAvailable || !String(item.materialLinks || "").trim())
+  ) {
+    return "Si ya existe material, marca esa opción y agrega al menos un link de material.";
   }
 
   return "";
@@ -788,6 +832,9 @@ export default function CreatorPage() {
        total,
         status: initialOperationalStatus({ ...item, requiresProduction }),
         materialAvailable: requiresProduction ? false : item.materialAvailable,
+        productionNotes: requiresProduction
+          ? ensureProductionNotesTemplate(item.productionNotes || "")
+          : item.productionNotes || "",
         productionSpecificMaterialLink: requiresProduction ? "" : item.productionSpecificMaterialLink || "",
         productionGeneralMaterialLinks: requiresProduction ? "" : item.productionGeneralMaterialLinks || "",
         materialDeliveredAt: requiresProduction ? "" : item.materialDeliveredAt || "",
@@ -1708,9 +1755,11 @@ export default function CreatorPage() {
             materialLinks: requiresProduction
               ? ""
               : proposal.materialLinks || fallback.materialLinks,
-            productionNotes:
-              proposal.productionNotes ||
-              (requiresProduction ? fallback.productionNotes : ""),
+            productionNotes: requiresProduction
+              ? ensureProductionNotesTemplate(
+                  proposal.productionNotes || fallback.productionNotes || "",
+                )
+              : "",
             publishDate: fallback.publishDate,
             source: "ai-complete",
           },
@@ -1798,6 +1847,12 @@ export default function CreatorPage() {
           }),
           materialAvailable: false,
           materialLinks: "",
+          productionNotes: shouldStartInProduction({
+            contentType: manual.contentType || "Post",
+            suggestedArea: manual.suggestedArea || "Diseño",
+          })
+            ? productionNotesTemplate
+            : "",
           source: "manual-blank",
         },
         "manual-blank",
@@ -1880,11 +1935,53 @@ export default function CreatorPage() {
       next[index].status = v ? "pendiente_produccion" : "lista_asignacion";
       next[index].materialAvailable = v ? false : next[index].materialAvailable;
       if (v) {
+        next[index].productionNotes = ensureProductionNotesTemplate(
+          next[index].productionNotes || "",
+        );
         next[index].productionSpecificMaterialLink = "";
         next[index].productionGeneralMaterialLinks = "";
         next[index].materialDeliveredAt = "";
       }
     }
+    setItems(normalizeCreatorItems(next));
+  }
+
+  function setItemMaterialRoute(
+    index: number,
+    route: "production" | "material",
+  ) {
+    const next = [...items];
+    const current = next[index];
+    if (!current) return;
+    const requiresProduction = route === "production";
+    const updated = {
+      ...current,
+      requiresProduction,
+      materialAvailable: route === "material",
+      productionNotes: requiresProduction
+        ? ensureProductionNotesTemplate(current.productionNotes || "")
+        : current.productionNotes || "",
+      status: requiresProduction ? "pendiente_produccion" : "lista_asignacion",
+      lastEditedById: activeUser?.id || batchOwnerId,
+      lastEditedByName:
+        activeUser?.name ||
+        activeUser?.email ||
+        batchOwnerName ||
+        "Content",
+      lastEditedAt: new Date().toISOString(),
+    } as ContentRequest;
+    const plan = getOperationalPlan(updated, costRules, clientOverrides);
+    const risk = getDeliveryRisk(plan.clientDueDate, plan.deliveryDays);
+    updated.clientDueDate = plan.clientDueDate;
+    updated.internalDueDate = plan.internalDueDate;
+    updated.productionDueDate = requiresProduction ? plan.productionDueDate : "";
+    updated.dueDate = plan.internalDueDate || updated.dueDate;
+    updated.operationalCost = plan.totalCost;
+    updated.operationalHours = plan.editingHours;
+    updated.operationalWeight = 1;
+    updated.operationalRisk =
+      risk.tone === "bad" ? "red" : risk.tone === "mid" ? "yellow" : "green";
+    next[index] = updated;
     setItems(normalizeCreatorItems(next));
   }
 
@@ -2733,6 +2830,13 @@ export default function CreatorPage() {
         .creator-collaborator strong { font-size:13px; } .creator-collaborator span { color:#667085; font-size:11px; font-weight:750; }
         .creator-collaborator.selected { border-color:rgba(158,252,123,.95); background:linear-gradient(135deg,rgba(158,252,123,.34),#fff); box-shadow:0 0 0 3px rgba(158,252,123,.16); }
         .creator-file-actions { display:flex; justify-content:flex-end; gap:9px; flex-wrap:wrap; }
+        .creator-material-route { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+        .creator-route-option { border:1px solid rgba(52,58,64,.14); border-radius:18px; background:#fff; padding:13px; display:grid; gap:4px; text-align:left; color:var(--brand-dark); cursor:pointer; }
+        .creator-route-option strong { font-size:13px; }
+        .creator-route-option span { color:#667085; font-size:11px; line-height:1.4; font-weight:750; }
+        .creator-route-option.selected { border-color:rgba(158,252,123,.95); background:linear-gradient(135deg,rgba(158,252,123,.34),#fff); box-shadow:0 0 0 3px rgba(158,252,123,.16); }
+        .creator-production-notes-field textarea { min-height:260px; font-family:inherit; line-height:1.55; }
+        .creator-route-pending { border:1px dashed rgba(52,58,64,.22); border-radius:16px; padding:12px; background:#f8fafc; }
         .creator-csv-preview { display:grid; gap:14px; }
         .creator-csv-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
         .creator-csv-summary > div { border:1px solid var(--line); border-radius:16px; padding:12px; background:#fff; }
@@ -2764,6 +2868,7 @@ export default function CreatorPage() {
           .creator-collaboration-head, .creator-file-tools { flex-direction:column; }
           .creator-file-actions { justify-content:flex-start; }
           .creator-csv-summary { grid-template-columns:1fr; }
+          .creator-material-route { grid-template-columns:1fr; }
           .creator-workspace-head {
             align-items: flex-start;
             flex-direction: column;
@@ -3726,57 +3831,44 @@ export default function CreatorPage() {
                             </div>
                             <div className="creator-material-grid">
                               <div>
-                                <label className="check-row">
-                                  <input
-                                    type="checkbox"
-                                    checked={item.requiresProduction}
-                                    onChange={(e) =>
-                                      updateItem(
-                                        index,
-                                        "requiresProduction",
-                                        e.target.checked,
-                                      )
+                                <div className="creator-material-route">
+                                  <button
+                                    type="button"
+                                    className={
+                                      item.requiresProduction
+                                        ? "creator-route-option selected"
+                                        : "creator-route-option"
                                     }
-                                  />{" "}
-                                  Requiere producción
-                                </label>
-                                {!item.requiresProduction && (
-                                  <label className="check-row">
-                                    <input
-                                      type="checkbox"
-                                      checked={item.materialAvailable}
-                                      onChange={(e) =>
-                                        updateItem(
-                                          index,
-                                          "materialAvailable",
-                                          e.target.checked,
-                                        )
-                                      }
-                                    />{" "}
-                                    Material disponible
-                                  </label>
-                                )}
-                                <div className="field">
-                                  <label>Links de material</label>
-                                  <textarea
-                                    value={item.materialLinks}
-                                    onChange={(e) =>
-                                      updateItem(
-                                        index,
-                                        "materialLinks",
-                                        e.target.value,
-                                      )
+                                    onClick={() =>
+                                      setItemMaterialRoute(index, "production")
                                     }
-                                    placeholder="Drive, Dropbox, Frame, etc."
-                                  />
+                                  >
+                                    <strong>Requiere producción</strong>
+                                    <span>
+                                      Se grabará o fotografiará material nuevo.
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={
+                                      !item.requiresProduction &&
+                                      item.materialAvailable
+                                        ? "creator-route-option selected"
+                                        : "creator-route-option"
+                                    }
+                                    onClick={() =>
+                                      setItemMaterialRoute(index, "material")
+                                    }
+                                  >
+                                    <strong>Ya existe material</strong>
+                                    <span>
+                                      El equipo trabajará desde links existentes.
+                                    </span>
+                                  </button>
                                 </div>
-                                <p className="mini field-note">
-                                  Para material final usa links de
-                                  Drive/Frame/Dropbox. No se cargan archivos
-                                  pesados en solicitudes.
-                                </p>
-                                {item.requiresProduction && (
-                                  <div className="field">
+
+                                {item.requiresProduction ? (
+                                  <div className="field creator-production-notes-field">
                                     <label>Notas para producción</label>
                                     <textarea
                                       value={item.productionNotes}
@@ -3787,9 +3879,42 @@ export default function CreatorPage() {
                                           e.target.value,
                                         )
                                       }
-                                      placeholder="Tomas necesarias, estilo, locación, etc."
+                                      placeholder={productionNotesTemplate}
                                     />
+                                    <p className="mini field-note">
+                                      Escribe normalmente y usa ##Producto,
+                                      ##Modelo, ##Toma, ##Locación, ##Condición y
+                                      ##Orden para ayudar a generar el plan de
+                                      rodaje automáticamente.
+                                    </p>
                                   </div>
+                                ) : item.materialAvailable ? (
+                                  <>
+                                    <div className="field">
+                                      <label>Links de material existente</label>
+                                      <textarea
+                                        value={item.materialLinks}
+                                        onChange={(e) =>
+                                          updateItem(
+                                            index,
+                                            "materialLinks",
+                                            e.target.value,
+                                          )
+                                        }
+                                        placeholder="Drive, Dropbox, Frame, Canva, etc."
+                                      />
+                                    </div>
+                                    <p className="mini field-note">
+                                      Agrega al menos un link del material que ya
+                                      existe. No se cargan archivos pesados en
+                                      solicitudes.
+                                    </p>
+                                  </>
+                                ) : (
+                                  <p className="mini creator-route-pending">
+                                    Define si esta pieza requiere producción o si
+                                    ya existe material para trabajarla.
+                                  </p>
                                 )}
                               </div>
                               <div>
@@ -4530,8 +4655,8 @@ function briefCompleteness(item: ContentRequest) {
     item.platforms?.length,
     item.visualFormat || item.feedPlacement,
     item.requiresProduction
-      ? item.productionNotes
-      : item.materialAvailable || item.materialLinks,
+      ? hasMeaningfulProductionNotes(item.productionNotes)
+      : item.materialAvailable && Boolean(String(item.materialLinks || "").trim()),
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
@@ -4549,12 +4674,14 @@ function briefMissingFields(item: ContentRequest) {
   if (!isPhotographyOnly(item) && !item.copyIn) missing.push("copy in");
   if (!item.cta) missing.push("CTA");
   if (!item.platforms?.length) missing.push("plataformas");
-  if (item.requiresProduction && !item.productionNotes)
+  if (
+    item.requiresProduction &&
+    !hasMeaningfulProductionNotes(item.productionNotes)
+  )
     missing.push("notas producción");
   if (
     !item.requiresProduction &&
-    !item.materialAvailable &&
-    !item.materialLinks
+    (!item.materialAvailable || !String(item.materialLinks || "").trim())
   )
     missing.push("material/link");
   return missing;

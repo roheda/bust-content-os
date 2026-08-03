@@ -63,19 +63,18 @@ function timelineSortValue(value?: string) {
   return iso ? new Date(iso).getTime() : 0;
 }
 
-const people = ["Todos", ...organizationTeam.map((member) => member.name)];
-const areas = ["Todas", "DiseÃ±o", "Audiovisual"];
+const areas = ["Todas", "Diseño", "Audiovisual"];
 const commentTargets = [
   "Content",
   "Key Account",
-  "DiseÃ±o",
+  "Diseño",
   "Audiovisual",
   "Cliente",
   "Interno",
 ];
 const workStatuses = [
   ["asignada", "Asignada"],
-  ["en_revision", "En revisiÃ³n"],
+  ["en_revision", "En revisión"],
   ["rebotada", "Rebotada"],
 ];
 
@@ -94,6 +93,7 @@ export default function TasksPage() {
   );
   const [calendarMode, setCalendarMode] = useState<"semana" | "mes">("semana");
   const [cursor, setCursor] = useState(new Date());
+  const [clientFilter, setClientFilter] = useState("all");
   const [person, setPerson] = useState("Todos");
   const [area, setArea] = useState("Todas");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -191,6 +191,32 @@ export default function TasksPage() {
       window.removeEventListener("bust-open-task", handler as EventListener);
   }, [requests]);
 
+  const clientOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    requests.forEach((request) => {
+      const key = request.clientId || request.clientName || "sin-cliente";
+      const label = request.clientName || "Sin cliente";
+      if (!map.has(key)) map.set(key, label);
+    });
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
+  }, [requests]);
+
+  const peopleOptions = useMemo(() => {
+    const names = [
+      ...organizationTeam.map((member) => member.name),
+      ...users.map((user) => user.name || user.email),
+      ...requests.map((request) => request.assignedTo || ""),
+    ].filter(Boolean);
+    return [
+      "Todos",
+      ...Array.from(new Map(names.map((name) => [name.toLowerCase(), name])).values()).sort(
+        (a, b) => a.localeCompare(b, "es", { sensitivity: "base" }),
+      ),
+    ];
+  }, [requests, users]);
+
   const filtered = useMemo(
     () =>
       requests.filter((x) => {
@@ -241,6 +267,9 @@ export default function TasksPage() {
         return (
           taskStates &&
           workflowOk &&
+          (clientFilter === "all" ||
+            x.clientId === clientFilter ||
+            (!x.clientId && x.clientName === clientFilter)) &&
           (person === "Todos" || directlyAssigned) &&
           areaMatches &&
           (statusFilter === "all" || x.status === statusFilter) &&
@@ -248,7 +277,15 @@ export default function TasksPage() {
             (overdueFilter === "overdue" ? overdue : !overdue))
         );
       }),
-    [requests, person, area, statusFilter, workflowFilter, overdueFilter],
+    [
+      requests,
+      clientFilter,
+      person,
+      area,
+      statusFilter,
+      workflowFilter,
+      overdueFilter,
+    ],
   );
 
   const orderedTasks = useMemo(
@@ -298,17 +335,17 @@ export default function TasksPage() {
     }));
     const fromOrg = organizationTeam.map((member) => ({
       name: member.name,
-      role: `${member.area} Â· ${member.role}`,
+      role: `${member.area} · ${member.role}`,
       token: makeMentionToken(member.name),
     }));
     const areas = [
       "Content",
       "Key Account",
-      "DiseÃ±o",
+      "Diseño",
       "Audiovisual",
       "Cliente",
       "Interno",
-    ].map((name) => ({ name, role: "Ãrea", token: makeMentionToken(name) }));
+    ].map((name) => ({ name, role: "Área", token: makeMentionToken(name) }));
     const merged = [...fromUsers, ...fromOrg, ...areas].filter(
       (item) => item.name && item.token,
     );
@@ -350,7 +387,7 @@ export default function TasksPage() {
         id: `${Date.now()}`,
         author: currentActorName(),
         target: "Interno",
-        body: "Tarea abierta por el responsable. Estado actualizado a En revisiÃ³n.",
+        body: "Tarea abierta por el responsable. Estado actualizado a En revisión.",
         mentions: [],
         createdAt: new Date().toISOString(),
       };
@@ -390,7 +427,7 @@ export default function TasksPage() {
     if (!selected?.id) return;
     if (status === "pendiente_aprobacion")
       return alert(
-        "Para enviar a aprobaciÃ³n usa el botÃ³n Enviar a aprobaciÃ³n y pega el link final.",
+        "Para enviar a aprobación usa el botón Enviar a aprobación y pega el link final.",
       );
     const label = statusLabel(status);
     const nextLog: TaskComment = {
@@ -412,20 +449,20 @@ export default function TasksPage() {
   }
 
   function extractMentions(value: string) {
-    const matches = value.match(/@[\wÃÃÃÃÃÃ¡Ã©Ã­Ã³ÃºÃÃ±._-]+/g) || [];
+    const matches = value.match(/@[\wÁÉÍÓÚáéíóúÑñ._-]+/g) || [];
     return Array.from(new Set(matches.map((item) => item.trim())));
   }
 
   function handleCommentChange(value: string) {
     setComment(value);
-    const match = value.match(/(^|\s)@([\wÃÃÃÃÃÃ¡Ã©Ã­Ã³ÃºÃÃ±._-]*)$/);
+    const match = value.match(/(^|\s)@([\wÁÉÍÓÚáéíóúÑñ._-]*)$/);
     setMentionSearch(match ? match[2] : "");
   }
 
   function insertMention(token: string) {
     setComment((current) => {
       const next = current.replace(
-        /(^|\s)@[\wÃÃÃÃÃÃ¡Ã©Ã­Ã³ÃºÃÃ±._-]*$/,
+        /(^|\s)@[\wÁÉÍÓÚáéíóúÑñ._-]*$/,
         (match, prefix) => `${prefix}@${token} `,
       );
       return next === current ? `${current} @${token} ` : next;
@@ -468,18 +505,18 @@ export default function TasksPage() {
   }
 
   async function sendToApproval() {
-    if (!canEditTasks) return permissionAlert("enviar tareas a aprobaciÃ³n");
+    if (!canEditTasks) return permissionAlert("enviar tareas a aprobación");
     if (!selected?.id) return;
     if (!finalLink.trim())
       return alert(
-        "Para mandar a aprobaciÃ³n debes pegar el link final de Drive.",
+        "Para mandar a aprobación debes pegar el link final de Drive.",
       );
     const comments = [...(selected.comments || [])];
     comments.push({
       id: `${Date.now()}`,
       author: currentActorName(),
       target: "Aprobaciones",
-      body: `Enviado a aprobaciÃ³n. Link final: ${finalLink.trim()}`,
+      body: `Enviado a aprobación. Link final: ${finalLink.trim()}`,
       mentions: [],
       createdAt: new Date().toISOString(),
     });
@@ -497,7 +534,7 @@ export default function TasksPage() {
       comments,
     });
     await load();
-    alert("Tarea enviada a aprobaciÃ³n");
+    alert("Tarea enviada a aprobación");
   }
 
   async function sendToGenerator() {
@@ -536,132 +573,345 @@ export default function TasksPage() {
     ? buildTaskTimeline(selected, batchContext)
     : [];
 
+  const activeFilterCount = [
+    clientFilter !== "all",
+    person !== "Todos",
+    area !== "Todas",
+    workflowFilter !== "pending",
+    statusFilter !== "all",
+    overdueFilter !== "all",
+  ].filter(Boolean).length;
+  const selectedClientName =
+    clientOptions.find((option) => option.id === clientFilter)?.name ||
+    (clientFilter !== "all" ? clientFilter : "");
+  const activeScopeLabel =
+    person !== "Todos"
+      ? person
+      : selectedClientName
+        ? selectedClientName
+        : area !== "Todas"
+          ? area
+          : "Todas";
+
+  function clearTaskFilters() {
+    setClientFilter("all");
+    setPerson("Todos");
+    setArea("Todas");
+    setWorkflowFilter("pending");
+    setStatusFilter("all");
+    setOverdueFilter("all");
+  }
+
   return (
     <AppShell active="Tareas">
+      <style jsx global>{`
+        .task-control-panel {
+          margin: 18px 0 16px;
+          border: 1px solid rgba(52, 58, 64, 0.14);
+          border-radius: 26px;
+          background: rgba(255, 255, 255, 0.94);
+          box-shadow: 0 16px 42px rgba(52, 58, 64, 0.08);
+          overflow: hidden;
+        }
+        .task-control-primary {
+          display: grid;
+          grid-template-columns: minmax(360px, auto) minmax(0, 1fr);
+          gap: 18px;
+          align-items: end;
+          padding: 16px 18px;
+          border-bottom: 1px solid rgba(52, 58, 64, 0.1);
+          background: linear-gradient(135deg, #ffffff, #f7faf5);
+        }
+        .task-control-group { min-width: 0; }
+        .task-control-heading {
+          display: block;
+          margin-bottom: 8px;
+          color: #667085;
+          font-size: 10px;
+          font-weight: 950;
+          letter-spacing: .12em;
+          text-transform: uppercase;
+        }
+        .task-control-primary .task-view-switch { justify-content: flex-start; }
+        .task-calendar-navigation {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 7px;
+          flex-wrap: wrap;
+        }
+        .task-calendar-navigation .calendar-current-label {
+          min-width: 210px;
+          text-align: center;
+          font-weight: 900;
+        }
+        .task-filter-sections {
+          display: grid;
+          grid-template-columns: 1.15fr .72fr 1.25fr;
+          gap: 12px;
+          padding: 14px 18px;
+        }
+        .task-filter-group {
+          border: 1px solid rgba(52, 58, 64, .1);
+          border-radius: 18px;
+          background: #f8fafc;
+          padding: 12px;
+        }
+        .task-filter-group-title {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .task-filter-group-title strong { font-size: 13px; }
+        .task-filter-group-title span { color: #667085; font-size: 10px; font-weight: 800; }
+        .task-filter-fields {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 9px;
+        }
+        .task-filter-fields.one { grid-template-columns: 1fr; }
+        .task-filter-fields .field { margin: 0; }
+        .task-filter-fields label {
+          font-size: 10px;
+          font-weight: 900;
+          color: #667085;
+          text-transform: uppercase;
+          letter-spacing: .06em;
+        }
+        .task-filter-fields select { width: 100%; min-width: 0; }
+        .task-filter-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          padding: 0 18px 14px;
+        }
+        .task-filter-summary { color: #667085; font-size: 12px; font-weight: 750; }
+        .task-filter-summary strong { color: var(--brand-dark); }
+        @media (max-width: 1200px) {
+          .task-control-primary { grid-template-columns: 1fr; }
+          .task-calendar-navigation { justify-content: flex-start; }
+          .task-filter-sections { grid-template-columns: 1fr 1fr; }
+          .task-filter-group:last-child { grid-column: 1 / -1; }
+        }
+        @media (max-width: 760px) {
+          .task-control-primary,
+          .task-filter-sections { grid-template-columns: 1fr; }
+          .task-filter-group:last-child { grid-column: auto; }
+          .task-filter-fields { grid-template-columns: 1fr; }
+          .task-calendar-navigation .calendar-current-label { min-width: 100%; text-align: left; }
+        }
+      `}</style>
       <section className="hero tasks-hero">
         <div>
           <p className="eyebrow">Equipo</p>
           <h1>Tareas</h1>
           <p>
             Trabajo diario del equipo: calendario, lista, vista por persona,
-            comentarios, vencimientos y envÃ­o a aprobaciÃ³n.
+            comentarios, vencimientos y envío a aprobación.
           </p>
         </div>
       </section>
 
       {!canEditTasks && (
         <section className="card readonly-note">
-          Modo solo lectura: puedes consultar tareas, pero tu rol no puede cambiar estados, comentar ni enviar a aprobaciÃ³n.
+          Modo solo lectura: puedes consultar tareas, pero tu rol no puede cambiar estados, comentar ni enviar a aprobación.
         </section>
       )}
 
-      <div className="tasks-toolbar" aria-label="Controles compactos de tareas">
-        <div className="view-switch task-view-switch">
-          <button
-            className={view === "hoy" ? "active" : ""}
-            onClick={() => setView("hoy")}
-          >
-            Hoy
-          </button>
-          <button
-            className={view === "calendario" ? "active" : ""}
-            onClick={() => setView("calendario")}
-          >
-            Calendario
-          </button>
-          <button
-            className={view === "lista" ? "active" : ""}
-            onClick={() => setView("lista")}
-          >
-            Lista
-          </button>
-          <button
-            className={view === "persona" ? "active" : ""}
-            onClick={() => setView("persona")}
-          >
-            Por persona
-          </button>
+      <section className="task-control-panel" aria-label="Controles y filtros de tareas">
+        <div className="task-control-primary">
+          <div className="task-control-group">
+            <span className="task-control-heading">Vista de trabajo</span>
+            <div className="view-switch task-view-switch">
+              <button
+                className={view === "hoy" ? "active" : ""}
+                onClick={() => setView("hoy")}
+              >
+                Hoy
+              </button>
+              <button
+                className={view === "calendario" ? "active" : ""}
+                onClick={() => setView("calendario")}
+              >
+                Calendario
+              </button>
+              <button
+                className={view === "lista" ? "active" : ""}
+                onClick={() => setView("lista")}
+              >
+                Lista
+              </button>
+              <button
+                className={view === "persona" ? "active" : ""}
+                onClick={() => setView("persona")}
+              >
+                Por persona
+              </button>
+            </div>
+          </div>
+
+          {view === "calendario" ? (
+            <div className="task-control-group">
+              <span className="task-control-heading">Periodo del calendario</span>
+              <div className="calendar-controls task-calendar-navigation">
+                <span className="calendar-current-label">
+                  {formatCalendarLabel(cursor, calendarMode)}
+                </span>
+                <button
+                  className={calendarMode === "semana" ? "active" : ""}
+                  onClick={() => setCalendarMode("semana")}
+                >
+                  Semana
+                </button>
+                <button
+                  className={calendarMode === "mes" ? "active" : ""}
+                  onClick={() => setCalendarMode("mes")}
+                >
+                  Mes
+                </button>
+                <button onClick={() => move(-1)}>← Anterior</button>
+                <button onClick={() => setCursor(new Date())}>Hoy</button>
+                <button onClick={() => move(1)}>Siguiente →</button>
+                <span className="mini workdays-note">Solo días hábiles</span>
+              </div>
+            </div>
+          ) : (
+            <div className="task-control-group">
+              <span className="task-control-heading">Vista actual</span>
+              <div className="task-filter-summary">
+                <strong>{orderedTasks.length} tarea(s)</strong> con los filtros actuales.
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="calendar-controls task-calendar-controls">
-          {view === "calendario" && (
-            <>
-              <span className="calendar-current-label">
-                {formatCalendarLabel(cursor, calendarMode)}
-              </span>
-              <button
-                className={calendarMode === "semana" ? "active" : ""}
-                onClick={() => setCalendarMode("semana")}
-              >
-                Semana
-              </button>
-              <button
-                className={calendarMode === "mes" ? "active" : ""}
-                onClick={() => setCalendarMode("mes")}
-              >
-                Mes
-              </button>
-              <button onClick={() => move(-1)}>â Anterior</button>
-              <button onClick={() => setCursor(new Date())}>Hoy</button>
-              <button onClick={() => move(1)}>Siguiente â</button>
-              <span className="mini workdays-note">Solo dÃ­as hÃ¡biles</span>
-            </>
-          )}
-          <select value={person} onChange={(e) => setPerson(e.target.value)}>
-            {people.map((x) => (
-              <option key={x}>{x}</option>
-            ))}
-          </select>
-          <select value={area} onChange={(e) => setArea(e.target.value)}>
-            {areas.map((x) => (
-              <option key={x}>{x}</option>
-            ))}
-          </select>
-          <select
-            value={taskOrder}
-            onChange={(e) =>
-              setTaskOrder(
-                e.target.value as "chronological" | "visual",
-              )
-            }
-            title="Orden de las tareas"
-          >
-            <option value="chronological">Orden cronológico</option>
-            <option value="visual">Orden por número de visual</option>
-          </select>
-          <select
-            value={workflowFilter}
-            onChange={(e) => setWorkflowFilter(e.target.value)}
-          >
-            <option value="pending">Pendientes</option>
-            <option value="active">Activas</option>
-            <option value="approval">En aprobaciÃ³n</option>
-            <option value="rejected">Rebotadas</option>
-            <option value="finished">Finalizadas</option>
-            <option value="all">Todas</option>
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="all">Todos los estados</option>
-            {workStatuses.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-            <option value="finalizada">Finalizada</option>
-          </select>
-          <select
-            value={overdueFilter}
-            onChange={(e) => setOverdueFilter(e.target.value)}
-          >
-            <option value="all">Vencidas y vigentes</option>
-            <option value="overdue">Solo vencidas</option>
-            <option value="current">Solo vigentes</option>
-          </select>
+        <div className="task-filter-sections">
+          <div className="task-filter-group">
+            <div className="task-filter-group-title">
+              <strong>Alcance</strong>
+              <span>Qué trabajo quieres consultar</span>
+            </div>
+            <div className="task-filter-fields">
+              <div className="field">
+                <label>Cliente</label>
+                <select
+                  value={clientFilter}
+                  onChange={(event) => setClientFilter(event.target.value)}
+                >
+                  <option value="all">Todos los clientes</option>
+                  {clientOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Responsable</label>
+                <select value={person} onChange={(event) => setPerson(event.target.value)}>
+                  {peopleOptions.map((name) => (
+                    <option key={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Área de la tarea</label>
+                <select value={area} onChange={(event) => setArea(event.target.value)}>
+                  {areas.map((name) => (
+                    <option key={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="task-filter-group">
+            <div className="task-filter-group-title">
+              <strong>Organización</strong>
+              <span>Cómo se acomodan</span>
+            </div>
+            <div className="task-filter-fields one">
+              <div className="field">
+                <label>Orden de tareas</label>
+                <select
+                  value={taskOrder}
+                  onChange={(event) =>
+                    setTaskOrder(
+                      event.target.value as "chronological" | "visual",
+                    )
+                  }
+                >
+                  <option value="chronological">Cronológico</option>
+                  <option value="visual">Número de visual</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="task-filter-group">
+            <div className="task-filter-group-title">
+              <strong>Flujo y vigencia</strong>
+              <span>En qué etapa se encuentra</span>
+            </div>
+            <div className="task-filter-fields">
+              <div className="field">
+                <label>Flujo general</label>
+                <select
+                  value={workflowFilter}
+                  onChange={(event) => setWorkflowFilter(event.target.value)}
+                >
+                  <option value="pending">Pendientes</option>
+                  <option value="active">Activas</option>
+                  <option value="approval">En aprobación</option>
+                  <option value="rejected">Rebotadas</option>
+                  <option value="finished">Finalizadas</option>
+                  <option value="all">Todas</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Estado exacto</label>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                >
+                  <option value="all">Todos los estados</option>
+                  {workStatuses.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                  <option value="finalizada">Finalizada</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Vigencia</label>
+                <select
+                  value={overdueFilter}
+                  onChange={(event) => setOverdueFilter(event.target.value)}
+                >
+                  <option value="all">Vencidas y vigentes</option>
+                  <option value="overdue">Solo vencidas</option>
+                  <option value="current">Solo vigentes</option>
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <div className="task-filter-footer">
+          <div className="task-filter-summary">
+            <strong>{orderedTasks.length}</strong> tarea(s) visibles · Alcance: <strong>{activeScopeLabel}</strong>
+            {activeFilterCount ? ` · ${activeFilterCount} filtro(s) personalizado(s)` : " · filtros base"}
+          </div>
+          <button className="btn" type="button" onClick={clearTaskFilters}>
+            Limpiar filtros
+          </button>
+        </div>
+      </section>
 
       <section className="grid kpis tasks-kpis">
         {[
@@ -688,7 +938,7 @@ export default function TasksPage() {
             ),
           ],
           ["Finalizadas", String(finishedCount)],
-          ["Filtro", person === "Todos" ? area : person],
+          ["Alcance", activeScopeLabel],
         ].map(([a, b]) => (
           <div className="kpi" key={a}>
             <span>{a}</span>
@@ -760,14 +1010,14 @@ export default function TasksPage() {
                   {taskSubtitleLine(selected)}
                 </p>
                 <p className="mini">
-                  Trabajar: {getTaskDate(selected) || "Sin fecha"} Â· LÃ­mite
+                  Trabajar: {getTaskDate(selected) || "Sin fecha"} · Límite
                   interno:{" "}
                   {selected.internalDueDate || selected.dueDate || "Sin fecha"}{" "}
-                  Â· Publica:{" "}
+                  · Publica:{" "}
                   {selected.publishDate ||
                     selected.clientDueDate ||
                     "Sin fecha"}{" "}
-                  Â· Lote: {selected.batchName || "Sin lote"}
+                  · Lote: {selected.batchName || "Sin lote"}
                 </p>
               </div>
               <button className="btn red" onClick={closeTask}>
@@ -811,16 +1061,16 @@ export default function TasksPage() {
 
                 {selected.status !== "finalizada" ? (
                   <div className="finalize-box">
-                    <h4>Mandar a aprobaciÃ³n</h4>
+                    <h4>Mandar a aprobación</h4>
                     <p className="mini">
-                      Para mandar a aprobaciÃ³n debes pegar el link final del
+                      Para mandar a aprobación debes pegar el link final del
                       post en Drive.
                     </p>
                     <input
                       className="drive-link-input"
                       value={finalLink}
                       onChange={(e) => setFinalLink(e.target.value)}
-                      placeholder="Pega aquÃ­ el link de Drive, Canva, archivo o carpeta"
+                      placeholder="Pega aquí el link de Drive, Canva, archivo o carpeta"
                       disabled={!canEditTasks}
                     />
                     <button
@@ -829,7 +1079,7 @@ export default function TasksPage() {
                       onClick={sendToApproval}
                       disabled={!canEditTasks}
                     >
-                      Enviar a aprobaciÃ³n
+                      Enviar a aprobación
                     </button>
                   </div>
                 ) : (
@@ -846,7 +1096,7 @@ export default function TasksPage() {
                         target="_blank"
                       >
                         <span>{selected.finalPostLink}</span>
-                        <small>Abrir â</small>
+                        <small>Abrir →</small>
                       </a>
                     )}
                   </div>
@@ -1896,7 +2146,7 @@ function EfficiencyView({
         </section>
         <section className="card">
           <h3>Bloques de trabajo sugeridos</h3>
-          {Object.entries(groupedByType)
+          {(Object.entries(groupedByType) as [string, ContentRequest[]][])
             .slice(0, 8)
             .map(([key, items]) => (
               <div className="efficiency-block" key={key}>
