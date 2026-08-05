@@ -56,22 +56,12 @@ type SortKey =
   | "link"
   | "status";
 
-type ApprovalGroup = {
-  id: string;
-  clientName: string;
-  batchName: string;
-  items: ContentRequest[];
-  approved: number;
-  total: number;
-};
-
 export default function ApprovalsPage() {
   const [requests, setRequests] = useState<ContentRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedStage, setSelectedStage] = useState<ReviewStage>("content");
   const [reason, setReason] = useState(reasons[0]);
   const [notes, setNotes] = useState("");
-  const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
 
   const [clientFilter, setClientFilter] = useState("all");
   const [batchFilter, setBatchFilter] = useState("all");
@@ -94,6 +84,17 @@ export default function ApprovalsPage() {
     );
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeReview();
+      if (event.key === "ArrowLeft") navigateReview(-1);
+      if (event.key === "ArrowRight") navigateReview(1);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedId]);
 
   function taskTitle(item: ContentRequest) {
     return (
@@ -152,14 +153,6 @@ export default function ApprovalsPage() {
       return "Devuelta";
     if (item.status === "finalizada") return "Finalizada";
     return item.status || "Sin estado";
-  }
-
-  function statusTone(item: ContentRequest) {
-    if (isApprovedForContents(item) || item.status === "finalizada") return "green";
-    if (item.status === "rebotada" || item.approvalStatus === "rechazada")
-      return "red";
-    if (isKamPending(item)) return "purple";
-    return "amber";
   }
 
   function reviewStageFor(item: ContentRequest): ReviewStage {
@@ -239,38 +232,6 @@ export default function ApprovalsPage() {
     ],
   );
 
-  const groups = useMemo<ApprovalGroup[]>(() => {
-    const map = new Map<string, ApprovalGroup>();
-    filtered.forEach((item) => {
-      const clientId = item.clientId || "sin-cliente";
-      const batchId = item.batchId || "sin-lote";
-      const id = `${clientId}::${batchId}`;
-      if (!map.has(id)) {
-        const allGroupItems = requests.filter(
-          (row) =>
-            (row.clientId || "sin-cliente") === clientId &&
-            (row.batchId || "sin-lote") === batchId,
-        );
-        map.set(id, {
-          id,
-          clientName: item.clientName || "Sin cliente",
-          batchName: item.batchName || "Sin lote",
-          items: [],
-          approved: allGroupItems.filter(
-            (row) => isApprovedForContents(row) || row.status === "finalizada",
-          ).length,
-          total: allGroupItems.length,
-        });
-      }
-      map.get(id)!.items.push(item);
-    });
-    return Array.from(map.values()).sort((a, b) => {
-      const clientCompare = a.clientName.localeCompare(b.clientName, "es");
-      if (clientCompare) return clientCompare;
-      return a.batchName.localeCompare(b.batchName, "es", { numeric: true });
-    });
-  }, [filtered, requests]);
-
   const selected = useMemo(
     () => requests.find((item) => item.id === selectedId) || null,
     [requests, selectedId],
@@ -287,6 +248,19 @@ export default function ApprovalsPage() {
   const rejected = requests.filter(
     (x) => x.status === "rebotada" || x.approvalStatus === "rechazada",
   ).length;
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection("asc");
+  }
+
+  function sortLabel(key: SortKey) {
+    return sortKey === key ? (sortDirection === "asc" ? " ↑" : " ↓") : "";
+  }
 
   function startReview(item: ContentRequest, stage = reviewStageFor(item)) {
     if (!item.id) return;
@@ -309,7 +283,7 @@ export default function ApprovalsPage() {
       Math.max(0, current + direction),
     );
     const nextItem = filtered[nextIndex];
-    if (nextItem) startReview(nextItem);
+    if (nextItem && nextItem.id !== selectedId) startReview(nextItem);
   }
 
   function nextSelectionId(currentId?: string) {
@@ -329,14 +303,6 @@ export default function ApprovalsPage() {
     if (next) setSelectedStage(reviewStageFor(next));
     setReason(reasons[0]);
     setNotes("");
-  }
-
-  function toggleGroup(groupId: string) {
-    setCollapsedGroups((current) =>
-      current.includes(groupId)
-        ? current.filter((id) => id !== groupId)
-        : [...current, groupId],
-    );
   }
 
   async function approveContent(item: ContentRequest) {
@@ -472,448 +438,378 @@ export default function ApprovalsPage() {
         ))}
       </section>
 
-      <section className={styles.workspace}>
-        <div className={`card ${styles.queueCard}`}>
-          <div className={styles.queueHeading}>
-            <div>
-              <p className="eyebrow">Bandeja</p>
-              <h3>Contenidos por revisar</h3>
-              <p className="mini">
-                Elige una pieza y revísala sin perder de vista el listado.
-              </p>
-            </div>
-            <span className="pill">{filtered.length} visibles</span>
+      <section className="card">
+        <div className="finalized-group-title">
+          <div>
+            <h3>Bandeja de aprobaciones</h3>
+            <p className="mini">
+              La lista permanece compacta. Al revisar, la publicación se abre
+              en una ventana con navegación anterior y siguiente.
+            </p>
           </div>
+          <span className="pill">{filtered.length} visibles</span>
+        </div>
 
-          <div className={styles.filters}>
-            <label className={styles.filterField}>
-              <span>Etapa</span>
-              <select
-                value={stageFilter}
-                onChange={(event) =>
-                  setStageFilter(event.target.value as StageFilter)
-                }
-              >
-                <option value="content">Pendientes Content</option>
-                <option value="kam">Pendientes KAM</option>
-                <option value="devueltas">Devueltas</option>
-                <option value="historial">Aprobadas / historial</option>
-                <option value="all">Todas</option>
-              </select>
-            </label>
-            <label className={styles.filterField}>
-              <span>Cliente</span>
-              <select
-                value={clientFilter}
-                onChange={(event) => {
-                  setClientFilter(event.target.value);
-                  setBatchFilter("all");
-                }}
-              >
-                <option value="all">Todos los clientes</option>
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.filterField}>
-              <span>Lote</span>
-              <select
-                value={batchFilter}
-                onChange={(event) => setBatchFilter(event.target.value)}
-              >
-                <option value="all">Todos los lotes</option>
-                {batches.map((batch) => (
-                  <option key={batch.id} value={batch.id}>
-                    {batch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.filterField}>
-              <span>Orden</span>
-              <div className={styles.sortControl}>
-                <select
-                  value={sortKey}
-                  onChange={(event) => setSortKey(event.target.value as SortKey)}
+        <div className="finalized-toolbar">
+          <select
+            value={stageFilter}
+            onChange={(event) =>
+              setStageFilter(event.target.value as StageFilter)
+            }
+          >
+            <option value="content">Pendientes Content</option>
+            <option value="kam">Pendientes KAM</option>
+            <option value="devueltas">Devueltas</option>
+            <option value="historial">Aprobadas / historial</option>
+            <option value="all">Todas</option>
+          </select>
+          <select
+            value={clientFilter}
+            onChange={(event) => {
+              setClientFilter(event.target.value);
+              setBatchFilter("all");
+            }}
+          >
+            <option value="all">Todos los clientes</option>
+            {clients.map((client) => (
+              <option key={client.id} value={client.id}>
+                {client.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={batchFilter}
+            onChange={(event) => setBatchFilter(event.target.value)}
+          >
+            <option value="all">Todos los lotes</option>
+            {batches.map((batch) => (
+              <option key={batch.id} value={batch.id}>
+                {batch.name}
+              </option>
+            ))}
+          </select>
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar tarea, responsable, link..."
+          />
+          <button
+            className="btn"
+            onClick={() => {
+              setStageFilter("content");
+              setClientFilter("all");
+              setBatchFilter("all");
+              setSearch("");
+              setSortKey("publishDate");
+              setSortDirection("asc");
+            }}
+          >
+            Limpiar
+          </button>
+        </div>
+
+        <div className="approvals-row header">
+          <button type="button" onClick={() => toggleSort("client")}>
+            Cliente{sortLabel("client")}
+          </button>
+          <button type="button" onClick={() => toggleSort("task")}>
+            Tarea{sortLabel("task")}
+          </button>
+          <button type="button" onClick={() => toggleSort("type")}>
+            Tipo{sortLabel("type")}
+          </button>
+          <button type="button" onClick={() => toggleSort("platforms")}>
+            Plataformas{sortLabel("platforms")}
+          </button>
+          <button type="button" onClick={() => toggleSort("responsible")}>
+            Responsable{sortLabel("responsible")}
+          </button>
+          <button type="button" onClick={() => toggleSort("publishDate")}>
+            Fecha{sortLabel("publishDate")}
+          </button>
+          <button type="button" onClick={() => toggleSort("link")}>
+            Link{sortLabel("link")}
+          </button>
+          <button type="button" onClick={() => toggleSort("status")}>
+            Estado{sortLabel("status")}
+          </button>
+          <span>Acciones</span>
+        </div>
+
+        {filtered.map((item) => {
+          const stage = reviewStageFor(item);
+          return (
+            <div
+              className={`approvals-row ${
+                selectedId === item.id ? styles.selectedRow : ""
+              }`}
+              key={item.id}
+            >
+              <span className="list-truncate-cell">
+                <strong>{item.clientName || "Sin cliente"}</strong>
+                <br />
+                <small>{item.batchName || "Sin lote"}</small>
+              </span>
+              <span className="list-truncate-cell">{taskTitle(item)}</span>
+              <span className="list-truncate-cell">{typeLabel(item)}</span>
+              <span className="list-truncate-cell">{platformsLabel(item)}</span>
+              <span className="list-truncate-cell">
+                {item.assignedTo || "Sin responsable"}
+              </span>
+              <span className="list-truncate-cell">
+                {item.publishDate || "Sin fecha"}
+              </span>
+              <span className="list-truncate-cell">
+                {item.finalPostLink ? (
+                  <a
+                    href={normalizeExternalUrl(item.finalPostLink)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir link
+                  </a>
+                ) : (
+                  <span className="pill amber">Sin link</span>
+                )}
+              </span>
+              <span>
+                <span
+                  className={
+                    isApprovedForContents(item) || item.status === "finalizada"
+                      ? "pill green"
+                      : item.status === "rebotada"
+                        ? "pill red"
+                        : "pill"
+                  }
                 >
-                  <option value="publishDate">Fecha de publicación</option>
-                  <option value="client">Cliente</option>
-                  <option value="task">Tarea</option>
-                  <option value="type">Tipo</option>
-                  <option value="platforms">Plataformas</option>
-                  <option value="responsible">Responsable</option>
-                  <option value="status">Estado</option>
-                </select>
+                  {statusLabel(item)}
+                </span>
+              </span>
+              <span>
+                <button
+                  className={
+                    isContentPending(item) || isKamPending(item)
+                      ? "btn blue"
+                      : "btn"
+                  }
+                  onClick={() => startReview(item, stage)}
+                >
+                  {isContentPending(item) || isKamPending(item)
+                    ? "Revisar"
+                    : "Ver"}
+                </button>
+              </span>
+            </div>
+          );
+        })}
+
+        {!filtered.length && (
+          <p className="mini">No hay piezas con esos filtros.</p>
+        )}
+      </section>
+
+      {selected && (
+        <div
+          className={styles.modalBackdrop}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeReview();
+          }}
+        >
+          <section
+            className={styles.modalCard}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="approval-review-title"
+          >
+            <header className={styles.modalHeader}>
+              <div className={styles.modalHeading}>
+                <div>
+                  <p className="eyebrow">
+                    {selectedStage === "kam"
+                      ? "Revisión KAM"
+                      : "Revisión Content"}
+                  </p>
+                  <h2 id="approval-review-title">{taskTitle(selected)}</h2>
+                  <p className="mini">
+                    {selected.clientName || "Sin cliente"} ·{" "}
+                    {selected.batchName || "Sin lote"}
+                  </p>
+                </div>
+                <button type="button" className="btn" onClick={closeReview}>
+                  Cerrar
+                </button>
+              </div>
+
+              <div className={styles.modalNavigation}>
                 <button
                   type="button"
                   className="btn"
-                  title="Cambiar dirección del orden"
-                  onClick={() =>
-                    setSortDirection((current) =>
-                      current === "asc" ? "desc" : "asc",
-                    )
+                  onClick={() => navigateReview(-1)}
+                  disabled={selectedIndex <= 0}
+                >
+                  ← Anterior
+                </button>
+                <strong>
+                  {selectedIndex >= 0 ? selectedIndex + 1 : "–"} de{" "}
+                  {filtered.length}
+                </strong>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => navigateReview(1)}
+                  disabled={
+                    selectedIndex < 0 || selectedIndex >= filtered.length - 1
                   }
                 >
-                  {sortDirection === "asc" ? "Ascendente" : "Descendente"}
+                  Siguiente →
                 </button>
               </div>
-            </label>
-            <label className={`${styles.filterField} ${styles.searchField}`}>
-              <span>Buscar</span>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Tarea, responsable, link, idea..."
-              />
-            </label>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setStageFilter("content");
-                setClientFilter("all");
-                setBatchFilter("all");
-                setSearch("");
-                setSortKey("publishDate");
-                setSortDirection("asc");
-              }}
-            >
-              Limpiar filtros
-            </button>
-          </div>
+            </header>
 
-          <div className={styles.groupList}>
-            {groups.map((group) => {
-              const collapsed = collapsedGroups.includes(group.id);
-              const progress = group.total
-                ? Math.round((group.approved / group.total) * 100)
-                : 0;
-              return (
-                <section className={styles.groupBlock} key={group.id}>
-                  <button
-                    type="button"
-                    className={styles.groupHeader}
-                    onClick={() => toggleGroup(group.id)}
-                  >
-                    <span className={styles.groupChevron}>
-                      {collapsed ? "▸" : "▾"}
-                    </span>
-                    <span className={styles.groupIdentity}>
-                      <strong>{group.batchName}</strong>
-                      <small>{group.clientName}</small>
-                    </span>
-                    <span className={styles.groupProgress}>
-                      <span>
-                        {group.approved} de {group.total} aprobadas
-                      </span>
-                      <span className={styles.progressTrack}>
-                        <span
-                          className={styles.progressBar}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </span>
-                    </span>
-                    <span className="pill">{group.items.length} visibles</span>
-                  </button>
-
-                  {!collapsed && (
-                    <div className={styles.groupItems}>
-                      {group.items.map((item) => {
-                        const isSelected = selectedId === item.id;
-                        const stage = reviewStageFor(item);
-                        return (
-                          <article
-                            className={`${styles.queueItem} ${
-                              isSelected ? styles.queueItemSelected : ""
-                            }`}
-                            key={item.id}
-                          >
-                            <button
-                              type="button"
-                              className={styles.queueItemMain}
-                              onClick={() => startReview(item, stage)}
-                            >
-                              <span className={styles.queueTopline}>
-                                <span className={`pill ${statusTone(item)}`}>
-                                  {statusLabel(item)}
-                                </span>
-                                <span className="mini">
-                                  {item.publishDate || "Sin fecha"}
-                                </span>
-                              </span>
-                              <strong className={styles.queueTitle}>
-                                {taskTitle(item)}
-                              </strong>
-                              <span className={styles.queueMeta}>
-                                {typeLabel(item)}
-                              </span>
-                              <span className={styles.queueMeta}>
-                                {platformsLabel(item)} ·{" "}
-                                {item.assignedTo || "Sin responsable"}
-                              </span>
-                            </button>
-                            <div className={styles.queueActions}>
-                              {item.finalPostLink ? (
-                                <a
-                                  className="btn"
-                                  href={normalizeExternalUrl(item.finalPostLink)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  Abrir pieza
-                                </a>
-                              ) : (
-                                <span className="pill amber">Sin link</span>
-                              )}
-                              <button
-                                type="button"
-                                className={
-                                  isContentPending(item) || isKamPending(item)
-                                    ? "btn blue"
-                                    : "btn"
-                                }
-                                onClick={() => startReview(item, stage)}
-                              >
-                                {isContentPending(item) || isKamPending(item)
-                                  ? "Revisar"
-                                  : "Ver"}
-                              </button>
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              );
-            })}
-            {!groups.length && (
-              <div className={styles.emptyState}>
-                No hay piezas con esos filtros.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {selected && (
-          <button
-            type="button"
-            className={styles.mobileBackdrop}
-            onClick={closeReview}
-            aria-label="Cerrar revisión"
-          />
-        )}
-
-        <aside
-          className={`card ${styles.reviewCard} ${
-            selected ? styles.reviewCardActive : ""
-          }`}
-        >
-          {!selected ? (
-            <div className={styles.reviewPlaceholder}>
-              <span className={styles.placeholderIcon}>✓</span>
-              <h3>Selecciona un contenido</h3>
-              <p>
-                La revisión aparecerá aquí. El listado permanecerá visible para
-                avanzar entre piezas sin bajar al final de la página.
-              </p>
-            </div>
-          ) : (
-            <>
-              <header className={styles.reviewHeader}>
-                <div className={styles.reviewHeaderTop}>
-                  <div>
-                    <p className="eyebrow">
-                      {selectedStage === "kam"
-                        ? "Revisión KAM"
-                        : "Revisión Content"}
-                    </p>
-                    <h2 className={styles.reviewTitle}>{taskTitle(selected)}</h2>
-                    <p className="mini">
-                      {selected.clientName || "Sin cliente"} ·{" "}
-                      {selected.batchName || "Sin lote"}
-                    </p>
-                  </div>
-                  <button type="button" className="btn" onClick={closeReview}>
-                    Cerrar
-                  </button>
+            <div className={styles.modalBody}>
+              <section className={styles.summaryGrid}>
+                <div>
+                  <span className="mini">Estado</span>
+                  <strong>{statusLabel(selected)}</strong>
                 </div>
-
-                <div className={styles.reviewNav}>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => navigateReview(-1)}
-                    disabled={selectedIndex <= 0}
-                  >
-                    ← Anterior
-                  </button>
-                  <strong>
-                    {selectedIndex >= 0 ? selectedIndex + 1 : "–"} de{" "}
-                    {filtered.length}
-                  </strong>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => navigateReview(1)}
-                    disabled={
-                      selectedIndex < 0 || selectedIndex >= filtered.length - 1
-                    }
-                  >
-                    Siguiente →
-                  </button>
+                <div>
+                  <span className="mini">Responsable</span>
+                  <strong>{selected.assignedTo || "Sin responsable"}</strong>
                 </div>
-              </header>
+                <div>
+                  <span className="mini">Publicación</span>
+                  <strong>{selected.publishDate || "Sin fecha"}</strong>
+                </div>
+                <div>
+                  <span className="mini">Plataformas</span>
+                  <strong>{platformsLabel(selected)}</strong>
+                </div>
+              </section>
 
-              <div className={styles.reviewBody}>
-                <section className={styles.reviewSummary}>
-                  <div>
-                    <span className="mini">Estado</span>
-                    <strong>{statusLabel(selected)}</strong>
-                  </div>
-                  <div>
-                    <span className="mini">Responsable</span>
-                    <strong>{selected.assignedTo || "Sin responsable"}</strong>
-                  </div>
-                  <div>
-                    <span className="mini">Publicación</span>
-                    <strong>{selected.publishDate || "Sin fecha"}</strong>
-                  </div>
-                  <div>
-                    <span className="mini">Plataformas</span>
-                    <strong>{platformsLabel(selected)}</strong>
-                  </div>
-                </section>
-
-                <section className={styles.reviewSection}>
-                  <h4>Pieza final</h4>
-                  {selected.finalPostLink ? (
-                    <a
-                      className="link-card"
-                      href={normalizeExternalUrl(selected.finalPostLink)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <span>{selected.finalPostLink}</span>
-                      <small>Abrir pieza →</small>
-                    </a>
-                  ) : (
-                    <p className="mini">Sin link final.</p>
-                  )}
-                </section>
-
-                <InitialRequestPanel
-                  item={selected}
-                  normalizeExternalUrl={normalizeExternalUrl}
-                />
-
-                {selectedIsPending ? (
-                  <section className={styles.reviewSection}>
-                    <div className={styles.sectionHeading}>
-                      <div>
-                        <h4>Devolución y comentarios</h4>
-                        <p className="mini">
-                          Estos campos solo se usan cuando la pieza requiere
-                          correcciones.
-                        </p>
-                      </div>
-                    </div>
-                    <div className={styles.decisionGrid}>
-                      <div className="field">
-                        <label>Motivo de devolución</label>
-                        <select
-                          value={reason}
-                          onChange={(event) => setReason(event.target.value)}
-                          disabled={!canApproveAction}
-                        >
-                          {reasons.map((itemReason) => (
-                            <option key={itemReason}>{itemReason}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label>Notas</label>
-                        <textarea
-                          value={notes}
-                          onChange={(event) => setNotes(event.target.value)}
-                          placeholder="Explica exactamente qué debe corregirse."
-                          disabled={!canApproveAction}
-                        />
-                      </div>
-                    </div>
-                  </section>
+              <section className={styles.reviewSection}>
+                <h4>Pieza final</h4>
+                {selected.finalPostLink ? (
+                  <a
+                    className="link-card"
+                    href={normalizeExternalUrl(selected.finalPostLink)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span>{selected.finalPostLink}</span>
+                    <small>Abrir pieza →</small>
+                  </a>
                 ) : (
-                  <section className={styles.reviewSection}>
-                    <h4>Resultado de revisión</h4>
-                    <p className="mini">
-                      <strong>Motivo registrado:</strong>{" "}
-                      {selected.approvalRejectionReason || "Sin devolución"}
-                    </p>
-                    {selected.approvalNotes && <p>{selected.approvalNotes}</p>}
-                  </section>
+                  <p className="mini">Sin link final.</p>
                 )}
+              </section>
 
+              <InitialRequestPanel
+                item={selected}
+                normalizeExternalUrl={normalizeExternalUrl}
+              />
+
+              {selectedIsPending ? (
                 <section className={styles.reviewSection}>
-                  <h4>Log de movimientos</h4>
-                  <div className={styles.logList}>
-                    {(selected.comments || [])
-                      .slice()
-                      .reverse()
-                      .map((comment) => (
-                        <div className="comment-box" key={comment.id}>
-                          <strong>
-                            {comment.author} → {comment.target}
-                          </strong>
-                          <span className="mini">
-                            {new Date(comment.createdAt).toLocaleString("es-MX")}
-                          </span>
-                          <p>{comment.body}</p>
-                        </div>
-                      ))}
-                    {!(selected.comments || []).length && (
-                      <p className="mini">Sin movimientos todavía.</p>
-                    )}
+                  <div>
+                    <h4>Devolución y comentarios</h4>
+                    <p className="mini">
+                      Llena estos campos únicamente cuando la pieza requiera
+                      correcciones.
+                    </p>
+                  </div>
+                  <div className={styles.decisionGrid}>
+                    <div className="field">
+                      <label>Motivo de devolución</label>
+                      <select
+                        value={reason}
+                        onChange={(event) => setReason(event.target.value)}
+                        disabled={!canApproveAction}
+                      >
+                        {reasons.map((itemReason) => (
+                          <option key={itemReason}>{itemReason}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Notas</label>
+                      <textarea
+                        value={notes}
+                        onChange={(event) => setNotes(event.target.value)}
+                        placeholder="Explica exactamente qué debe corregirse."
+                        disabled={!canApproveAction}
+                      />
+                    </div>
                   </div>
                 </section>
-              </div>
+              ) : (
+                <section className={styles.reviewSection}>
+                  <h4>Resultado de revisión</h4>
+                  <p className="mini">
+                    <strong>Motivo registrado:</strong>{" "}
+                    {selected.approvalRejectionReason || "Sin devolución"}
+                  </p>
+                  {selected.approvalNotes && <p>{selected.approvalNotes}</p>}
+                </section>
+              )}
 
-              <footer className={styles.reviewActions}>
-                {canApproveAction &&
-                  selectedStage === "content" &&
-                  isContentPending(selected) && (
-                    <button
-                      className="btn blue"
-                      onClick={() => approveContent(selected)}
-                    >
-                      Aprobar para KAM
-                    </button>
+              <section className={styles.reviewSection}>
+                <h4>Log de movimientos</h4>
+                <div className={styles.logList}>
+                  {(selected.comments || [])
+                    .slice()
+                    .reverse()
+                    .map((comment) => (
+                      <div className="comment-box" key={comment.id}>
+                        <strong>
+                          {comment.author} → {comment.target}
+                        </strong>
+                        <span className="mini">
+                          {new Date(comment.createdAt).toLocaleString("es-MX")}
+                        </span>
+                        <p>{comment.body}</p>
+                      </div>
+                    ))}
+                  {!(selected.comments || []).length && (
+                    <p className="mini">Sin movimientos todavía.</p>
                   )}
-                {canApproveAction &&
-                  selectedStage === "kam" &&
-                  isKamPending(selected) && (
-                    <button
-                      className="btn blue"
-                      onClick={() => approveKam(selected)}
-                    >
-                      Aprobar para Contenidos
-                    </button>
-                  )}
-                {canApproveAction && selectedIsPending && (
-                  <button className="btn red" onClick={() => reject(selected)}>
-                    Devolver con comentarios
+                </div>
+              </section>
+            </div>
+
+            <footer className={styles.modalActions}>
+              {canApproveAction &&
+                selectedStage === "content" &&
+                isContentPending(selected) && (
+                  <button
+                    className="btn blue"
+                    onClick={() => approveContent(selected)}
+                  >
+                    Aprobar para KAM
                   </button>
                 )}
-                <button className="btn" onClick={closeReview}>
-                  Cerrar revisión
+              {canApproveAction &&
+                selectedStage === "kam" &&
+                isKamPending(selected) && (
+                  <button
+                    className="btn blue"
+                    onClick={() => approveKam(selected)}
+                  >
+                    Aprobar para Contenidos
+                  </button>
+                )}
+              {canApproveAction && selectedIsPending && (
+                <button className="btn red" onClick={() => reject(selected)}>
+                  Devolver con comentarios
                 </button>
-              </footer>
-            </>
-          )}
-        </aside>
-      </section>
+              )}
+              <button className="btn" onClick={closeReview}>
+                Cerrar revisión
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
     </AppShell>
   );
 }
