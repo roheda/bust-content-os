@@ -2188,6 +2188,14 @@ a[class*="bg-black"],
   background: linear-gradient(180deg, rgba(255, 247, 237, .92), rgba(255, 255, 255, .95));
 }
 
+/* Repetido a proposito despues de .carried: si una tarea es vencida Y
+   arrastrada a la vez, el color debe ganar Vencida (mismo orden de
+   prioridad que el texto: Rebotada > Vencida > Arrastrada). */
+.task-chip.overdue {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
 @media (max-width: 980px) {
   .planning-summary-card { position: static; }
   .planning-metrics-grid { grid-template-columns: 1fr; }

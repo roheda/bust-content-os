@@ -1908,7 +1908,7 @@ function DailyTaskCard({
         </span>
       </div>
       <div className="daily-task-dates">
-        <b>{rejected ? "Rebotada" : carried ? "Arrastrada" : overdue ? "Vencida" : "Trabajar"}</b>
+        <b>{rejected ? "Rebotada" : overdue ? "Vencida" : carried ? "Arrastrada" : "Trabajar"}</b>
         <span>{getTaskDate(task) || "Sin fecha"}</span>
       </div>
       {!compact && (
@@ -2026,10 +2026,10 @@ function TaskChip({
       <span className="mini-status">
         {rejected
           ? "REBOTADA"
-          : carried
-            ? `ARRASTRADA ${task.carriedOverDays || 1}d`
-            : overdue
-              ? "VENCIDA"
+          : overdue
+            ? "VENCIDA"
+            : carried
+              ? `ARRASTRADA ${task.carriedOverDays || 1}d`
               : statusLabel(task.status || "")}
       </span>
     </button>
