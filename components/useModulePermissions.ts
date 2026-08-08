@@ -9,6 +9,7 @@ import {
   findUserByAuth,
   listUsers,
 } from "@/lib/data";
+import { pushToast } from "./Toast";
 
 const authEnforced = process.env.NEXT_PUBLIC_AUTH_ENFORCED !== "false";
 const demoLoginAllowed = !authEnforced && process.env.NODE_ENV !== "production";
@@ -84,5 +85,9 @@ export function useModulePermissions(moduleKey: string) {
 }
 
 export function permissionAlert(actionLabel = "realizar esta acción") {
-  alert(`No tienes permiso para ${actionLabel}. Solicita acceso a Dirección o Administración.`);
+  pushToast({
+    variant: "error",
+    title: "Sin permiso",
+    message: `No tienes permiso para ${actionLabel}. Solicita acceso a Dirección o Administración.`,
+  });
 }
