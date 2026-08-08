@@ -26,6 +26,7 @@ import {
   listRequests,
   listTeamDailyCapacities,
   listUsers,
+  nextBusinessDay,
   organizationTeam,
   todayDateKey,
   updateRequest,
@@ -1471,6 +1472,11 @@ async function autoCarryOverTasks(
   overrides: ClientOperationalOverride[],
 ) {
   const today = todayDateKey();
+  // La operación solo trabaja días hábiles (igual que Producciones y el
+  // calendario de Tareas, que no dibuja columnas de sábado/domingo): si
+  // el arrastre cae en fin de semana, se manda al siguiente día hábil
+  // para que la tarea siga siendo visible en el calendario.
+  const nextWorkDate = nextBusinessDay(today);
   const closeds = [
     "pendiente_aprobacion",
     "pendiente_aprobacion_kam",
@@ -1497,7 +1503,7 @@ async function autoCarryOverTasks(
       const days = Math.max(1, Math.abs(businessDaysBetween(original, today)));
       const plan = getOperationalPlan(item, rules, overrides);
       return updateRequest(item.id!, {
-        plannedWorkDate: today,
+        plannedWorkDate: nextWorkDate,
         carriedOver: true,
         carriedOverFromDate: original,
         carriedOverDays: days,
@@ -1510,7 +1516,7 @@ async function autoCarryOverTasks(
     stale.some((staleItem) => staleItem.id === item.id)
       ? {
           ...item,
-          plannedWorkDate: today,
+          plannedWorkDate: nextWorkDate,
           carriedOver: true,
           carriedOverFromDate: item.carriedOverFromDate || item.plannedWorkDate,
           carriedOverDays: Math.max(
