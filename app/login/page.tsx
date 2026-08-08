@@ -128,12 +128,12 @@ export default function LoginPage(){
       <div className="login-brand">
         <img className="login-lockup" src="/brand/bust-content-os-lockup-white.svg" alt="BUST Content OS" />
         <p className="eyebrow">Acceso interno seguro</p>
-        <h1 style={{fontSize:44,margin:0}}>Operación de contenido.</h1>
+        <h1 style={{fontSize:"clamp(28px,6vw,44px)",margin:0}}>Operación de contenido.</h1>
         <p style={{color:"#cbd5e1",lineHeight:1.7}}>El sistema operativo creativo de BUST para solicitudes, producción, asignación, aprobación, usuarios y permisos.</p>
       </div>
       <div className="login-form">
         <p className="eyebrow">Acceso interno</p>
-        <h2 style={{fontSize:32,marginTop:0}}>Entrar al sistema</h2>
+        <h2 style={{fontSize:"clamp(22px,5vw,32px)",marginTop:0}}>Entrar al sistema</h2>
         <p style={{color:"#667085",lineHeight:1.6}}>La contraseña se administra con Firebase Auth. BUST Content OS solo guarda permisos, clientes asignados y rol operativo.</p>
 
         {mustChangeProfile ? <div className="alert green">Contraseña temporal detectada. Crea tu contraseña personal para continuar.</div> : null}
