@@ -110,6 +110,8 @@ export default function TasksPage() {
   const [preview, setPreview] = useState<ReferenceFile | null>(null);
   const [contextPost, setContextPost] = useState<ContentRequest | null>(null);
   const taskOrderSkipSaveRef = useRef(true);
+  const taskActionLockRef = useRef(false);
+  const [taskActionBusy, setTaskActionBusy] = useState(false);
   const permissions = useModulePermissions("tareas");
   const canEditTasks = permissions.canEdit;
   const canGenerateFromTasks = permissions.canGenerate || permissions.canEdit;
@@ -420,6 +422,21 @@ export default function TasksPage() {
     if (calendarMode === "semana") next.setDate(next.getDate() + delta * 7);
     else next.setMonth(next.getMonth() + delta);
     setCursor(next);
+  }
+
+  // Candado contra doble clic/doble envio: evita disparar dos veces la
+  // misma escritura si el usuario hace doble clic o toca dos veces en
+  // mobile mientras la primera llamada sigue en curso.
+  async function runTaskAction(action: () => Promise<void>) {
+    if (taskActionLockRef.current) return;
+    taskActionLockRef.current = true;
+    setTaskActionBusy(true);
+    try {
+      await action();
+    } finally {
+      taskActionLockRef.current = false;
+      setTaskActionBusy(false);
+    }
   }
 
   async function setStatus(status: string) {
@@ -1029,7 +1046,11 @@ export default function TasksPage() {
               <div>
                 <div className="detail-section">
                   <h4>Herramientas</h4>
-                  <button className="btn" onClick={sendToGenerator} disabled={!canGenerateFromTasks}>
+                  <button
+                    className="btn"
+                    onClick={() => runTaskAction(sendToGenerator)}
+                    disabled={!canGenerateFromTasks || taskActionBusy}
+                  >
                     Enviar a BUST It Now
                   </button>
                   {selected.generatorStatus === "enviado" && (
@@ -1049,8 +1070,8 @@ export default function TasksPage() {
                         <button
                           key={value}
                           className={selected.status === value ? "active" : ""}
-                          onClick={() => setStatus(value)}
-                          disabled={!canEditTasks}
+                          onClick={() => runTaskAction(() => setStatus(value))}
+                          disabled={!canEditTasks || taskActionBusy}
                         >
                           {label}
                         </button>
@@ -1076,8 +1097,8 @@ export default function TasksPage() {
                     <button
                       className="btn blue"
                       style={{ marginTop: 10 }}
-                      onClick={sendToApproval}
-                      disabled={!canEditTasks}
+                      onClick={() => runTaskAction(sendToApproval)}
+                      disabled={!canEditTasks || taskActionBusy}
                     >
                       Enviar a aprobación
                     </button>
@@ -1213,7 +1234,11 @@ export default function TasksPage() {
                       )}
                     </div>
                   </div>
-                  <button className="btn blue" onClick={addComment} disabled={!canEditTasks}>
+                  <button
+                    className="btn blue"
+                    onClick={() => runTaskAction(addComment)}
+                    disabled={!canEditTasks || taskActionBusy}
+                  >
                     Agregar comentario
                   </button>
 
