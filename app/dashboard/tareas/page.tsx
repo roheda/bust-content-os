@@ -2012,10 +2012,11 @@ function TaskChip({
   const done = ["pendiente_aprobacion", "aprobada", "finalizada"].includes(
     task.status || "",
   );
+  const rejected = task.status === "rebotada";
   const carried = isCarriedTask(task);
   return (
     <button
-      className={`task-chip ${overdue ? "overdue" : ""} ${done ? "done" : ""} ${carried ? "carried" : ""}`}
+      className={`task-chip ${overdue ? "overdue" : ""} ${done ? "done" : ""} ${carried ? "carried" : ""} ${rejected ? "rejected" : ""}`}
       onClick={() => onOpen(task)}
     >
       <strong>{taskTitleLine(task)}</strong>
@@ -2023,11 +2024,13 @@ function TaskChip({
         {taskSubtitleLine(task)}
       </span>
       <span className="mini-status">
-        {carried
-          ? `ARRASTRADA ${task.carriedOverDays || 1}d`
-          : overdue
-            ? "VENCIDA"
-            : statusLabel(task.status || "")}
+        {rejected
+          ? "REBOTADA"
+          : carried
+            ? `ARRASTRADA ${task.carriedOverDays || 1}d`
+            : overdue
+              ? "VENCIDA"
+              : statusLabel(task.status || "")}
       </span>
     </button>
   );
