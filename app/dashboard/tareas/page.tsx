@@ -140,11 +140,12 @@ export default function TasksPage() {
     setCostRules(loadedRules);
     setClientOverrides(loadedOverrides);
     setTeamCapacities(loadedCapacities);
-    const normalized = await autoCarryOverTasks(
-      loadedRequests,
-      loadedRules,
-      loadedOverrides,
-    );
+    // Solo quien puede editar tareas dispara la escritura de "arrastre"
+    // automatico en Firestore; un rol de solo lectura no debe mutar datos
+    // operativos por el simple hecho de abrir la pantalla.
+    const normalized = canEditTasks
+      ? await autoCarryOverTasks(loadedRequests, loadedRules, loadedOverrides)
+      : { items: loadedRequests, carried: 0 };
     setCarryOverCount(normalized.carried);
     setRequests(normalized.items);
     setProductions(loadedProductions);
@@ -153,7 +154,7 @@ export default function TasksPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [canEditTasks]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
