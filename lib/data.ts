@@ -1089,7 +1089,11 @@ export function getEffectiveWorkDate(item: Partial<ContentRequest>, todayKey = t
   const planned = item.plannedWorkDate || item.dueDate || item.internalDueDate || item.batchDueDate || item.publishDate || "";
   if (!planned) return "";
   const closed = ["pendiente_aprobacion", "pendiente_aprobacion_kam", "aprobada_pendiente_copyout", "aprobada", "finalizada", "programada", "publicada", "cancelada", "eliminada"].includes(item.status || "");
-  if (!closed && planned < todayKey) return nextBusinessDay(todayKey);
+  // <= (no solo <): si la fecha guardada es justo hoy y hoy cae en fin
+  // de semana, tambien hay que correrla al siguiente dia habil - si no,
+  // una tarea guardada con fecha "hoy sabado" nunca se corrige mientras
+  // siga siendo ese mismo sabado.
+  if (!closed && planned <= todayKey) return nextBusinessDay(todayKey);
   return planned;
 }
 

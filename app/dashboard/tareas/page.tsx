@@ -1492,8 +1492,12 @@ async function autoCarryOverTasks(
     (item) =>
       item.id &&
       item.plannedWorkDate &&
-      item.plannedWorkDate < today &&
-      !closeds.includes(item.status || ""),
+      !closeds.includes(item.status || "") &&
+      // Tambien cuenta como atrasada si quedo fechada exactamente hoy
+      // pero hoy es fin de semana (nextWorkDate !== today en ese caso):
+      // si no, se queda pegada en esa fecha hasta el dia siguiente.
+      (item.plannedWorkDate < today ||
+        (item.plannedWorkDate === today && nextWorkDate !== today)),
   );
   if (!stale.length) return { items, carried: 0 };
   await Promise.all(
