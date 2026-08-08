@@ -2788,3 +2788,12 @@ a[class*="bg-black"],
 
 .request-topic-title{display:block;font-size:16px;font-weight:950;line-height:1.2;color:#111827;margin-bottom:4px}
 .assignment-request-info .request-topic-title{font-size:17px}
+
+/* Area tactil minima recomendada (~44px) solo en mobile, solo para
+   botones y campos de formulario estandar. No se toca escritorio, ni
+   los botones compactos ya deliberados (toolbars, badges, chips, que
+   ya tienen su propio min-height con !important y siguen ganando). */
+@media(max-width:760px){
+  .btn{min-height:44px}
+  .field input,.field select,.field textarea,td input,td select,td textarea{min-height:44px}
+}
