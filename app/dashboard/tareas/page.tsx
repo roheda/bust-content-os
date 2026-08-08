@@ -26,6 +26,7 @@ import {
   listRequests,
   listTeamDailyCapacities,
   listUsers,
+  nextBusinessDay,
   organizationTeam,
   todayDateKey,
   updateRequest,
@@ -110,6 +111,8 @@ export default function TasksPage() {
   const [preview, setPreview] = useState<ReferenceFile | null>(null);
   const [contextPost, setContextPost] = useState<ContentRequest | null>(null);
   const taskOrderSkipSaveRef = useRef(true);
+  const taskActionLockRef = useRef(false);
+  const [taskActionBusy, setTaskActionBusy] = useState(false);
   const permissions = useModulePermissions("tareas");
   const canEditTasks = permissions.canEdit;
   const canGenerateFromTasks = permissions.canGenerate || permissions.canEdit;
@@ -138,11 +141,12 @@ export default function TasksPage() {
     setCostRules(loadedRules);
     setClientOverrides(loadedOverrides);
     setTeamCapacities(loadedCapacities);
-    const normalized = await autoCarryOverTasks(
-      loadedRequests,
-      loadedRules,
-      loadedOverrides,
-    );
+    // Solo quien puede editar tareas dispara la escritura de "arrastre"
+    // automatico en Firestore; un rol de solo lectura no debe mutar datos
+    // operativos por el simple hecho de abrir la pantalla.
+    const normalized = canEditTasks
+      ? await autoCarryOverTasks(loadedRequests, loadedRules, loadedOverrides)
+      : { items: loadedRequests, carried: 0 };
     setCarryOverCount(normalized.carried);
     setRequests(normalized.items);
     setProductions(loadedProductions);
@@ -151,7 +155,7 @@ export default function TasksPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [canEditTasks]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -235,14 +239,13 @@ export default function TasksPage() {
           workflowFilter === "all"
             ? true
             : workflowFilter === "pending"
-              ? [
-                  "asignada",
-                  "en_revision",
-                  "rebotada",
-                  "pendiente_aprobacion",
-                  "pendiente_aprobacion_kam",
-                  "aprobada_pendiente_copyout",
-                ].includes(x.status || "")
+              ? // "Pendientes" es lo que todavia depende de ti: una vez
+                // mandada a aprobacion, ya no es tu pendiente (sale de aqui
+                // y aparece en la pestaña "En aprobación"), salvo que te la
+                // devuelvan (rebotada), que vuelve como prioridad.
+                ["asignada", "en_revision", "rebotada"].includes(
+                  x.status || "",
+                )
               : workflowFilter === "active"
                 ? ["asignada", "en_revision"].includes(x.status || "")
                 : workflowFilter === "approval"
@@ -422,6 +425,21 @@ export default function TasksPage() {
     setCursor(next);
   }
 
+  // Candado contra doble clic/doble envio: evita disparar dos veces la
+  // misma escritura si el usuario hace doble clic o toca dos veces en
+  // mobile mientras la primera llamada sigue en curso.
+  async function runTaskAction(action: () => Promise<void>) {
+    if (taskActionLockRef.current) return;
+    taskActionLockRef.current = true;
+    setTaskActionBusy(true);
+    try {
+      await action();
+    } finally {
+      taskActionLockRef.current = false;
+      setTaskActionBusy(false);
+    }
+  }
+
   async function setStatus(status: string) {
     if (!canEditTasks) return permissionAlert("cambiar el estado de tareas");
     if (!selected?.id) return;
@@ -524,6 +542,11 @@ export default function TasksPage() {
       finalPostLink: finalLink.trim(),
       status: "pendiente_aprobacion",
       approvalStatus: "pendiente",
+      // La tarea sale de tu cola de trabajo: si venia arrastrada de dias
+      // anteriores, esa marca ya no aplica (ya no depende de ti).
+      carriedOver: false,
+      carriedOverFromDate: "",
+      carriedOverDays: 0,
       comments,
     });
     setSelected({
@@ -531,6 +554,9 @@ export default function TasksPage() {
       finalPostLink: finalLink.trim(),
       status: "pendiente_aprobacion",
       approvalStatus: "pendiente",
+      carriedOver: false,
+      carriedOverFromDate: "",
+      carriedOverDays: 0,
       comments,
     });
     await load();
@@ -1029,7 +1055,11 @@ export default function TasksPage() {
               <div>
                 <div className="detail-section">
                   <h4>Herramientas</h4>
-                  <button className="btn" onClick={sendToGenerator} disabled={!canGenerateFromTasks}>
+                  <button
+                    className="btn"
+                    onClick={() => runTaskAction(sendToGenerator)}
+                    disabled={!canGenerateFromTasks || taskActionBusy}
+                  >
                     Enviar a BUST It Now
                   </button>
                   {selected.generatorStatus === "enviado" && (
@@ -1049,8 +1079,8 @@ export default function TasksPage() {
                         <button
                           key={value}
                           className={selected.status === value ? "active" : ""}
-                          onClick={() => setStatus(value)}
-                          disabled={!canEditTasks}
+                          onClick={() => runTaskAction(() => setStatus(value))}
+                          disabled={!canEditTasks || taskActionBusy}
                         >
                           {label}
                         </button>
@@ -1076,8 +1106,8 @@ export default function TasksPage() {
                     <button
                       className="btn blue"
                       style={{ marginTop: 10 }}
-                      onClick={sendToApproval}
-                      disabled={!canEditTasks}
+                      onClick={() => runTaskAction(sendToApproval)}
+                      disabled={!canEditTasks || taskActionBusy}
                     >
                       Enviar a aprobación
                     </button>
@@ -1213,7 +1243,11 @@ export default function TasksPage() {
                       )}
                     </div>
                   </div>
-                  <button className="btn blue" onClick={addComment} disabled={!canEditTasks}>
+                  <button
+                    className="btn blue"
+                    onClick={() => runTaskAction(addComment)}
+                    disabled={!canEditTasks || taskActionBusy}
+                  >
                     Agregar comentario
                   </button>
 
@@ -1438,6 +1472,11 @@ async function autoCarryOverTasks(
   overrides: ClientOperationalOverride[],
 ) {
   const today = todayDateKey();
+  // La operación solo trabaja días hábiles (igual que Producciones y el
+  // calendario de Tareas, que no dibuja columnas de sábado/domingo): si
+  // el arrastre cae en fin de semana, se manda al siguiente día hábil
+  // para que la tarea siga siendo visible en el calendario.
+  const nextWorkDate = nextBusinessDay(today);
   const closeds = [
     "pendiente_aprobacion",
     "pendiente_aprobacion_kam",
@@ -1453,8 +1492,12 @@ async function autoCarryOverTasks(
     (item) =>
       item.id &&
       item.plannedWorkDate &&
-      item.plannedWorkDate < today &&
-      !closeds.includes(item.status || ""),
+      !closeds.includes(item.status || "") &&
+      // Tambien cuenta como atrasada si quedo fechada exactamente hoy
+      // pero hoy es fin de semana (nextWorkDate !== today en ese caso):
+      // si no, se queda pegada en esa fecha hasta el dia siguiente.
+      (item.plannedWorkDate < today ||
+        (item.plannedWorkDate === today && nextWorkDate !== today)),
   );
   if (!stale.length) return { items, carried: 0 };
   await Promise.all(
@@ -1464,7 +1507,7 @@ async function autoCarryOverTasks(
       const days = Math.max(1, Math.abs(businessDaysBetween(original, today)));
       const plan = getOperationalPlan(item, rules, overrides);
       return updateRequest(item.id!, {
-        plannedWorkDate: today,
+        plannedWorkDate: nextWorkDate,
         carriedOver: true,
         carriedOverFromDate: original,
         carriedOverDays: days,
@@ -1477,7 +1520,7 @@ async function autoCarryOverTasks(
     stale.some((staleItem) => staleItem.id === item.id)
       ? {
           ...item,
-          plannedWorkDate: today,
+          plannedWorkDate: nextWorkDate,
           carriedOver: true,
           carriedOverFromDate: item.carriedOverFromDate || item.plannedWorkDate,
           carriedOverDays: Math.max(
@@ -1865,7 +1908,7 @@ function DailyTaskCard({
         </span>
       </div>
       <div className="daily-task-dates">
-        <b>{rejected ? "Rebotada" : carried ? "Arrastrada" : overdue ? "Vencida" : "Trabajar"}</b>
+        <b>{rejected ? "Rebotada" : overdue ? "Vencida" : carried ? "Arrastrada" : "Trabajar"}</b>
         <span>{getTaskDate(task) || "Sin fecha"}</span>
       </div>
       {!compact && (
@@ -1969,10 +2012,11 @@ function TaskChip({
   const done = ["pendiente_aprobacion", "aprobada", "finalizada"].includes(
     task.status || "",
   );
+  const rejected = task.status === "rebotada";
   const carried = isCarriedTask(task);
   return (
     <button
-      className={`task-chip ${overdue ? "overdue" : ""} ${done ? "done" : ""} ${carried ? "carried" : ""}`}
+      className={`task-chip ${overdue ? "overdue" : ""} ${done ? "done" : ""} ${carried ? "carried" : ""} ${rejected ? "rejected" : ""}`}
       onClick={() => onOpen(task)}
     >
       <strong>{taskTitleLine(task)}</strong>
@@ -1980,11 +2024,13 @@ function TaskChip({
         {taskSubtitleLine(task)}
       </span>
       <span className="mini-status">
-        {carried
-          ? `ARRASTRADA ${task.carriedOverDays || 1}d`
+        {rejected
+          ? "REBOTADA"
           : overdue
             ? "VENCIDA"
-            : statusLabel(task.status || "")}
+            : carried
+              ? `ARRASTRADA ${task.carriedOverDays || 1}d`
+              : statusLabel(task.status || "")}
       </span>
     </button>
   );

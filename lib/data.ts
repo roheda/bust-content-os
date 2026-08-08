@@ -938,6 +938,7 @@ export function buildRevisionUpdate(
 ) {
   const at = new Date().toISOString();
   const today = todayDateKey();
+  const nextWorkDate = nextBusinessDay(today);
   const previousDate = item.plannedWorkDate || item.dueDate || item.internalDueDate || item.batchDueDate || item.publishDate || "";
   const person = item.assignedTo || "Sin responsable";
   const area = item.assignedArea || item.suggestedArea || "Sin área";
@@ -961,9 +962,9 @@ export function buildRevisionUpdate(
     lastRevisionPerson: person,
     lastRevisionArea: area,
     lastRevisionReason: options.reason || "Sin motivo",
-    plannedWorkDate: today,
-    dueDate: today,
-    internalDueDate: today,
+    plannedWorkDate: nextWorkDate,
+    dueDate: nextWorkDate,
+    internalDueDate: nextWorkDate,
     priority: item.priority === "Urgente" ? "Urgente" : "Alta",
     carriedOver: true,
     carriedOverFromDate: previousDate,
@@ -985,6 +986,16 @@ export function isBusinessDate(value?: string) {
   if (Number.isNaN(date.getTime())) return false;
   const day = date.getDay();
   return day !== 0 && day !== 6;
+}
+
+// Devuelve la misma fecha si ya es día hábil, o el siguiente lunes si
+// cae en sábado/domingo. La operación completa (Producciones, Tareas,
+// el calendario) trabaja solo con días hábiles; sin esto, una tarea
+// que se "arrastra" a hoy en fin de semana desaparece del calendario
+// porque ese componente no dibuja columnas de sábado/domingo.
+export function nextBusinessDay(value: string) {
+  if (!value) return value;
+  return isBusinessDate(value) ? value : addBusinessDays(value, 1);
 }
 
 export function addBusinessDays(value: string, days: number) {
@@ -1078,7 +1089,11 @@ export function getEffectiveWorkDate(item: Partial<ContentRequest>, todayKey = t
   const planned = item.plannedWorkDate || item.dueDate || item.internalDueDate || item.batchDueDate || item.publishDate || "";
   if (!planned) return "";
   const closed = ["pendiente_aprobacion", "pendiente_aprobacion_kam", "aprobada_pendiente_copyout", "aprobada", "finalizada", "programada", "publicada", "cancelada", "eliminada"].includes(item.status || "");
-  if (!closed && planned < todayKey) return todayKey;
+  // <= (no solo <): si la fecha guardada es justo hoy y hoy cae en fin
+  // de semana, tambien hay que correrla al siguiente dia habil - si no,
+  // una tarea guardada con fecha "hoy sabado" nunca se corrige mientras
+  // siga siendo ese mismo sabado.
+  if (!closed && planned <= todayKey) return nextBusinessDay(todayKey);
   return planned;
 }
 

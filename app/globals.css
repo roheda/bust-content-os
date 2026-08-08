@@ -359,6 +359,7 @@ textarea{min-height:82px}
 .filter-grid .field{margin:0}
 .filter-actions{display:flex;gap:10px;flex-wrap:wrap}
 @media(max-width:1100px){.filter-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:640px){.filter-grid{grid-template-columns:1fr;}}
 
 .calendar-workspace{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}
 .calendar-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:16px 0}
@@ -380,6 +381,7 @@ textarea{min-height:82px}
 .chat-item p{font-size:12px;line-height:1.45;color:#344054;white-space:pre-wrap}
 .mention{display:inline-flex;border-radius:999px;background:#dbeafe;color:#1d4ed8;padding:4px 8px;font-size:11px;font-weight:900}
 .task-modal-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+@media(max-width:760px){.task-modal-grid{grid-template-columns:1fr}}
 .comment-box{border:1px solid var(--line);border-radius:16px;padding:12px;background:#f9fafb;margin-bottom:10px}
 .comment-box p{white-space:pre-wrap;line-height:1.5;margin:6px 0 0}
 .status-buttons{display:flex;gap:8px;flex-wrap:wrap}
@@ -450,6 +452,7 @@ textarea{min-height:82px}
 .person-card{border:1px solid var(--line);border-radius:20px;background:#fff;padding:14px;display:grid;gap:10px}
 .person-card h4{margin:0;font-size:16px}
 .person-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media(max-width:640px){.person-stats{grid-template-columns:repeat(2,1fr)}}
 .person-stat{background:#f9fafb;border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
 .person-stat strong{display:block;font-size:20px}
 .person-stat span{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:900}
@@ -632,7 +635,7 @@ button.bg-black{
 .permission-table th:first-child,.permission-table td:first-child{text-align:left;min-width:260px;position:sticky;left:0;background:#fff;z-index:1}
 .perm-toggle{border:1px solid var(--line);border-radius:999px;background:#f9fafb;color:#667085;font-weight:900;font-size:12px;padding:7px 10px;cursor:pointer;min-width:44px}
 .perm-toggle.on{background:#dcfce7;border-color:#22c55e;color:#166534;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
-@media(max-width:1000px){.user-admin-grid{grid-template-columns:1fr}.permission-table th:first-child,.permission-table td:first-child{position:static}}
+@media(max-width:1000px){.user-admin-grid{grid-template-columns:1fr}}
 
 /* v12 Auth */
 .auth-mode-tabs{display:flex;gap:8px;background:#f3f4f6;border:1px solid var(--line);border-radius:999px;padding:5px;margin:12px 0 18px}
@@ -1998,7 +2001,7 @@ a[class*="bg-black"],
 .contenidos-header{min-height:42px!important;max-height:42px!important;overflow:hidden!important}
 .content-actions-cell{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0;overflow:visible!important;white-space:nowrap!important}
 .content-actions-cell .btn{padding-inline:12px;min-height:36px;font-size:12px}
-@media(max-width:1200px){.approvals-row,.contenidos-row,.contenidos-header{grid-template-columns:28px minmax(180px,1fr)!important;align-items:start}.approvals-row.header,.contenidos-header{display:none}.approvals-row>span,.approvals-row>button,.contenidos-row>span,.contenidos-row>div,.contenidos-row>.copyout-cell{grid-column:2/-1}.content-actions-cell{grid-column:2/-1;flex-wrap:wrap}}
+@media(max-width:1200px){.approvals-row,.contenidos-row,.contenidos-header{grid-template-columns:28px minmax(180px,1fr)!important;align-items:start}.approvals-row.header,.contenidos-header{display:none}.approvals-row>span,.approvals-row>button,.contenidos-row>span,.contenidos-row>div,.contenidos-row>.copyout-cell{grid-column:2/-1}.content-actions-cell{grid-column:2/-1;flex-wrap:wrap}.approvals-row{min-height:0;max-height:none;overflow:visible;padding:14px 0}.approvals-row>span{white-space:normal;overflow:visible;text-overflow:clip}.contenidos-row{min-height:0;max-height:none;padding:14px 0}.contenidos-row>span{white-space:normal;overflow:visible;text-overflow:clip}}
 
 
 /* v50 · calendario laboral y eficiencia operativa */
@@ -2186,6 +2189,14 @@ a[class*="bg-black"],
 .task-chip.carried {
   border-color: rgba(249, 115, 22, .4);
   background: linear-gradient(180deg, rgba(255, 247, 237, .92), rgba(255, 255, 255, .95));
+}
+
+/* Repetido a proposito despues de .carried: si una tarea es vencida Y
+   arrastrada a la vez, el color debe ganar Vencida (mismo orden de
+   prioridad que el texto: Rebotada > Vencida > Arrastrada). */
+.task-chip.overdue {
+  border-color: #fecaca;
+  background: #fff1f2;
 }
 
 @media (max-width: 980px) {
@@ -2489,8 +2500,9 @@ a[class*="bg-black"],
 .daily-task-card.compact{grid-template-columns:1fr auto;padding:12px;border-radius:18px}
 .daily-task-card.carried{border-color:rgba(249,115,22,.34);background:linear-gradient(180deg,rgba(255,247,237,.96),rgba(255,255,255,.9))}
 .daily-task-card.overdue{border-color:rgba(220,38,38,.28);background:linear-gradient(180deg,rgba(254,242,242,.96),rgba(255,255,255,.9))}
-.daily-task-card.rejected,.list-task-card.rejected{border-color:rgba(220,38,38,.42)!important;background:linear-gradient(180deg,rgba(254,226,226,.98),rgba(255,247,237,.92))!important;box-shadow:0 16px 36px rgba(220,38,38,.12)!important}
+.daily-task-card.rejected,.list-task-card.rejected,.task-chip.rejected{border-color:rgba(220,38,38,.42)!important;background:linear-gradient(180deg,rgba(254,226,226,.98),rgba(255,247,237,.92))!important;box-shadow:0 16px 36px rgba(220,38,38,.12)!important}
 .daily-task-card.rejected .daily-task-dates b{color:#b42318}
+.task-chip.rejected .mini-status{color:#b91c1c}
 .daily-task-dates{text-align:right;white-space:nowrap}
 .daily-task-dates b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#344054}
 .daily-task-dates span{font-weight:900;color:#111827}
@@ -2523,30 +2535,15 @@ a[class*="bg-black"],
 .copy-rules-box,.client-cleaner-box{border:1px solid #bfdbfe;background:#eff6ff;border-radius:20px;padding:14px;display:grid;gap:10px;margin-top:14px}
 .copy-rules-box h3,.client-cleaner-box h2{margin:0;color:#1e3a8a}.copy-rules-box .mini,.client-cleaner-box .mini{color:#1d4ed8;font-weight:800}
 .client-cleaner-box{border-color:#fecaca;background:#fff1f2}.client-cleaner-box h2{color:#991b1b}.client-cleaner-box .mini{color:#9f1239}
-.assignment-table-wrap{overflow-x:hidden!important}
-.assignment-table{width:100%!important;table-layout:fixed!important;font-size:12px}
-.assignment-table th,.assignment-table td{padding:10px 8px!important;vertical-align:top;white-space:normal!important;word-break:break-word!important}
-.assignment-table th:nth-child(1),.assignment-table td:nth-child(1){width:34px!important}
-.assignment-table th:nth-child(2),.assignment-table td:nth-child(2){width:13%!important}
-.assignment-table th:nth-child(3),.assignment-table td:nth-child(3){width:24%!important}
-.assignment-table th:nth-child(4),.assignment-table td:nth-child(4){width:14%!important}
-.assignment-table th:nth-child(5),.assignment-table td:nth-child(5){width:12%!important}
-.assignment-table th:nth-child(6),.assignment-table td:nth-child(6){width:8%!important}
-.assignment-table th:nth-child(7),.assignment-table td:nth-child(7){width:18%!important}
-.assignment-table th:nth-child(8),.assignment-table td:nth-child(8){width:9%!important}
-.assignment-table select{max-width:100%;font-size:12px;padding:8px 9px!important}.assignment-table .btn{padding:8px 10px!important;font-size:12px!important}
 .drive-link-input{background:#fff!important;border:2px solid #bfdbfe!important;border-radius:16px!important;box-shadow:0 8px 24px rgba(23,92,211,.10)!important;font-weight:800;color:#111827!important}
 .finalize-box{background:#f8fbff!important;border:1px solid #bfdbfe!important}
 .task-log-section{background:#fff!important;border:1px solid #e5e7eb!important;border-radius:18px!important;padding:14px!important}
 .task-log-list{display:grid;gap:10px;max-height:300px;overflow:auto;padding-right:4px}
 .task-log-item{border:1px solid var(--line);background:#fff;border-radius:14px;padding:10px;display:grid;gap:4px}
 .task-log-item p{margin:0;color:#344054;font-size:12px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
-@media(max-width:1250px){.assignment-table-wrap{overflow-x:hidden!important}.assignment-table{min-width:0!important}}
-
 .assignment-wide-grid{grid-template-columns:1fr!important;align-items:start}
 .assignment-wide-grid>.card{min-width:0;width:100%}
 .assignment-detail-card{margin-top:16px}
-.assignment-table .text-clamp-2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .approval-initial-request{background:#f8fbff!important;border:1px solid #bfdbfe!important;border-radius:18px!important;padding:14px!important}
 .approval-initial-request .detail-copy{max-height:260px;overflow:auto}
 
@@ -2622,6 +2619,21 @@ a[class*="bg-black"],
 .toast-feedback.info strong{background:#2563eb;color:#fff}
 @keyframes toastIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:760px){.toast-feedback{left:12px;right:12px;bottom:12px;max-width:none}}
+
+.toast-stack{position:fixed;right:22px;bottom:22px;z-index:130;display:flex;flex-direction:column;gap:10px;max-width:min(420px,calc(100vw - 32px));pointer-events:none}
+.toast-card{pointer-events:auto;position:relative;display:flex;align-items:flex-start;gap:10px;border:1px solid rgba(52,58,64,.14);border-radius:20px;padding:14px 34px 14px 16px;background:#fff;box-shadow:0 24px 70px rgba(17,24,39,.24);font-size:13px;font-weight:600;color:#343a40;animation:toastIn .18s ease-out}
+.toast-card strong{border-radius:999px;padding:6px 10px;background:#343a40;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.toast-card span{line-height:1.35}
+.toast-card-close{position:absolute;top:8px;right:8px;width:22px;height:22px;border:none;background:transparent;color:#868c91;font-size:12px;line-height:1;border-radius:6px;cursor:pointer}
+.toast-card-close:hover{background:rgba(52,58,64,.08);color:#343a40}
+.toast-card-close:focus-visible{outline:2px solid #343a40;outline-offset:1px}
+.toast-card.success{background:linear-gradient(90deg,#f4ffe8,#ffffff);border-color:rgba(125,209,0,.38)}
+.toast-card.success strong{background:#7dd100;color:#243000}
+.toast-card.info{background:linear-gradient(90deg,#eef6ff,#ffffff);border-color:rgba(72,127,255,.28)}
+.toast-card.info strong{background:#2563eb;color:#fff}
+.toast-card.error{background:linear-gradient(90deg,#fff1f0,#ffffff);border-color:rgba(220,38,38,.32)}
+.toast-card.error strong{background:#dc2626;color:#fff}
+@media(max-width:760px){.toast-stack{left:12px;right:12px;bottom:12px;max-width:none}}
 
 /* v8.1: colores operativos por status en Asignación */
 .pill.teal{background:#ccfbf1!important;color:#0f766e!important;border-color:#99f6e4!important}
@@ -2776,3 +2788,12 @@ a[class*="bg-black"],
 
 .request-topic-title{display:block;font-size:16px;font-weight:950;line-height:1.2;color:#111827;margin-bottom:4px}
 .assignment-request-info .request-topic-title{font-size:17px}
+
+/* Area tactil minima recomendada (~44px) solo en mobile, solo para
+   botones y campos de formulario estandar. No se toca escritorio, ni
+   los botones compactos ya deliberados (toolbars, badges, chips, que
+   ya tienen su propio min-height con !important y siguen ganando). */
+@media(max-width:760px){
+  .btn{min-height:44px}
+  .field input,.field select,.field textarea,td input,td select,td textarea{min-height:44px}
+}

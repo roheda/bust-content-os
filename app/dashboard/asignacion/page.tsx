@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
+import { StatusPill, requestStatusOptions } from "@/components/StatusPill";
 import { auth } from "@/lib/firebase";
 import {
   Brand,
@@ -165,27 +166,7 @@ function assignmentLog(
 
 const assignmentStatusOptions = [
   { value: "all", label: "Todos los estados" },
-  {
-    value: "lista_asignacion",
-    label: "Pendiente de asignación / Material listo",
-  },
-  { value: "pendiente_produccion", label: "Pendiente producción" },
-  { value: "produccion_programada", label: "Producción programada" },
-  { value: "material_listo", label: "Material listo" },
-  { value: "bloqueada", label: "Bloqueada" },
-  { value: "asignada", label: "Asignada" },
-  { value: "en_ejecucion", label: "En ejecución" },
-  { value: "en_revision", label: "En revisión" },
-  { value: "pendiente_aprobacion", label: "Aprobación Content" },
-  { value: "pendiente_aprobacion_kam", label: "Aprobación KAM" },
-  { value: "aprobada_pendiente_copyout", label: "En Contenidos" },
-  { value: "rebotada", label: "Rebotada" },
-  { value: "lista_programar", label: "Lista para programar" },
-  { value: "programada", label: "Programada" },
-  { value: "publicada", label: "Publicada" },
-  { value: "finalizada", label: "Finalizada" },
-  { value: "cancelada", label: "Cancelada" },
-  { value: "eliminada", label: "Eliminada" },
+  ...requestStatusOptions,
 ];
 
 function statusMatchesFilter(item: ContentRequest, selectedStatus: string) {
@@ -221,6 +202,8 @@ export default function AssignmentPage() {
   const [bulkAssigning, setBulkAssigning] = useState(false);
   const assigningLockRef = useRef<Set<string>>(new Set());
   const bulkAssigningRef = useRef(false);
+  const destructiveActionLockRef = useRef(false);
+  const [destructiveActionBusy, setDestructiveActionBusy] = useState(false);
   const [sort, setSort] = useState<{ key: string; direction: "asc" | "desc" }>({
     key: "batch",
     direction: "asc",
@@ -722,43 +705,51 @@ export default function AssignmentPage() {
     if (!ids.length) return alert("Selecciona al menos una solicitud.");
     if (!note.trim())
       return alert("Escribe una nota para rebotar la solicitud.");
-    await Promise.all(
-      ids.map((id) => {
-        const current = items.find((item) => item.id === id);
-        const comments = [
-          ...(current?.comments || []),
-          {
-            id: `${Date.now()}-${id}`,
-            author: currentActorName(),
-            target: "Content",
-            body: `Solicitud rebotada desde Asignación. Motivo: ${note.trim()}`,
-            mentions: ["@content"],
-            status: "open" as const,
-            createdAt: new Date().toISOString(),
-          },
-        ];
-        const revisionUpdate = buildRevisionUpdate(current || {}, {
-          actor: currentActorName(),
-          reason: note.trim(),
-          stage: "Asignación",
-          note: note.trim()
-        });
-        return updateRequest(id, {
-          ...revisionUpdate,
-          status: "rebotada",
-          rejectionNote: note.trim(),
-          rejectedAt: new Date().toISOString(),
-          internalNotes: note.trim(),
-          comments,
-        });
-      }),
-    );
-    setSelected([]);
-    setRejectNote("");
-    setRejectModal(false);
-    setEditing(null);
-    await load();
-    alert("Solicitud(es) rebotadas");
+    if (destructiveActionLockRef.current) return;
+    destructiveActionLockRef.current = true;
+    setDestructiveActionBusy(true);
+    try {
+      await Promise.all(
+        ids.map((id) => {
+          const current = items.find((item) => item.id === id);
+          const comments = [
+            ...(current?.comments || []),
+            {
+              id: `${Date.now()}-${id}`,
+              author: currentActorName(),
+              target: "Content",
+              body: `Solicitud rebotada desde Asignación. Motivo: ${note.trim()}`,
+              mentions: ["@content"],
+              status: "open" as const,
+              createdAt: new Date().toISOString(),
+            },
+          ];
+          const revisionUpdate = buildRevisionUpdate(current || {}, {
+            actor: currentActorName(),
+            reason: note.trim(),
+            stage: "Asignación",
+            note: note.trim()
+          });
+          return updateRequest(id, {
+            ...revisionUpdate,
+            status: "rebotada",
+            rejectionNote: note.trim(),
+            rejectedAt: new Date().toISOString(),
+            internalNotes: note.trim(),
+            comments,
+          });
+        }),
+      );
+      setSelected([]);
+      setRejectNote("");
+      setRejectModal(false);
+      setEditing(null);
+      await load();
+      alert("Solicitud(es) rebotadas");
+    } finally {
+      destructiveActionLockRef.current = false;
+      setDestructiveActionBusy(false);
+    }
   }
 
   async function deleteSelectedRequests() {
@@ -766,12 +757,20 @@ export default function AssignmentPage() {
     if (!selected.length) return alert("Selecciona al menos una solicitud.");
     if (deleteConfirm !== "ELIMINAR")
       return alert("Debes escribir ELIMINAR para confirmar.");
-    await Promise.all(selected.map((id) => deleteRequest(id)));
-    setSelected([]);
-    setDeleteConfirm("");
-    setDeleteModal(false);
-    await load();
-    alert("Solicitud(es) eliminadas");
+    if (destructiveActionLockRef.current) return;
+    destructiveActionLockRef.current = true;
+    setDestructiveActionBusy(true);
+    try {
+      await Promise.all(selected.map((id) => deleteRequest(id)));
+      setSelected([]);
+      setDeleteConfirm("");
+      setDeleteModal(false);
+      await load();
+      alert("Solicitud(es) eliminadas");
+    } finally {
+      destructiveActionLockRef.current = false;
+      setDestructiveActionBusy(false);
+    }
   }
 
   async function cleanupOrphanRequests() {
@@ -1204,7 +1203,7 @@ export default function AssignmentPage() {
               <button
                 className="btn blue"
                 onClick={() => rejectRequests(selected, rejectNote)}
-                disabled={!canEditAssignment}
+                disabled={!canEditAssignment || destructiveActionBusy}
               >
                 Devolver a Content
               </button>
@@ -1233,7 +1232,11 @@ export default function AssignmentPage() {
               />
             </div>
             <div style={{ display: "flex", gap: 12 }}>
-              <button className="btn red" onClick={deleteSelectedRequests} disabled={!canDeleteAssignment}>
+              <button
+                className="btn red"
+                onClick={deleteSelectedRequests}
+                disabled={!canDeleteAssignment || destructiveActionBusy}
+              >
                 Eliminar definitivamente
               </button>
               <button className="btn" onClick={() => setDeleteModal(false)}>
@@ -1648,27 +1651,3 @@ function getAssignBlockReason(item: ContentRequest) {
   return "Bloqueada: falta material base para trabajar.";
 }
 
-function StatusPill({ status }: { status: string }) {
-  const option = assignmentStatusOptions.find((item) => item.value === status);
-  const colorByStatus: Record<string,string> = {
-    lista_asignacion: "teal",
-    pendiente_produccion: "orange",
-    produccion_programada: "purple",
-    material_listo: "green",
-    bloqueada: "red",
-    asignada: "blue",
-    en_ejecucion: "cyan",
-    en_revision: "amber",
-    pendiente_aprobacion: "violet",
-    pendiente_aprobacion_kam: "pink",
-    aprobada_pendiente_copyout: "lime",
-    rebotada: "red",
-    lista_programar: "sky",
-    programada: "slate",
-    publicada: "emerald",
-    finalizada: "green",
-    cancelada: "red",
-    eliminada: "gray",
-  };
-  return <span className={`pill ${colorByStatus[status] || "gray"}`}>{option?.label || status}</span>;
-}
