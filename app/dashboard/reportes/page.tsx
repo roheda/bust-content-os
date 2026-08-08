@@ -362,19 +362,19 @@ export default function ReportsPage(){
     <section className="grid two-col">
       <div className="report-section">
         <h3>Cuellos de botella</h3>
-        <table className="risk-table">
+        <div className="table-wrap"><table className="risk-table">
           <thead><tr><th>Bloqueo</th><th>Cantidad</th><th>Riesgo</th></tr></thead>
           <tbody>{bottlenecks.map(row=><tr key={row.label}>
             <td>{row.label}</td>
             <td>{row.count}</td>
             <td><span className={`health-badge ${row.count>5?"health-bad":row.count>0?"health-mid":"health-good"}`}>{row.count>5?"Alto":row.count>0?"Medio":"Ok"}</span></td>
           </tr>)}</tbody>
-        </table>
+        </table></div>
       </div>
 
       <div className="report-section">
         <h3>Tareas vencidas críticas</h3>
-        <table className="risk-table">
+        <div className="table-wrap"><table className="risk-table">
           <thead><tr><th>Tarea</th><th>Responsable</th><th>Fecha</th><th>Estado</th></tr></thead>
           <tbody>{overdueTasks.map(item=><tr key={item.id}>
             <td><strong>{item.clientName}</strong><br/><span className="mini">{item.contentType} · {item.creativeIdea}</span></td>
@@ -382,7 +382,7 @@ export default function ReportsPage(){
             <td>{getTaskDate(item)||"Sin fecha"}</td>
             <td><span className="pill red">{statusLabel(item.status||"")}</span></td>
           </tr>)}</tbody>
-        </table>
+        </table></div>
         {!overdueTasks.length && <p className="mini">Sin tareas vencidas en el filtro.</p>}
       </div>
     </section>

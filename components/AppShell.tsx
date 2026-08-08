@@ -128,6 +128,13 @@ export default function AppShell({
   },[pathname]);
 
   useEffect(()=>{
+    if(typeof document === "undefined" || !mobileMenuOpen) return;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = original; };
+  },[mobileMenuOpen]);
+
+  useEffect(()=>{
     if(typeof window === "undefined" || loading) return;
 
     const targets = [
