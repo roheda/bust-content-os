@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
+import { StatusPill, requestStatusOptions } from "@/components/StatusPill";
 import { auth } from "@/lib/firebase";
 import {
   Brand,
@@ -165,27 +166,7 @@ function assignmentLog(
 
 const assignmentStatusOptions = [
   { value: "all", label: "Todos los estados" },
-  {
-    value: "lista_asignacion",
-    label: "Pendiente de asignación / Material listo",
-  },
-  { value: "pendiente_produccion", label: "Pendiente producción" },
-  { value: "produccion_programada", label: "Producción programada" },
-  { value: "material_listo", label: "Material listo" },
-  { value: "bloqueada", label: "Bloqueada" },
-  { value: "asignada", label: "Asignada" },
-  { value: "en_ejecucion", label: "En ejecución" },
-  { value: "en_revision", label: "En revisión" },
-  { value: "pendiente_aprobacion", label: "Aprobación Content" },
-  { value: "pendiente_aprobacion_kam", label: "Aprobación KAM" },
-  { value: "aprobada_pendiente_copyout", label: "En Contenidos" },
-  { value: "rebotada", label: "Rebotada" },
-  { value: "lista_programar", label: "Lista para programar" },
-  { value: "programada", label: "Programada" },
-  { value: "publicada", label: "Publicada" },
-  { value: "finalizada", label: "Finalizada" },
-  { value: "cancelada", label: "Cancelada" },
-  { value: "eliminada", label: "Eliminada" },
+  ...requestStatusOptions,
 ];
 
 function statusMatchesFilter(item: ContentRequest, selectedStatus: string) {
@@ -1648,27 +1629,3 @@ function getAssignBlockReason(item: ContentRequest) {
   return "Bloqueada: falta material base para trabajar.";
 }
 
-function StatusPill({ status }: { status: string }) {
-  const option = assignmentStatusOptions.find((item) => item.value === status);
-  const colorByStatus: Record<string,string> = {
-    lista_asignacion: "teal",
-    pendiente_produccion: "orange",
-    produccion_programada: "purple",
-    material_listo: "green",
-    bloqueada: "red",
-    asignada: "blue",
-    en_ejecucion: "cyan",
-    en_revision: "amber",
-    pendiente_aprobacion: "violet",
-    pendiente_aprobacion_kam: "pink",
-    aprobada_pendiente_copyout: "lime",
-    rebotada: "red",
-    lista_programar: "sky",
-    programada: "slate",
-    publicada: "emerald",
-    finalizada: "green",
-    cancelada: "red",
-    eliminada: "gray",
-  };
-  return <span className={`pill ${colorByStatus[status] || "gray"}`}>{option?.label || status}</span>;
-}
