@@ -202,6 +202,8 @@ export default function AssignmentPage() {
   const [bulkAssigning, setBulkAssigning] = useState(false);
   const assigningLockRef = useRef<Set<string>>(new Set());
   const bulkAssigningRef = useRef(false);
+  const destructiveActionLockRef = useRef(false);
+  const [destructiveActionBusy, setDestructiveActionBusy] = useState(false);
   const [sort, setSort] = useState<{ key: string; direction: "asc" | "desc" }>({
     key: "batch",
     direction: "asc",
@@ -703,43 +705,51 @@ export default function AssignmentPage() {
     if (!ids.length) return alert("Selecciona al menos una solicitud.");
     if (!note.trim())
       return alert("Escribe una nota para rebotar la solicitud.");
-    await Promise.all(
-      ids.map((id) => {
-        const current = items.find((item) => item.id === id);
-        const comments = [
-          ...(current?.comments || []),
-          {
-            id: `${Date.now()}-${id}`,
-            author: currentActorName(),
-            target: "Content",
-            body: `Solicitud rebotada desde Asignación. Motivo: ${note.trim()}`,
-            mentions: ["@content"],
-            status: "open" as const,
-            createdAt: new Date().toISOString(),
-          },
-        ];
-        const revisionUpdate = buildRevisionUpdate(current || {}, {
-          actor: currentActorName(),
-          reason: note.trim(),
-          stage: "Asignación",
-          note: note.trim()
-        });
-        return updateRequest(id, {
-          ...revisionUpdate,
-          status: "rebotada",
-          rejectionNote: note.trim(),
-          rejectedAt: new Date().toISOString(),
-          internalNotes: note.trim(),
-          comments,
-        });
-      }),
-    );
-    setSelected([]);
-    setRejectNote("");
-    setRejectModal(false);
-    setEditing(null);
-    await load();
-    alert("Solicitud(es) rebotadas");
+    if (destructiveActionLockRef.current) return;
+    destructiveActionLockRef.current = true;
+    setDestructiveActionBusy(true);
+    try {
+      await Promise.all(
+        ids.map((id) => {
+          const current = items.find((item) => item.id === id);
+          const comments = [
+            ...(current?.comments || []),
+            {
+              id: `${Date.now()}-${id}`,
+              author: currentActorName(),
+              target: "Content",
+              body: `Solicitud rebotada desde Asignación. Motivo: ${note.trim()}`,
+              mentions: ["@content"],
+              status: "open" as const,
+              createdAt: new Date().toISOString(),
+            },
+          ];
+          const revisionUpdate = buildRevisionUpdate(current || {}, {
+            actor: currentActorName(),
+            reason: note.trim(),
+            stage: "Asignación",
+            note: note.trim()
+          });
+          return updateRequest(id, {
+            ...revisionUpdate,
+            status: "rebotada",
+            rejectionNote: note.trim(),
+            rejectedAt: new Date().toISOString(),
+            internalNotes: note.trim(),
+            comments,
+          });
+        }),
+      );
+      setSelected([]);
+      setRejectNote("");
+      setRejectModal(false);
+      setEditing(null);
+      await load();
+      alert("Solicitud(es) rebotadas");
+    } finally {
+      destructiveActionLockRef.current = false;
+      setDestructiveActionBusy(false);
+    }
   }
 
   async function deleteSelectedRequests() {
@@ -747,12 +757,20 @@ export default function AssignmentPage() {
     if (!selected.length) return alert("Selecciona al menos una solicitud.");
     if (deleteConfirm !== "ELIMINAR")
       return alert("Debes escribir ELIMINAR para confirmar.");
-    await Promise.all(selected.map((id) => deleteRequest(id)));
-    setSelected([]);
-    setDeleteConfirm("");
-    setDeleteModal(false);
-    await load();
-    alert("Solicitud(es) eliminadas");
+    if (destructiveActionLockRef.current) return;
+    destructiveActionLockRef.current = true;
+    setDestructiveActionBusy(true);
+    try {
+      await Promise.all(selected.map((id) => deleteRequest(id)));
+      setSelected([]);
+      setDeleteConfirm("");
+      setDeleteModal(false);
+      await load();
+      alert("Solicitud(es) eliminadas");
+    } finally {
+      destructiveActionLockRef.current = false;
+      setDestructiveActionBusy(false);
+    }
   }
 
   async function cleanupOrphanRequests() {
@@ -1185,7 +1203,7 @@ export default function AssignmentPage() {
               <button
                 className="btn blue"
                 onClick={() => rejectRequests(selected, rejectNote)}
-                disabled={!canEditAssignment}
+                disabled={!canEditAssignment || destructiveActionBusy}
               >
                 Devolver a Content
               </button>
@@ -1214,7 +1232,11 @@ export default function AssignmentPage() {
               />
             </div>
             <div style={{ display: "flex", gap: 12 }}>
-              <button className="btn red" onClick={deleteSelectedRequests} disabled={!canDeleteAssignment}>
+              <button
+                className="btn red"
+                onClick={deleteSelectedRequests}
+                disabled={!canDeleteAssignment || destructiveActionBusy}
+              >
                 Eliminar definitivamente
               </button>
               <button className="btn" onClick={() => setDeleteModal(false)}>

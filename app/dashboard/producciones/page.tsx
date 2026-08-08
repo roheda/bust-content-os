@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { Brand, ContentRequest, PlatformUser, Production, ReferenceFile, isImageFile, isVideoFile, listUniqueBrands, listProductions, listRequests, listUsers, organizationTeam, saveProduction, updateProduction, deleteProduction, updateRequest, uploadReferenceFiles } from "@/lib/data";
@@ -58,6 +58,10 @@ export default function ProductionsPage(){
   const [pendingDetail,setPendingDetail]=useState<ContentRequest|null>(null);
   const [expandedProductionRequestId,setExpandedProductionRequestId]=useState<string|null>(null);
   const [uploading,setUploading]=useState(false);
+  const submitLockRef=useRef(false);
+  const [submitBusy,setSubmitBusy]=useState(false);
+  const materialActionLockRef=useRef(false);
+  const [materialActionBusy,setMaterialActionBusy]=useState(false);
   const [requestSort,setRequestSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"dueDate",direction:"asc"});
   const [productionSort,setProductionSort]=useState<{key:string;direction:"asc"|"desc"}>({key:"scheduledDate",direction:"asc"});
   const [collapsedProductionBatchIds,setCollapsedProductionBatchIds]=useState<string[]>([]);
@@ -515,43 +519,51 @@ export default function ProductionsPage(){
     if(!canCreateProduction)return permissionAlert("crear producciones");
     if(!form.title||!form.scheduledDate||!form.materialDueDate||!form.startTime||!form.endTime||!(form.locations||form.location)||!form.producer||!(form.teamMembers||[]).length||!form.objective||!form.requirements||!form.shotList)return alert("Todos los campos de la producción son obligatorios, incluida la fecha límite para completar materiales.");
     if(isWeekendDate(form.scheduledDate) || isWeekendDate(form.materialDueDate))return alert("La producción y la entrega de materiales deben programarse en días hábiles, no sábado ni domingo.");
-    const orderPayload = buildProductionOrderPayload();
-    const productionData:Production = {
-      ...form,
-      productionOrder: orderPayload.order,
-      productionOrderReasons: orderPayload.reasons,
-      productionOrderGroups: orderPayload.groups,
-      productionOrderMoments: orderPayload.moments,
-      productionOrderPriorities: orderPayload.priorities,
-      productionOrderImmediate: orderPayload.immediate,
-      productionLotSequenceNumbers: orderPayload.lotSequenceNumbers,
-      productionOrderMode,
-      productionOrderInstructions,
-      productionOrderGeneratedAt: new Date().toISOString()
-    };
-    const ref = await saveProduction(productionData);
-    await Promise.all(form.requestIds.map((id,index)=>updateRequest(id,{
-      productionId:ref.id,
-      productionName:form.title,
-      lotSequenceNumber:orderPayload.lotSequenceNumbers[id] || requestById.get(id)?.number || index+1,
-      productionOrder:index+1,
-      productionOrderReason:orderPayload.reasons[id] || "",
-      productionOrderGroup:orderPayload.groups[id] || "",
-      productionOrderMoment:orderPayload.moments[id] || "",
-      productionPriority:orderPayload.priorities[id] || "normal",
-      requiresImmediateCapture:orderPayload.immediate[id] || false,
-      aiSuggestedOrder:productionOrderMode === "ai",
-      manualOrderEdited:productionOrderMode === "manual",
-      status:"produccion_programada"
-    })));
-    setSelected([]);
-    setShowModal(false);
-    setProductionOrderReasons({});
-    setProductionOrderInstructions("");
-    setProductionOrderMode("manual");
-    setForm(empty);
-    await load();
-    alert("Producción creada");
+    if(submitLockRef.current)return;
+    submitLockRef.current=true;
+    setSubmitBusy(true);
+    try{
+      const orderPayload = buildProductionOrderPayload();
+      const productionData:Production = {
+        ...form,
+        productionOrder: orderPayload.order,
+        productionOrderReasons: orderPayload.reasons,
+        productionOrderGroups: orderPayload.groups,
+        productionOrderMoments: orderPayload.moments,
+        productionOrderPriorities: orderPayload.priorities,
+        productionOrderImmediate: orderPayload.immediate,
+        productionLotSequenceNumbers: orderPayload.lotSequenceNumbers,
+        productionOrderMode,
+        productionOrderInstructions,
+        productionOrderGeneratedAt: new Date().toISOString()
+      };
+      const ref = await saveProduction(productionData);
+      await Promise.all(form.requestIds.map((id,index)=>updateRequest(id,{
+        productionId:ref.id,
+        productionName:form.title,
+        lotSequenceNumber:orderPayload.lotSequenceNumbers[id] || requestById.get(id)?.number || index+1,
+        productionOrder:index+1,
+        productionOrderReason:orderPayload.reasons[id] || "",
+        productionOrderGroup:orderPayload.groups[id] || "",
+        productionOrderMoment:orderPayload.moments[id] || "",
+        productionPriority:orderPayload.priorities[id] || "normal",
+        requiresImmediateCapture:orderPayload.immediate[id] || false,
+        aiSuggestedOrder:productionOrderMode === "ai",
+        manualOrderEdited:productionOrderMode === "manual",
+        status:"produccion_programada"
+      })));
+      setSelected([]);
+      setShowModal(false);
+      setProductionOrderReasons({});
+      setProductionOrderInstructions("");
+      setProductionOrderMode("manual");
+      setForm(empty);
+      await load();
+      alert("Producción creada");
+    } finally {
+      submitLockRef.current=false;
+      setSubmitBusy(false);
+    }
   }
 
   function setEditingField(k:keyof Production,v:any){
@@ -640,56 +652,64 @@ export default function ProductionsPage(){
   async function saveProductionMaterial(markDelivered=false){
     if(!canEditProduction)return permissionAlert("marcar material de producción");
     if(!editing?.id)return;
-    if(!markDelivered){
-      await persistEditingMaterial();
-      await load();
-      return;
-    }
-    const missingLinks = (editing.requestIds||[]).filter(id => {
-      const req = requests.find(x=>x.id===id);
-      return getPostMaterialStatus(req,editing).missing;
-    });
-    if(missingLinks.length){
-      alert("Falta material específico en una o más publicaciones. Revisa los campos Foto/Diseño y Video/Audiovisual según corresponda.");
-      return;
-    }
-    const nextStatus = "material_entregado";
-    const deliveredAt = new Date().toISOString();
-    await updateProduction(editing.id,{...editing,status:nextStatus,materialDeliveredAt:deliveredAt});
-    await Promise.all((editing.requestIds||[]).map(id=>{
-      const req = requests.find(x=>x.id===id);
-      const individualLink = ((editing.materialLinksByRequest||{})[id] || "").trim();
-      const photoLink = ((editing.materialPhotoLinksByRequest||{})[id] || "").trim();
-      const videoLink = ((editing.materialVideoLinksByRequest||{})[id] || "").trim();
-      const generalLinks = (editing.materialLinks || "").trim();
-      const mergedLinks = mergeLinks([individualLink, photoLink, videoLink, generalLinks, req?.materialLinks || ""]);
-      const mergedFiles = mergeFiles([...(req?.materialFiles || []), ...(editing.materialFiles || [])]);
-      const comments = [...(req?.comments||[]), {
-        id:`${Date.now()}-${id}`,
-        author:"Sistema",
-        target:"Asignación",
-        body:`Material de producción entregado. Link final: ${individualLink || "Sin link final"}. Foto/Diseño: ${photoLink || "Sin link"}. Video/Audiovisual: ${videoLink || "Sin link"}. Link general: ${generalLinks || "Sin link general"}. Esta solicitud ya puede asignarse.`,
-        mentions:["@asignacion"],
-        status:"open" as const,
-        createdAt:deliveredAt
-      }];
-      return updateRequest(id,{
-        materialAvailable:true,
-        materialLinks:mergedLinks,
-        materialFiles:mergedFiles,
-        productionSpecificMaterialLink:individualLink,
-        productionPhotoMaterialLink:photoLink,
-        productionVideoMaterialLink:videoLink,
-        productionGeneralMaterialLinks:generalLinks,
-        productionMaterialFiles:editing.materialFiles || [],
-        materialDeliveredAt:deliveredAt,
-        status:"material_listo",
-        comments
+    if(materialActionLockRef.current)return;
+    materialActionLockRef.current=true;
+    setMaterialActionBusy(true);
+    try{
+      if(!markDelivered){
+        await persistEditingMaterial();
+        await load();
+        return;
+      }
+      const missingLinks = (editing.requestIds||[]).filter(id => {
+        const req = requests.find(x=>x.id===id);
+        return getPostMaterialStatus(req,editing).missing;
       });
-    }));
-    setEditing(null);
-    await load();
-    alert("Material entregado y solicitudes desbloqueadas");
+      if(missingLinks.length){
+        alert("Falta material específico en una o más publicaciones. Revisa los campos Foto/Diseño y Video/Audiovisual según corresponda.");
+        return;
+      }
+      const nextStatus = "material_entregado";
+      const deliveredAt = new Date().toISOString();
+      await updateProduction(editing.id,{...editing,status:nextStatus,materialDeliveredAt:deliveredAt});
+      await Promise.all((editing.requestIds||[]).map(id=>{
+        const req = requests.find(x=>x.id===id);
+        const individualLink = ((editing.materialLinksByRequest||{})[id] || "").trim();
+        const photoLink = ((editing.materialPhotoLinksByRequest||{})[id] || "").trim();
+        const videoLink = ((editing.materialVideoLinksByRequest||{})[id] || "").trim();
+        const generalLinks = (editing.materialLinks || "").trim();
+        const mergedLinks = mergeLinks([individualLink, photoLink, videoLink, generalLinks, req?.materialLinks || ""]);
+        const mergedFiles = mergeFiles([...(req?.materialFiles || []), ...(editing.materialFiles || [])]);
+        const comments = [...(req?.comments||[]), {
+          id:`${Date.now()}-${id}`,
+          author:"Sistema",
+          target:"Asignación",
+          body:`Material de producción entregado. Link final: ${individualLink || "Sin link final"}. Foto/Diseño: ${photoLink || "Sin link"}. Video/Audiovisual: ${videoLink || "Sin link"}. Link general: ${generalLinks || "Sin link general"}. Esta solicitud ya puede asignarse.`,
+          mentions:["@asignacion"],
+          status:"open" as const,
+          createdAt:deliveredAt
+        }];
+        return updateRequest(id,{
+          materialAvailable:true,
+          materialLinks:mergedLinks,
+          materialFiles:mergedFiles,
+          productionSpecificMaterialLink:individualLink,
+          productionPhotoMaterialLink:photoLink,
+          productionVideoMaterialLink:videoLink,
+          productionGeneralMaterialLinks:generalLinks,
+          productionMaterialFiles:editing.materialFiles || [],
+          materialDeliveredAt:deliveredAt,
+          status:"material_listo",
+          comments
+        });
+      }));
+      setEditing(null);
+      await load();
+      alert("Material entregado y solicitudes desbloqueadas");
+    } finally {
+      materialActionLockRef.current=false;
+      setMaterialActionBusy(false);
+    }
   }
 
   return <AppShell active="Producciones">
@@ -891,8 +911,8 @@ export default function ProductionsPage(){
       </tbody></table></div>
 
       <div style={{display:"flex",gap:12,marginTop:16,flexWrap:"wrap"}}>
-        <button className="btn" onClick={()=>saveProductionMaterial(false)} disabled={!canEditProduction}>Guardar avances</button>
-        <button className="btn blue" onClick={()=>saveProductionMaterial(true)} disabled={!canEditProduction}>Marcar como material entregado</button>
+        <button className="btn" onClick={()=>saveProductionMaterial(false)} disabled={!canEditProduction || materialActionBusy}>Guardar avances</button>
+        <button className="btn blue" onClick={()=>saveProductionMaterial(true)} disabled={!canEditProduction || materialActionBusy}>Marcar como material entregado</button>
         <button className="btn red" onClick={()=>setEditing(null)}>Cerrar</button>
       </div>
     </section>}
@@ -991,7 +1011,7 @@ export default function ProductionsPage(){
           {!modalOrderedRequests.length && <p className="mini">No hay solicitudes incluidas.</p>}
         </div>
       </div>
-      <div style={{display:"flex",gap:12,marginTop:16}}><button className="btn blue" onClick={submit} disabled={!canCreateProduction}>Crear producción</button><button className="btn red" onClick={()=>setShowModal(false)}>Cerrar</button></div>
+      <div style={{display:"flex",gap:12,marginTop:16}}><button className="btn blue" onClick={submit} disabled={!canCreateProduction || submitBusy}>Crear producción</button><button className="btn red" onClick={()=>setShowModal(false)}>Cerrar</button></div>
     </div></div>}
   </AppShell>
 }
