@@ -88,7 +88,9 @@ textarea{min-height:82px}
 .preview-modal{position:fixed;inset:0;background:rgba(17,24,39,.78);z-index:1000;display:grid;place-items:center;padding:28px}
 .preview-box{background:#fff;border-radius:24px;max-width:min(980px,96vw);max-height:92vh;overflow:auto;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.35)}
 .preview-box img{max-width:100%;max-height:74vh;border-radius:16px;display:block}
-.preview-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.preview-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.preview-actions strong{min-width:0;overflow-wrap:anywhere}
+.modal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 .preview-actions strong{font-size:14px}
 
 .calendar-panel{display:grid;gap:14px}
@@ -143,7 +145,7 @@ textarea{min-height:82px}
 .detail-meta{display:flex;gap:8px;flex-wrap:wrap}
 .detail-section{border-top:1px solid var(--line);padding-top:16px;margin-top:16px}
 .detail-section h4{margin:0 0 10px;font-size:14px;text-transform:uppercase;color:var(--muted);letter-spacing:.08em}
-.detail-copy{background:#f9fafb;border:1px solid var(--line);border-radius:16px;padding:14px;white-space:pre-wrap;line-height:1.55}
+.detail-copy{background:#f9fafb;border:1px solid var(--line);border-radius:16px;padding:14px;white-space:pre-wrap;line-height:1.55;overflow-wrap:anywhere}
 .link-list{display:grid;gap:8px}
 .link-card{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);background:#fff;border-radius:14px;padding:10px 12px;color:var(--blue);font-weight:800;word-break:break-word}
 .link-card small{color:var(--muted);font-weight:700}
@@ -192,6 +194,11 @@ textarea{min-height:82px}
 .brief-check{display:flex;gap:8px;align-items:flex-start;font-size:13px}
 .brief-check::before{content:"☐";font-weight:900;color:#111827}
 .brief-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+@media(max-width:760px){
+  .brief-meta-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .brief-columns{grid-template-columns:1fr}
+  .brief-cover h1{font-size:26px}
+}
 @media print{
   .sidebar,.hero,.kpis,.toolbar,.view-tabs,.btn,.brief-actions,.modal-backdrop{display:none!important}
   .shell{display:block}
