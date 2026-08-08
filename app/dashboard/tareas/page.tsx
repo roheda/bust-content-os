@@ -237,14 +237,13 @@ export default function TasksPage() {
           workflowFilter === "all"
             ? true
             : workflowFilter === "pending"
-              ? [
-                  "asignada",
-                  "en_revision",
-                  "rebotada",
-                  "pendiente_aprobacion",
-                  "pendiente_aprobacion_kam",
-                  "aprobada_pendiente_copyout",
-                ].includes(x.status || "")
+              ? // "Pendientes" es lo que todavia depende de ti: una vez
+                // mandada a aprobacion, ya no es tu pendiente (sale de aqui
+                // y aparece en la pestaña "En aprobación"), salvo que te la
+                // devuelvan (rebotada), que vuelve como prioridad.
+                ["asignada", "en_revision", "rebotada"].includes(
+                  x.status || "",
+                )
               : workflowFilter === "active"
                 ? ["asignada", "en_revision"].includes(x.status || "")
                 : workflowFilter === "approval"
@@ -541,6 +540,11 @@ export default function TasksPage() {
       finalPostLink: finalLink.trim(),
       status: "pendiente_aprobacion",
       approvalStatus: "pendiente",
+      // La tarea sale de tu cola de trabajo: si venia arrastrada de dias
+      // anteriores, esa marca ya no aplica (ya no depende de ti).
+      carriedOver: false,
+      carriedOverFromDate: "",
+      carriedOverDays: 0,
       comments,
     });
     setSelected({
@@ -548,6 +552,9 @@ export default function TasksPage() {
       finalPostLink: finalLink.trim(),
       status: "pendiente_aprobacion",
       approvalStatus: "pendiente",
+      carriedOver: false,
+      carriedOverFromDate: "",
+      carriedOverDays: 0,
       comments,
     });
     await load();
