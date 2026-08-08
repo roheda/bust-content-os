@@ -380,6 +380,7 @@ textarea{min-height:82px}
 .chat-item p{font-size:12px;line-height:1.45;color:#344054;white-space:pre-wrap}
 .mention{display:inline-flex;border-radius:999px;background:#dbeafe;color:#1d4ed8;padding:4px 8px;font-size:11px;font-weight:900}
 .task-modal-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+@media(max-width:760px){.task-modal-grid{grid-template-columns:1fr}}
 .comment-box{border:1px solid var(--line);border-radius:16px;padding:12px;background:#f9fafb;margin-bottom:10px}
 .comment-box p{white-space:pre-wrap;line-height:1.5;margin:6px 0 0}
 .status-buttons{display:flex;gap:8px;flex-wrap:wrap}
@@ -1998,7 +1999,7 @@ a[class*="bg-black"],
 .contenidos-header{min-height:42px!important;max-height:42px!important;overflow:hidden!important}
 .content-actions-cell{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0;overflow:visible!important;white-space:nowrap!important}
 .content-actions-cell .btn{padding-inline:12px;min-height:36px;font-size:12px}
-@media(max-width:1200px){.approvals-row,.contenidos-row,.contenidos-header{grid-template-columns:28px minmax(180px,1fr)!important;align-items:start}.approvals-row.header,.contenidos-header{display:none}.approvals-row>span,.approvals-row>button,.contenidos-row>span,.contenidos-row>div,.contenidos-row>.copyout-cell{grid-column:2/-1}.content-actions-cell{grid-column:2/-1;flex-wrap:wrap}}
+@media(max-width:1200px){.approvals-row,.contenidos-row,.contenidos-header{grid-template-columns:28px minmax(180px,1fr)!important;align-items:start}.approvals-row.header,.contenidos-header{display:none}.approvals-row>span,.approvals-row>button,.contenidos-row>span,.contenidos-row>div,.contenidos-row>.copyout-cell{grid-column:2/-1}.content-actions-cell{grid-column:2/-1;flex-wrap:wrap}.approvals-row{min-height:0;max-height:none;overflow:visible;padding:14px 0}.approvals-row>span{white-space:normal;overflow:visible;text-overflow:clip}}
 
 
 /* v50 · calendario laboral y eficiencia operativa */

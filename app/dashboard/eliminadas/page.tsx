@@ -106,7 +106,7 @@ export default function DeletedPage(){
     <section className="report-section">
       <h3>Solicitudes eliminadas</h3>
       <p className="mini">Retención configurada: {settings.deletedRetentionDays||60} días. Mostrando {recentItems.length} de {items.length} solicitudes eliminadas.</p>
-      <table className="table">
+      <div className="table-wrap"><table className="table">
         <thead><tr><th>Cliente</th><th>Lote</th><th>Tipo</th><th>Motivo</th><th>Fecha eliminación</th><th>Acciones</th></tr></thead>
         <tbody>{recentItems.map(item=><tr key={item.id}>
           <td>{item.clientName}</td>
@@ -116,14 +116,14 @@ export default function DeletedPage(){
           <td>{formatDeletedAt(item.deletedAt)}</td>
           <td><button className="btn" onClick={()=>restoreItem(item)} disabled={!canDelete}>Restaurar</button><button className="btn red" onClick={()=>hardDeleteItem(item)} disabled={!canDelete}>Borrar definitivo</button></td>
         </tr>)}</tbody>
-      </table>
+      </table></div>
       {!items.length && <p className="mini">No hay solicitudes eliminadas.</p>}
     </section>
 
     <section className="report-section">
       <h3>Producciones eliminadas</h3>
       <p className="mini">Mostrando {recentProductions.length} de {productions.length} producciones eliminadas.</p>
-      <table className="table">
+      <div className="table-wrap"><table className="table">
         <thead><tr><th>Producción</th><th>Cliente</th><th>Fecha producción</th><th>Motivo</th><th>Fecha eliminación</th><th>Acciones</th></tr></thead>
         <tbody>{recentProductions.map(item=><tr key={item.id}>
           <td><strong>{item.title}</strong></td>
@@ -133,7 +133,7 @@ export default function DeletedPage(){
           <td>{formatDeletedAt(item.deletedAt)}</td>
           <td><button className="btn" onClick={()=>restoreProduction(item)} disabled={!canDelete}>Restaurar</button><button className="btn red" onClick={()=>hardDeleteProduction(item)} disabled={!canDelete}>Borrar definitivo</button></td>
         </tr>)}</tbody>
-      </table>
+      </table></div>
       {!productions.length && <p className="mini">No hay producciones eliminadas.</p>}
     </section>
   </AppShell>
