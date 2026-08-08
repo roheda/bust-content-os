@@ -559,6 +559,7 @@ export default function ProductionShootPlanDock() {
           .shoot-plan-source { grid-template-columns:1fr; }
           .shoot-plan-kpis { grid-template-columns:1fr 1fr; }
           .shoot-plan-head { flex-direction:column; }
+          .shoot-sequence-grid { grid-template-columns:1fr; }
         }
         @media print {
           .shoot-plan-launcher, .shoot-plan-backdrop { display:none !important; }
