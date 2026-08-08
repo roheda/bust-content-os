@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useModulePermissions, permissionAlert } from "@/components/useModulePermissions";
 import { auth } from "@/lib/firebase";
@@ -70,6 +70,10 @@ export default function ApprovalsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("publishDate");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
+  const modalCardRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
   const permissions = useModulePermissions("aprobaciones");
   const canApproveAction = permissions.canApprove;
 
@@ -87,14 +91,57 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     if (!selectedId) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeReview();
-      if (event.key === "ArrowLeft") navigateReview(-1);
-      if (event.key === "ArrowRight") navigateReview(1);
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeReview();
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget =
+        !!target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+      if (event.key === "ArrowLeft" && !isTypingTarget) navigateReview(-1);
+      if (event.key === "ArrowRight" && !isTypingTarget) navigateReview(1);
+      if (event.key === "Tab") {
+        const container = modalCardRef.current;
+        if (!container) return;
+        const focusable = Array.from(
+          container.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        );
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
   }, [selectedId]);
+
+  // Bloquea el scroll de fondo y gestiona el foco mientras el modal está
+  // abierto: entra al botón "Cerrar" y, al cerrar, regresa al elemento que
+  // lo abrió (normalmente el botón "Revisar" de la fila correspondiente).
+  // Depende de isOpen (no de selectedId) para no reiniciar el foco cada vez
+  // que se navega de una pieza a otra con las flechas dentro del modal.
+  const isReviewOpen = Boolean(selectedId);
+  useEffect(() => {
+    if (!isReviewOpen) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      previousFocusRef.current?.focus?.();
+    };
+  }, [isReviewOpen]);
 
   function taskTitle(item: ContentRequest) {
     return (
@@ -621,6 +668,7 @@ export default function ApprovalsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="approval-review-title"
+            ref={modalCardRef}
           >
             <header className={styles.modalHeader}>
               <div className={styles.modalHeading}>
@@ -636,7 +684,12 @@ export default function ApprovalsPage() {
                     {selected.batchName || "Sin lote"}
                   </p>
                 </div>
-                <button type="button" className="btn" onClick={closeReview}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={closeReview}
+                  ref={closeButtonRef}
+                >
                   Cerrar
                 </button>
               </div>
@@ -650,7 +703,7 @@ export default function ApprovalsPage() {
                 >
                   ← Anterior
                 </button>
-                <strong>
+                <strong aria-live="polite">
                   {selectedIndex >= 0 ? selectedIndex + 1 : "–"} de{" "}
                   {filtered.length}
                 </strong>
@@ -665,6 +718,10 @@ export default function ApprovalsPage() {
                   Siguiente →
                 </button>
               </div>
+              <p className={styles.keyboardHint}>
+                <kbd>←</kbd>
+                <kbd>→</kbd> Navegar entre piezas · <kbd>Esc</kbd> Cerrar
+              </p>
             </header>
 
             <div className={styles.modalBody}>
